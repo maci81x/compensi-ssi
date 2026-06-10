@@ -107,6 +107,7 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
 .nav{
   width:var(--nav);flex-shrink:0;background:var(--ink);color:#fff;
   display:flex;flex-direction:column;position:fixed;top:0;left:0;bottom:0;z-index:100;
+  overflow-y:auto;
 }
 .nav-logo{padding:20px 18px 16px;border-bottom:1px solid rgba(255,255,255,.08)}
 .nav-logo h1{font-size:15px;font-weight:600;letter-spacing:-.02em;color:#fff}
@@ -1449,6 +1450,51 @@ function setSyncIndicator(state){
   el.textContent=map[state]||'';
   el.style.color=state==='error'?'var(--red)':state==='ok'?'var(--green)':'var(--ink3)';
 }
+
+// ── FILE I/O ──────────────────────────────
+function exportJSON(){
+  const blob=new Blob([JSON.stringify(S,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  a.download='compensi-ssi-'+new Date().toISOString().slice(0,7)+'.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function loadFile(){
+  document.getElementById('file-inp').click();
+}
+
+function handleLoad(e){
+  const file=e.target.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=function(ev){
+    try{
+      const parsed=JSON.parse(ev.target.result);
+      Object.assign(S,parsed);
+      renderAll();
+      scheduleSync();
+      notify('✅ File caricato correttamente');
+    }catch(err){
+      alert('Errore nel file JSON: '+err.message);
+    }
+    e.target.value='';
+  };
+  reader.readAsText(file);
+}
+
+function resetAll(){
+  if(!confirm('Sei sicuro? Tutti i dati torneranno ai valori di default.'))return;
+  S=JSON.parse(JSON.stringify(DEF));
+  renderAll();
+  scheduleSync();
+  notify('↺ Dati resettati ai default');
+}
+
+function exportPDF(){window.print();}
 
 function setupRealtime(){
   if(!db||_realtimeChannel)return;
