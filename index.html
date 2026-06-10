@@ -559,43 +559,28 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
 <body>
 
 <!-- ══ LOGIN SCREEN ══════════════════════════════════════════════════════ -->
-<div id="login-screen" style="position:fixed;inset:0;background:linear-gradient(160deg,#FFFFFF 0%,#F2F1ED 100%);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px;font-family:'DM Sans',sans-serif">
-  <div style="max-width:500px;width:100%">
+<div id="login-screen" style="position:fixed;inset:0;background:linear-gradient(160deg,#FFFFFF 0%,#F2F1ED 100%);z-index:9999;display:flex;align-items:center;justify-content:center;font-family:'DM Sans',sans-serif">
+  <div style="display:flex;flex-direction:column;align-items:center;gap:0;text-align:center">
 
-    <!-- Logo -->
-    <div style="text-align:center;margin-bottom:52px">
-      <div style="font-size:11px;font-weight:600;letter-spacing:.14em;color:#9A9890;text-transform:uppercase;margin-bottom:10px">SI Soluzioni Impresa</div>
-      <div style="font-size:36px;font-weight:700;color:#0F0F0D;letter-spacing:-1px;line-height:1.1">SSI · Compensi</div>
-      <div style="width:36px;height:3px;background:#0F4499;border-radius:2px;margin:16px auto 0;opacity:.6"></div>
+    <!-- Branding -->
+    <div style="font-size:11px;font-weight:600;letter-spacing:.14em;color:#9A9890;text-transform:uppercase;margin-bottom:12px">SI Soluzioni Impresa</div>
+    <div style="font-size:38px;font-weight:700;color:#0F0F0D;letter-spacing:-1px;line-height:1">SSI · Compensi</div>
+    <div style="width:32px;height:3px;background:#0F4499;border-radius:2px;margin:16px auto 28px;opacity:.5"></div>
+
+    <!-- Card unica -->
+    <div style="background:#fff;border:1px solid #DDDBD3;border-radius:20px;box-shadow:0 4px 24px rgba(0,0,0,.08);padding:40px 52px 36px;display:flex;flex-direction:column;align-items:center;gap:18px">
+      <span style="font-size:52px;line-height:1">🏢</span>
+      <div style="font-size:22px;font-weight:700;color:#0F0F0D;letter-spacing:-.3px">SSI · Direzione</div>
+      <button onclick="doLogin()"
+        onmouseenter="this.style.background='#0A3580'"
+        onmouseleave="this.style.background='#0F4499'"
+        style="margin-top:6px;background:#0F4499;color:#fff;border:none;border-radius:10px;padding:13px 44px;font-size:15px;font-weight:600;font-family:'DM Sans',sans-serif;cursor:pointer;letter-spacing:.01em;transition:background .15s">
+        Entra
+      </button>
     </div>
 
-    <!-- Card accesso -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;max-width:440px;margin:0 auto">
-
-      <button onclick="doLogin('cda')"
-        onmouseenter="this.style.cssText=this.style.cssText+'transform:translateY(-4px);box-shadow:0 10px 28px rgba(15,68,153,.15);border-color:#B5D2F8'"
-        onmouseleave="this.style.transform='';this.style.boxShadow='0 2px 8px rgba(0,0,0,.07)';this.style.borderColor='#C8C6BE'"
-        style="display:flex;flex-direction:column;align-items:center;padding:32px 16px 26px;border:1px solid #C8C6BE;border-radius:16px;background:#fff;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.07);transition:transform .18s,box-shadow .18s,border-color .18s;gap:10px;text-align:center">
-        <span style="font-size:42px;line-height:1;margin-bottom:2px">👑</span>
-        <span style="font-size:17px;font-weight:700;color:#0F0F0D;letter-spacing:-.2px">CDA</span>
-        <span style="font-size:12px;color:#5A5850;font-weight:500;line-height:1.4">Roberto<br>Francesco</span>
-        <span style="font-size:11px;color:#9A9890;margin-top:4px;padding:3px 10px;background:#F2F1ED;border-radius:20px">Accesso completo</span>
-      </button>
-
-      <button onclick="doLogin('dir')"
-        onmouseenter="this.style.cssText=this.style.cssText+'transform:translateY(-4px);box-shadow:0 10px 28px rgba(26,107,60,.13);border-color:#B8DBBF'"
-        onmouseleave="this.style.transform='';this.style.boxShadow='0 2px 8px rgba(0,0,0,.07)';this.style.borderColor='#C8C6BE'"
-        style="display:flex;flex-direction:column;align-items:center;padding:32px 16px 26px;border:1px solid #C8C6BE;border-radius:16px;background:#fff;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.07);transition:transform .18s,box-shadow .18s,border-color .18s;gap:10px;text-align:center">
-        <span style="font-size:42px;line-height:1;margin-bottom:2px">🏢</span>
-        <span style="font-size:17px;font-weight:700;color:#0F0F0D;letter-spacing:-.2px">Direzione</span>
-        <span style="font-size:12px;color:#5A5850;font-weight:500;line-height:1.4">Giovanna · Marco<br>Niccolò</span>
-        <span style="font-size:11px;color:#9A9890;margin-top:4px;padding:3px 10px;background:#F2F1ED;border-radius:20px">Tutte le aree</span>
-      </button>
-
-    </div>
-
-    <!-- Footer versione + data -->
-    <div style="text-align:center;margin-top:48px;font-size:11px;color:#C8C6BE;letter-spacing:.05em">
+    <!-- Footer -->
+    <div style="margin-top:32px;font-size:11px;color:#C8C6BE;letter-spacing:.05em">
       v9 &nbsp;·&nbsp; SSI Poggibonsi &nbsp;·&nbsp; <span id="login-date"></span>
     </div>
 
@@ -1392,23 +1377,17 @@ let _syncTimer   = null;
 let _receivingRemote = false;
 let _realtimeChannel = null;
 
-const ROLES = {
-  cda: {nome:'Roberto · Francesco', label:'CDA',       fullAccess:true},
-  dir: {nome:'Giovanna · Marco · Niccolò', label:'Direzione', fullAccess:true},
-};
-
 // ── LOGIN UI ──────────────────────────────
 function renderLoginRoles(){
   const d=document.getElementById('login-date');
   if(d) d.textContent=new Date().toLocaleDateString('it-IT',{day:'numeric',month:'long',year:'numeric'});
 }
 
-function doLogin(key){
-  const r=ROLES[key];if(!r)return;
-  currentUser={role:key,...r};
+function doLogin(){
+  currentUser={role:'dir',label:'Direzione',nome:'SSI',fullAccess:true};
   document.getElementById('login-screen').style.display='none';
   document.getElementById('btn-logout').style.display='';
-  document.getElementById('nav-user-badge').textContent=r.label+' — '+r.nome;
+  document.getElementById('nav-user-badge').textContent='SSI · Direzione';
   applyRoleUI();
   loadState().then(()=>{ setupRealtime(); renderAll(); });
 }
