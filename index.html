@@ -559,25 +559,46 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
 <body>
 
 <!-- ══ LOGIN SCREEN ══════════════════════════════════════════════════════ -->
-<div id="login-screen" style="position:fixed;inset:0;background:#FAFAF8;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;font-family:'DM Sans',sans-serif">
-  <div style="max-width:460px;width:100%">
-    <div style="text-align:center;margin-bottom:28px">
-      <div style="font-size:28px;font-weight:700;color:#0F0F0D;letter-spacing:-.5px">SSI · Compensi</div>
-      <div style="font-size:13px;color:#9A9890;margin-top:4px">SI Soluzioni Impresa — accesso area</div>
+<div id="login-screen" style="position:fixed;inset:0;background:linear-gradient(160deg,#FFFFFF 0%,#F2F1ED 100%);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px;font-family:'DM Sans',sans-serif">
+  <div style="max-width:500px;width:100%">
+
+    <!-- Logo -->
+    <div style="text-align:center;margin-bottom:52px">
+      <div style="font-size:11px;font-weight:600;letter-spacing:.14em;color:#9A9890;text-transform:uppercase;margin-bottom:10px">SI Soluzioni Impresa</div>
+      <div style="font-size:36px;font-weight:700;color:#0F0F0D;letter-spacing:-1px;line-height:1.1">SSI · Compensi</div>
+      <div style="width:36px;height:3px;background:#0F4499;border-radius:2px;margin:16px auto 0;opacity:.6"></div>
     </div>
-    <div id="login-roles" style="display:grid;grid-template-columns:1fr 1fr;gap:10px"></div>
-    <div id="login-pin-wrap" style="display:none;margin-top:20px;background:#fff;border:1px solid #C8C6BE;border-radius:12px;padding:20px">
-      <div id="login-pin-label" style="font-size:13px;font-weight:600;margin-bottom:12px;color:#0F0F0D"></div>
-      <div style="display:flex;gap:10px;align-items:center">
-        <input id="login-pin-input" type="password" inputmode="numeric" maxlength="4" placeholder="PIN ••••"
-          style="flex:1;padding:10px 14px;font-size:20px;letter-spacing:6px;border:1px solid #C8C6BE;border-radius:8px;outline:none;font-family:'DM Mono',monospace;background:#FAFAF8"
-          oninput="if(this.value.length===4) attemptLogin(this.value)"
-          onkeydown="if(event.key==='Escape'){this.value='';hidePinWrap()}">
-        <button onclick="hidePinWrap()" style="padding:10px 14px;border:1px solid #C8C6BE;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;color:#5A5850">✕</button>
-      </div>
-      <div id="login-error" style="font-size:12px;color:#A32020;margin-top:8px;display:none">PIN errato — riprova</div>
+
+    <!-- Card accesso -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;max-width:440px;margin:0 auto">
+
+      <button onclick="doLogin('cda')"
+        onmouseenter="this.style.cssText=this.style.cssText+'transform:translateY(-4px);box-shadow:0 10px 28px rgba(15,68,153,.15);border-color:#B5D2F8'"
+        onmouseleave="this.style.transform='';this.style.boxShadow='0 2px 8px rgba(0,0,0,.07)';this.style.borderColor='#C8C6BE'"
+        style="display:flex;flex-direction:column;align-items:center;padding:32px 16px 26px;border:1px solid #C8C6BE;border-radius:16px;background:#fff;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.07);transition:transform .18s,box-shadow .18s,border-color .18s;gap:10px;text-align:center">
+        <span style="font-size:42px;line-height:1;margin-bottom:2px">👑</span>
+        <span style="font-size:17px;font-weight:700;color:#0F0F0D;letter-spacing:-.2px">CDA</span>
+        <span style="font-size:12px;color:#5A5850;font-weight:500;line-height:1.4">Roberto<br>Francesco</span>
+        <span style="font-size:11px;color:#9A9890;margin-top:4px;padding:3px 10px;background:#F2F1ED;border-radius:20px">Accesso completo</span>
+      </button>
+
+      <button onclick="doLogin('dir')"
+        onmouseenter="this.style.cssText=this.style.cssText+'transform:translateY(-4px);box-shadow:0 10px 28px rgba(26,107,60,.13);border-color:#B8DBBF'"
+        onmouseleave="this.style.transform='';this.style.boxShadow='0 2px 8px rgba(0,0,0,.07)';this.style.borderColor='#C8C6BE'"
+        style="display:flex;flex-direction:column;align-items:center;padding:32px 16px 26px;border:1px solid #C8C6BE;border-radius:16px;background:#fff;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.07);transition:transform .18s,box-shadow .18s,border-color .18s;gap:10px;text-align:center">
+        <span style="font-size:42px;line-height:1;margin-bottom:2px">🏢</span>
+        <span style="font-size:17px;font-weight:700;color:#0F0F0D;letter-spacing:-.2px">Direzione</span>
+        <span style="font-size:12px;color:#5A5850;font-weight:500;line-height:1.4">Giovanna · Marco<br>Niccolò</span>
+        <span style="font-size:11px;color:#9A9890;margin-top:4px;padding:3px 10px;background:#F2F1ED;border-radius:20px">Tutte le aree</span>
+      </button>
+
     </div>
-    <div style="text-align:center;margin-top:24px;font-size:11px;color:#C8C6BE">v9 · SSI Poggibonsi</div>
+
+    <!-- Footer versione + data -->
+    <div style="text-align:center;margin-top:48px;font-size:11px;color:#C8C6BE;letter-spacing:.05em">
+      v9 &nbsp;·&nbsp; SSI Poggibonsi &nbsp;·&nbsp; <span id="login-date"></span>
+    </div>
+
   </div>
 </div>
 
@@ -1372,60 +1393,26 @@ let _receivingRemote = false;
 let _realtimeChannel = null;
 
 const ROLES = {
-  cda:  {nome:'Roberto / Francesco', label:'CDA',            icon:'👑', color:'#0F4499', bg:'#E2EDFC', pinKey:'cda',  fullAccess:true,  navPages:['*']},
-  comm: {nome:'Roberto Macinai',     label:'Commerciale',    icon:'💰', color:'#1A6B3C', bg:'#EAF4EC', pinKey:'comm', fullAccess:false, navPages:['flusso','comm_page','dash','storico','guida']},
-  prod: {nome:'Giovanna Panti',      label:'Produzione',     icon:'⚙️', color:'#0F4499', bg:'#E2EDFC', pinKey:'prod', fullAccess:false, navPages:['flusso','produzione','dash','guida']},
-  form: {nome:'Niccolò',             label:'Formazione',     icon:'📚', color:'#4A38B0', bg:'#ECEAFC', pinKey:'form', fullAccess:false, navPages:['flusso','form_page','dash','guida']},
-  amm:  {nome:'Francesco Martini',   label:'Amministrazione',icon:'🏛', color:'#7A4A08', bg:'#FDF1DC', pinKey:'amm',  fullAccess:false, navPages:['flusso','amm_page','storico','dash','guida','sistema']},
-  hr:   {nome:'Marco Macinai',       label:'HR & MKT',       icon:'👥', color:'#A32020', bg:'#FCEAEA', pinKey:'hr',   fullAccess:false, navPages:['flusso','hr_page','dash','guida']},
+  cda: {nome:'Roberto · Francesco', label:'CDA',       fullAccess:true},
+  dir: {nome:'Giovanna · Marco · Niccolò', label:'Direzione', fullAccess:true},
 };
 
 // ── LOGIN UI ──────────────────────────────
 function renderLoginRoles(){
-  const d=document.getElementById('login-roles');if(!d)return;
-  d.innerHTML=Object.entries(ROLES).map(([key,r])=>`
-    <button onclick="selectRole('${key}')" style="
-      display:flex;flex-direction:column;align-items:center;justify-content:center;
-      padding:18px 10px;border:1px solid #C8C6BE;border-radius:12px;background:#fff;
-      cursor:pointer;gap:6px;transition:.15s">
-      <span style="font-size:26px">${r.icon}</span>
-      <span style="font-size:13px;font-weight:600;color:#0F0F0D">${r.label}</span>
-      <span style="font-size:11px;color:#9A9890">${r.nome}</span>
-    </button>`).join('');
+  const d=document.getElementById('login-date');
+  if(d) d.textContent=new Date().toLocaleDateString('it-IT',{day:'numeric',month:'long',year:'numeric'});
 }
-let _pendingRole = null;
-function selectRole(key){
-  _pendingRole=key;
-  const r=ROLES[key];
-  document.getElementById('login-pin-label').textContent=r.icon+' '+r.label+' — inserisci PIN';
-  document.getElementById('login-error').style.display='none';
-  const w=document.getElementById('login-pin-wrap');w.style.display='block';
-  const inp=document.getElementById('login-pin-input');inp.value='';inp.focus();
-}
-function hidePinWrap(){
-  document.getElementById('login-pin-wrap').style.display='none';
-  _pendingRole=null;
-}
-function attemptLogin(pin){
-  const key=_pendingRole;if(!key)return;
-  const r=ROLES[key];
-  const correctPin=(S.pins&&S.pins[key])||r.pinKey.replace(/[a-z]/g,'0'); // fallback
-  const expected=S.pins?.[key]||({cda:'0000',comm:'1111',prod:'2222',form:'3333',amm:'4444',hr:'5555'}[key]);
-  if(pin!==expected){
-    const inp=document.getElementById('login-pin-input');
-    inp.value='';
-    const err=document.getElementById('login-error');err.style.display='block';
-    inp.style.borderColor='#A32020';
-    setTimeout(()=>{inp.style.borderColor='#C8C6BE';},1200);
-    return;
-  }
+
+function doLogin(key){
+  const r=ROLES[key];if(!r)return;
   currentUser={role:key,...r};
   document.getElementById('login-screen').style.display='none';
   document.getElementById('btn-logout').style.display='';
-  document.getElementById('nav-user-badge').textContent=r.icon+' '+r.nome+' ('+r.label+')';
+  document.getElementById('nav-user-badge').textContent=r.label+' — '+r.nome;
   applyRoleUI();
   loadState().then(()=>{ setupRealtime(); renderAll(); });
 }
+
 function logout(){
   currentUser=null;
   if(_realtimeChannel&&db){ db.removeChannel(_realtimeChannel); _realtimeChannel=null; }
@@ -1434,52 +1421,11 @@ function logout(){
   document.getElementById('btn-logout').style.display='none';
   document.getElementById('nav-user-badge').textContent='';
   document.getElementById('sync-indicator').textContent='';
-  document.getElementById('login-pin-wrap').style.display='none';
-  _pendingRole=null;
 }
 
 // ── ROLE UI ──────────────────────────────
 function applyRoleUI(){
-  if(!currentUser)return;
-  const pages=currentUser.navPages||[];
-  const isCDA=currentUser.fullAccess;
-  document.querySelectorAll('.nav-item[onclick]').forEach(btn=>{
-    const m=(btn.getAttribute('onclick')||'').match(/'([^']+)'/);
-    if(!m)return;
-    const pid=m[1];
-    btn.style.display=(isCDA||pages.includes(pid))?'':'none';
-  });
-  // PIN settings button — solo CDA
-  let pinBtn=document.getElementById('nav-pin-settings');
-  if(!pinBtn){
-    pinBtn=document.createElement('button');
-    pinBtn.id='nav-pin-settings';
-    pinBtn.className='nav-item';
-    pinBtn.innerHTML='<span class="ni">🔐</span> Gestisci PIN';
-    pinBtn.onclick=openPinSettings;
-    document.querySelector('.nav-footer')?.before(pinBtn);
-  }
-  pinBtn.style.display=isCDA?'':'none';
-}
-
-// ── PIN SETTINGS (solo CDA) ───────────────
-function openPinSettings(){
-  const labels={cda:'CDA',comm:'Commerciale',prod:'Produzione',form:'Formazione',amm:'Amministrazione',hr:'HR'};
-  const rows=Object.keys(labels).map(k=>`
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-      <span style="flex:1;font-size:12px">${labels[k]}</span>
-      <input type="text" maxlength="4" inputmode="numeric" value="${S.pins?.[k]||''}"
-        style="width:70px;padding:5px 8px;border:1px solid var(--lift);border-radius:6px;font-size:14px;letter-spacing:4px;text-align:center;font-family:'DM Mono',monospace"
-        onblur="if(!S.pins)S.pins={};S.pins['${k}']=this.value.padStart(4,'0');scheduleSync()">
-    </div>`).join('');
-  const pop=document.getElementById('popover');
-  const body=document.getElementById('pop-body');
-  document.getElementById('pop-title').textContent='🔐 Gestisci PIN';
-  body.innerHTML=`<div style="padding:4px 0">${rows}</div>
-    <div style="font-size:11px;color:var(--ink3);margin-top:8px">I PIN vengono salvati automaticamente su cloud.</div>`;
-  document.getElementById('pop-act').innerHTML='<button class="btn prim" onclick="closePop()">Chiudi</button>';
-  document.getElementById('pop-ov').style.display='block';
-  pop.style.display='block';
+  document.querySelectorAll('.nav-item').forEach(btn=>btn.style.display='');
 }
 
 // ── SUPABASE STATE SYNC ───────────────────
