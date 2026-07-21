@@ -10,16 +10,17 @@ STACK: HTML/CSS/JS vanilla · Chart.js 4.4.1 · jsPDF 2.5.1 · DM Sans/Mono
 STRUTTURA DATI PRINCIPALE:
   const DEF={...} → let S=JSON.parse(JSON.stringify(DEF))
   S.personale[] — 27 risorse
-  S.aree[] — 6 macro aree (comm/prod/form/amm/hr/sis)
+  S.aree[] — 7 aree (comm/prod/amm/mkt/sorvsan/form/sis), con parentId/natura (SPEC-v10 §3)
   S.areeCA[] — Area Fiorentina (Raia) + Area Senese (Necci)
-  S.sistemaFissi[] — 46 voci costi fissi da PF 2026
-  S.datiArea{comm,form,amm,hr,seg} — dati mensili per area
+  S.sistemaFissi[] — voci costi fissi (a mano + import PF)
+  S.prioritari[] — voci prioritarie (leasing/F24/IVA/TFR/...) da import PF (SPEC-v10 §4)
+  S.datiArea{comm,form,amm,mkt,sorvsan,seg} — dati mensili per area
   S.kpiObiettivi{comm} — KPI commerciale mese
 
 NAVIGAZIONE (goPage):
   flusso, sim, org, produzione, struttura, sistema
-  comm_page, form_page, amm_page, hr_page, seg_page
-  dash, storico, guida
+  comm_page, form_page, amm_page, mkt_page, sorvsan_page, seg_page
+  dash, storico, guida, import
 
 FUNZIONI CHIAVE:
   renderAll() — aggiorna tutto
@@ -622,8 +623,11 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
   <button class="nav-item" onclick="goPage('amm_page',this)">
     <span class="ni">🏛</span> Amministrazione
   </button>
-  <button class="nav-item" onclick="goPage('hr_page',this)">
-    <span class="ni">👥</span> HR
+  <button class="nav-item" onclick="goPage('mkt_page',this)">
+    <span class="ni">📣</span> Marketing
+  </button>
+  <button class="nav-item" onclick="goPage('sorvsan_page',this)">
+    <span class="ni">🩺</span> Sorveglianza Sanitaria
   </button>
   <button class="nav-item" onclick="goPage('seg_page',this)">
     <span class="ni">📞</span> Segreteria
@@ -1070,17 +1074,31 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
     </div>
   </div>
   <!-- PAGE: HR -->
-  <div id="page-hr_page" class="page" style="background:var(--sheet)">
+  <div id="page-mkt_page" class="page" style="background:var(--sheet)">
     <div style="max-width:1100px;margin:0 auto">
       <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
         <div>
-          <h2 style="font-size:15px;font-weight:600">👥 HR — dati mensili</h2>
+          <h2 style="font-size:15px;font-weight:600">📣 Marketing — dati mensili</h2>
           <p style="font-size:12px;color:var(--ink3);margin-top:2px">Inserimento dati area — aggiornamento mensile</p>
         </div>
-        <div style="display:flex;gap:6px"><button class="btn sm prim" onclick="openAddRisorsaModal('hr')">+ Aggiungi risorsa</button><button class="btn sm" onclick="resetAreaDati('hr')">↺ Azzera mese</button></div>
+        <div style="display:flex;gap:6px"><button class="btn sm prim" onclick="openAddRisorsaModal('mkt')">+ Aggiungi risorsa</button><button class="btn sm" onclick="resetAreaDati('mkt')">↺ Azzera mese</button></div>
       </div>
-      <div id="mini-org-hr" style="margin-bottom:14px"></div>
-      <div id="area-content-hr_page"></div>
+      <div id="mini-org-mkt" style="margin-bottom:14px"></div>
+      <div id="area-content-mkt_page"></div>
+    </div>
+  </div>
+  <!-- PAGE: SORVEGLIANZA SANITARIA -->
+  <div id="page-sorvsan_page" class="page" style="background:var(--sheet)">
+    <div style="max-width:1100px;margin:0 auto">
+      <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+        <div>
+          <h2 style="font-size:15px;font-weight:600">🩺 Sorveglianza Sanitaria — dati mensili</h2>
+          <p style="font-size:12px;color:var(--ink3);margin-top:2px">Inserimento dati area — aggiornamento mensile</p>
+        </div>
+        <div style="display:flex;gap:6px"><button class="btn sm prim" onclick="openAddRisorsaModal('sorvsan')">+ Aggiungi risorsa</button><button class="btn sm" onclick="resetAreaDati('sorvsan')">↺ Azzera mese</button></div>
+      </div>
+      <div id="mini-org-sorvsan" style="margin-bottom:14px"></div>
+      <div id="area-content-sorvsan_page"></div>
     </div>
   </div>
   <!-- PAGE: SEGRETERIA -->
@@ -1151,6 +1169,10 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
         <button class="btn prim" onclick="document.getElementById('import-dip-inp').click()">Carica file dipendenti</button>
         <span id="import-dip-status" style="font-size:11px;color:var(--ink3);margin-left:8px"></span>
       </div>
+    </div>
+    <div style="background:var(--card);border:1px solid var(--lift);border-radius:var(--rl);padding:12px 14px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+      <div style="font-size:11px;color:var(--ink3)">Se in Fase 1 avevi già confermato un import, rilancia la classificazione (Fase 2) senza dover ricaricare i file: sposta le voci IVA/leasing/F24/TFR/rateizzi/accantonamenti in "Voci prioritarie" e tagga le altre con l'area riconosciuta.</div>
+      <button class="btn sm" onclick="riclassificaImport()">↺ Riclassifica import</button>
     </div>
     <div id="import-preview"></div>
   </div>
@@ -1688,17 +1710,24 @@ function renderImportPreview(){
       <div style="max-height:360px;overflow:auto">
       <table style="width:100%;border-collapse:collapse;font-size:11px">
         <thead><tr style="text-align:left;color:var(--ink3);font-size:10px;text-transform:uppercase;position:sticky;top:0;background:var(--card)">
-          <th style="padding:3px 6px"></th><th style="padding:3px 6px">Riga</th><th style="padding:3px 6px">Area</th><th style="padding:3px 6px">Voce</th><th style="padding:3px 6px">Natura</th><th style="padding:3px 6px" class="mono">Annuo €</th>
+          <th style="padding:3px 6px"></th><th style="padding:3px 6px">Riga</th><th style="padding:3px 6px">Area</th><th style="padding:3px 6px">Voce</th><th style="padding:3px 6px">Natura</th><th style="padding:3px 6px" class="mono">Annuo €</th><th style="padding:3px 6px">Destinazione</th><th style="padding:3px 6px">Doppione?</th>
         </tr></thead>
         <tbody>
-        ${pendingImport.pf.map((v,i)=>`<tr style="border-top:1px solid var(--lift);opacity:${v.escludi?0.4:1}">
+        ${pendingImport.pf.map((v,i)=>{
+          const cls=classifyPFRow(v);
+          const destLbl=cls.dest==='prioritari'?('prioritari · '+cls.tipo):(cls.areaId?('sistema · '+cls.areaId):'sistema');
+          const dup=(!v.escludi&&!v.mergeInto)?findPossibileDoppione(v):null;
+          return `<tr style="border-top:1px solid var(--lift);opacity:${v.escludi?0.4:1}">
           <td style="padding:3px 6px"><input type="checkbox" ${v.escludi?'':'checked'} onchange="toggleImportRow('pf',${i})"></td>
           <td style="padding:3px 6px" class="mono">${v.row}</td>
           <td style="padding:3px 6px">${v.areaPF}${v.isSubtotal?' <span class="badge" style="background:#fff3cd;color:#8a6d00">subtotale</span>':''}</td>
           <td style="padding:3px 6px">${v.voce}</td>
           <td style="padding:3px 6px">${v.natura}</td>
           <td style="padding:3px 6px" class="mono">${fmt(v.annuo)}</td>
-        </tr>`).join('')}
+          <td style="padding:3px 6px"><span class="badge" style="background:${cls.dest==='prioritari'?'#fceaea':'#e2edfc'};color:${cls.dest==='prioritari'?'#A32020':'#0F4499'}">${destLbl}</span></td>
+          <td style="padding:3px 6px">${v.mergeInto?`<span class="badge" style="background:#eaf4ec;color:#1A6B3C">unita con «${(S.sistemaFissi.find(x=>x.id===v.mergeInto)||{}).nome||'?'}»</span> <button class="btn xs" onclick="pendingImport.pf[${i}].mergeInto=null;renderImportPreview()">annulla</button>`:
+            dup?`⚠️ possibile doppione di «${dup.nome}» (${fmt(dup.val)}/mese) <button class="btn xs prim" onclick="pendingImport.pf[${i}].mergeInto='${dup.id}';renderImportPreview()">Unisci</button> <button class="btn xs" onclick="toggleImportRow('pf',${i})">Escludi</button>`:'—'}</td>
+        </tr>`;}).join('')}
         </tbody>
       </table>
       </div>
@@ -1756,23 +1785,82 @@ function renderImportPreview(){
   el.innerHTML=html;
 }
 
+// ── CLASSIFICAZIONE VOCI PF (SPEC-v10 §3, Fase 2) ─────────────────────────
+// nomi-area riconosciuti -> loro area; leasing/F24/IVA/TFR/rateizzi/accantonamenti
+// -> prioritari (priorità 1); overhead generico (Software/Auto/utenze/consulenti/
+// Sistema) -> sistemaFissi con areaId nullo.
+const AREA_NAME_MAP=[
+  [/sorveglianza sanitaria/i,'sorvsan'],
+  [/formazione/i,'form'],
+  [/commerciale/i,'comm'],
+  [/produzione/i,'prod'],
+  [/marketing/i,'mkt'],
+  [/amministrazione/i,'amm'],
+];
+function normalizeStr(s){return String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();}
+function condivideToken(a,b){
+  const ta=normalizeStr(a).split(' ').filter(t=>t.length>=4);
+  const tb=new Set(normalizeStr(b).split(' ').filter(t=>t.length>=4));
+  return ta.some(t=>tb.has(t));
+}
+function classifyPFRow(v){
+  const s=(v.areaPF+' '+v.voce).toLowerCase();
+  if(/leasing/.test(s))return{dest:'prioritari',tipo:'leasing'};
+  if(/\bf24\b|irpef|inail|enasarco/.test(s))return{dest:'prioritari',tipo:'f24'};
+  if(/\biva\b/.test(s))return{dest:'prioritari',tipo:'iva'};
+  if(/\btfr\b/.test(s))return{dest:'prioritari',tipo:'tfr'};
+  if(/rateizz/.test(s))return{dest:'prioritari',tipo:'rateizzo'};
+  if(/accantona/.test(s))return{dest:'prioritari',tipo:'accantonamento'};
+  const areaHit=AREA_NAME_MAP.find(([re])=>re.test(v.areaPF));
+  return{dest:'sistema',areaId:areaHit?areaHit[1]:null};
+}
+
+// ── RILEVAMENTO DOPPIONI (Fase 2, richiesta esplicita) ────────────────────
+// Confronta una riga PF non esclusa con le voci Sistema già presenti "a mano"
+// (non taggate areaPF da un import precedente) per nome simile + importo vicino.
+function findPossibileDoppione(v){
+  const nv=normalizeStr(v.voce);
+  if(!nv)return null; // descrizione vuota: nessun confronto testuale affidabile
+  const mensile=v.annuo/12;
+  return (S.sistemaFissi||[]).find(sf=>{
+    if(sf.areaPF)return false; // già da import, non è un doppione "a mano"
+    const nsf=normalizeStr(sf.nome);
+    if(!nsf)return false;
+    const simile=nsf.includes(nv)||nv.includes(nsf)||condivideToken(sf.nome,v.voce);
+    const vicino=sf.val>0&&Math.abs(sf.val-mensile)/sf.val<0.2;
+    return simile&&vicino;
+  });
+}
+
 function applyImport(){
   if(!pendingImport.pf&&!pendingImport.dipendenti){notify('Nessun dato da importare');return;}
-  let n=0;
+  let n=0,nPrio=0;
   if(pendingImport.pf){
     S.sistemaFissi=S.sistemaFissi||[];
+    S.prioritari=S.prioritari||[];
     pendingImport.pf.filter(v=>!v.escludi).forEach(v=>{
-      // Mappatura conservativa: ogni voce PF non esclusa finisce in sistemaFissi con
-      // area+natura originali preservati (per il rollup delle Fasi 2/5.1 e i centri di costo §6).
-      S.sistemaFissi.push({
-        id:'pf_'+Math.random().toString(36).slice(2,9),
-        nome:v.voce||v.areaPF,
-        cat:v.areaPF,
-        areaPF:v.areaPF,
-        natura:v.natura,
-        val:Math.round((v.annuo/12)*100)/100
-      });
-      n++;
+      if(v.mergeInto){
+        // "Unisci": aggiorna la voce Sistema esistente invece di crearne una nuova
+        const sf=S.sistemaFissi.find(x=>x.id===v.mergeInto);
+        if(sf){sf.val=Math.round((v.annuo/12)*100)/100;sf.areaPF=v.areaPF;sf.natura=v.natura;n++;return;}
+      }
+      const cls=classifyPFRow(v);
+      if(cls.dest==='prioritari'){
+        S.prioritari.push({id:'pr_'+Math.random().toString(36).slice(2,9),
+          nome:v.voce||v.areaPF,val:Math.round((v.annuo/12)*100)/100,tipo:cls.tipo,priorita:1});
+        nPrio++;
+      }else{
+        S.sistemaFissi.push({
+          id:'pf_'+Math.random().toString(36).slice(2,9),
+          nome:v.voce||v.areaPF,
+          cat:v.areaPF,
+          areaPF:v.areaPF,
+          natura:v.natura,
+          areaId:cls.areaId,
+          val:Math.round((v.annuo/12)*100)/100
+        });
+        n++;
+      }
     });
   }
   if(pendingImport.previsionale){
@@ -1783,7 +1871,32 @@ function applyImport(){
   }
   renderAll();
   scheduleSync();
-  notify('✅ Import applicato ('+n+' voci PF) — vedi Fase 2/3 per usarlo nel motore');
+  notify('✅ Import applicato ('+n+' voci sistema, '+nPrio+' prioritarie) — vedi Fase 3 per la cascata');
+}
+
+// Riclassifica retroattivamente le voci sistemaFissi già importate in Fase 1
+// (taggate areaPF) secondo le stesse regole, senza dover ricaricare i file.
+function riclassificaImport(){
+  if(!S.sistemaFissi||!S.sistemaFissi.length){notify('Nessuna voce da riclassificare');return;}
+  S.prioritari=S.prioritari||[];
+  let moved=0,tagged=0;
+  const rimasti=[];
+  S.sistemaFissi.forEach(sf=>{
+    if(!sf.areaPF){rimasti.push(sf);return;}
+    const cls=classifyPFRow({areaPF:sf.areaPF,voce:sf.nome});
+    if(cls.dest==='prioritari'){
+      S.prioritari.push({id:'pr_'+Math.random().toString(36).slice(2,9),
+        nome:sf.nome,val:sf.val,tipo:cls.tipo,priorita:1});
+      moved++;
+    }else{
+      if(cls.areaId&&sf.areaId!==cls.areaId){sf.areaId=cls.areaId;tagged++;}
+      rimasti.push(sf);
+    }
+  });
+  S.sistemaFissi=rimasti;
+  renderAll();
+  scheduleSync();
+  notify('↺ Riclassificato: '+moved+' spostate in prioritari, '+tagged+' taggate con area');
 }
 
 function resetAll(){
@@ -1848,6 +1961,11 @@ const DEF={
     {nome:'Costi variabili',  pct:31.95,desc:'Costi operativi variabili: trasferte, materiali, subappalti occasionali'},
     {nome:'Accantonamenti',   pct:10.65,desc:'TFR, fondo rischi, riserva liquidità (target 3 mesi costi fissi)'},
   ],
+
+  // Voci prioritarie (priorità 1 — leasing/F24/IVA/rateizzi/TFR/accantonamenti, SPEC-v10 §4).
+  // Popolate dall'import PF (classificazione automatica) o a mano. Dormienti: non ancora
+  // sommate in flow() — la cascata a priorità è SPEC-v10 §5/§8, Fase 3.
+  prioritari:[],
 
   sistemaFissi:[
     // ── AUTO AZIENDALI ────────────────────────────────────────────────────
@@ -1917,6 +2035,7 @@ const DEF={
     // ── COMMERCIALE ───────────────────────────────────────────────────────
     {id:'comm',nome:'Commerciale',tipo:'RIC',desc:'Vendite, rinnovi, CRM, agenti',incPct:17.25,
      resp:'Roberto Macinai',
+     parentId:null,natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:17.25},chiusa:false,
      micro:[
        {nome:'Preventivi accettati/fatti %',      fisso:0,bonus:0,kt:101,ke:0,note:'Nr preventivi accettati / nr preventivi fatti × 100. Monitoraggio mensile.'},
        {nome:'Incassi in linea sul venduto %',     fisso:0,bonus:0,kt:101,ke:0,note:'Incassato reale / venduto contrattualizzato × 100.'},
@@ -1932,6 +2051,7 @@ const DEF={
     // ── PRODUZIONE ────────────────────────────────────────────────────────
     {id:'prod',nome:'Produzione',tipo:'RIC',desc:'Erogazione servizi sicurezza, sopralluoghi, DVR, sorveglianza sanitaria',incPct:11.31,
      resp:'Giovanna Panti',
+     parentId:null,natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:11.31},chiusa:false,fornitoreFisso:0,
      micro:[
        {nome:'Produzione mensile tot. €',              fisso:0,bonus:0,kt:0,ke:0,note:'Somma generato tutti i tecnici. Disponibile in pagina Produzione tecnici.'},
        {nome:'Rispetto ore assegnate %',               fisso:0,bonus:0,kt:101,ke:0,note:'Ore effettive / ore assegnate × 100. Monitorato da Giovanna.'},
@@ -1948,6 +2068,7 @@ const DEF={
     // ── AMMINISTRAZIONE ───────────────────────────────────────────────────
     {id:'amm',nome:'Amministrazione',tipo:'SUP',desc:'Amministrazione, contabilità, acquisti, cash flow',incPct:10.46,
      resp:'Francesco Martini',
+     parentId:null,natura:'costo',priorita:2,budget:{fisso:0,variabilePct:10.46},chiusa:false,
      micro:[
        {nome:'Cash flow crescente (conto banca) €', fisso:0,bonus:0,kt:0,ke:0,note:'Saldo conto corrente a fine mese. Inserire importo.'},
        {nome:'PF aggiornato (sì=100 / no=0)',        fisso:0,bonus:0,kt:101,ke:0,note:'Piano finanziario aggiornato entro il 5 del mese.'},
@@ -1960,24 +2081,20 @@ const DEF={
        {nome:'Riduzione costi — ottimizzazioni €',  fisso:0,bonus:0,kt:0,ke:0,note:'Risparmio ottenuto nel mese da ottimizzazioni costi.'},
      ]},
 
-    // ── HR & MARKETING ────────────────────────────────────────────────────
-    {id:'hr',nome:'HR & MKT',tipo:'SUP',desc:'Risorse umane, marketing, comunicazione',incPct:5.77,
+    // ── MARKETING (ex "HR & MKT" — HR eliminata come area, SPEC-v10 §3) ────
+    {id:'mkt',nome:'Marketing',tipo:'SUP',desc:'Marketing, comunicazione, campagne, fornitori esterni',incPct:5.77,
      resp:'Marco Macinai',
+     parentId:'comm',natura:'supporto',priorita:2,budget:{fisso:0,variabilePct:5.77},chiusa:false,
      micro:[
-       {nome:'Soddisfazione dipendenti (eNPS 0-10)',     fisso:0,bonus:0,kt:0,ke:0,note:'Scala 0-10 da survey trimestrale. Media del mese.'},
-       {nome:'Formazione dipendenti: % percorsi completati',fisso:0,bonus:0,kt:101,ke:0,note:'Percorsi completati / percorsi avviati × 100.'},
-       {nome:'Nr colloqui effettuati',                   fisso:0,bonus:0,kt:0,ke:0,note:'Nr colloqui di selezione sostenuti nel mese.'},
-       {nome:'Tempo medio assunzione (giorni)',          fisso:0,bonus:0,kt:0,ke:0,note:'Giorni dalla richiesta interna alla firma contratto.'},
-       {nome:'Costo medio assunzione €',                 fisso:0,bonus:0,kt:0,ke:0,note:'Spesa piattaforme+annunci / nr assunzioni effettuate.'},
-       {nome:'% candidati che accettano offerta',     fisso:0,bonus:0,kt:101,ke:0,note:'Offerte accettate / offerte fatte x 100.'},
-       {nome:'Valutazione post-assunzione (1-5)',        fisso:0,bonus:0,kt:0,ke:0,note:'Media valutazioni 3 mesi dopo assunzione.'},
-       {nome:'Rotazione personale (turnover %) annua',   fisso:0,bonus:0,kt:101,ke:0,note:'Uscite / organico medio × 100. KPI inverso: più basso = meglio.'},
-       {nome:'Ottimizzazione ferie/permessi (sì=100)',   fisso:0,bonus:0,kt:101,ke:0,note:'Piano ferie del mese rispettato senza scoperture.'},
+       {nome:'Costo per lead €',                fisso:0,bonus:0,kt:0,ke:0,note:'Spesa ads+agenzia del mese / nr lead generati.'},
+       {nome:'ROI campagne %',                  fisso:0,bonus:0,kt:101,ke:0,note:'(Valore contratti da lead marketing - spesa campagne) / spesa campagne × 100.'},
+       {nome:'Nr lead generati',                fisso:0,bonus:0,kt:0,ke:0,note:'Contatore manuale mensile lead generati da tutte le fonti MKT.'},
      ]},
 
     // ── FORMAZIONE ────────────────────────────────────────────────────────
     {id:'form',nome:'Formazione',tipo:'RIC',desc:'Corsi sicurezza, docenze, attestati, registro presenze',incPct:8.5,
      resp:'Niccolò',
+     parentId:'prod',natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:8.5},chiusa:false,
      micro:[
        {nome:'Ore formazione erogate vs pianificate %', fisso:0,bonus:0,kt:101,ke:0,note:'Ore effettivamente erogate / ore pianificate nel mese × 100.'},
        {nome:'% corsi completati vs avviati',           fisso:0,bonus:0,kt:101,ke:0,note:'Corsi portati a termine / corsi avviati × 100.'},
@@ -1991,9 +2108,19 @@ const DEF={
        {nome:'Registro presenze: errori/mancanze nr',  fisso:0,bonus:0,kt:101,ke:0,note:'Nr irregolarita nei registri presenze del mese.'},
      ]},
 
-    // ── SEGRETERIA / SISTEMA ──────────────────────────────────────────────
+    // ── SORVEGLIANZA SANITARIA (nuova, sotto Produzione — SPEC-v10 §3) ─────
+    {id:'sorvsan',nome:'Sorveglianza Sanitaria',tipo:'RIC',desc:'Visite mediche, medici competenti, gestione protocolli sanitari',incPct:0,
+     resp:'',
+     parentId:'prod',natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:0},chiusa:false,fornitoreFisso:0,
+     micro:[
+       {nome:'Visite effettuate nr',             fisso:0,bonus:0,kt:0,ke:0,note:'Nr visite mediche effettuate nel mese (da comp.visite_mc dei medici competenti).'},
+       {nome:'Nuovi MC attivati nr',             fisso:0,bonus:0,kt:0,ke:0,note:'Nr nuovi medici competenti attivati nel mese.'},
+     ]},
+
+    // ── SEGRETERIA — staff a lato del CDA (SPEC-v10 §3) ────────────────────
     {id:'sis',nome:'Segreteria',tipo:'SUP',desc:'Segreteria direzione, backoffice, supporto trasversale',incPct:3.92,
      resp:'',
+     parentId:null,natura:'staff',priorita:2,budget:{fisso:0,variabilePct:3.92},chiusa:false,
      micro:[
        {nome:'Scadenze aziendali rispettate %',       fisso:0,bonus:0,kt:101,ke:0,note:'Scadenze rispettate / scadenze totali del mese × 100.'},
        {nome:'Tempi risposta telefono (entro 3 squilli %)',fisso:0,bonus:0,kt:101,ke:0,note:'Chiamate risposte entro 3 squilli / totale chiamate × 100.'},
@@ -2049,9 +2176,7 @@ const DEF={
       proformaNr:0, dsoGiorni:0, riduzioneCosti:0,
       note:''
     },
-    hr:{
-      colloquiNr:0, assunzioniNr:0, costoAssunzioneEur:0,
-      soddisfazione:0, formazioniCompletate:0,
+    mkt:{
       costoAgenziaEur:0, costoAdsEur:0,
       fornitoriMKT:[
         {nome:'Telesales',tipo:'fornitore',val:0,note:''},
@@ -2062,6 +2187,10 @@ const DEF={
         {nome:'Social media',val:0},{nome:'Email marketing',val:0},{nome:'Advertising',val:0}
       ],
       vociExtra:[],
+      note:''
+    },
+    sorvsan:{
+      visiteEffettuateNr:0, nuoviMcNr:0,
       note:''
     },
     seg:{
@@ -2111,12 +2240,12 @@ const DEF={
               visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}
      ]},
 
-    {id:'p02',nome:'Marco Macinai',ruolo_principale:'Dir. HR & Marketing',area:'hr',areaResp:'hr',
+    {id:'p02',nome:'Marco Macinai',ruolo_principale:'Dir. Marketing',area:'mkt',areaResp:'mkt',
      tipo_contratto:'MISTO',tariffaOraria:45,isResp:true,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'C',
      note:'Socio. Resp HR + MKT. Provvigioni vendite diviso 2.',
      slots:[
        {id:'s_mar_hr',tipo:'responsabilita',area:'hr',label:'Resp. HR',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:50},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:true,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:true,ore_previste:60,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:false,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:0},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}},
-       {id:'s_mar_mkt',tipo:'responsabilita',area:'hr',label:'Resp. Marketing',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:50},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:true,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:true,ore_previste:40,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:false,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:0},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}},
+       {id:'s_mar_mkt',tipo:'responsabilita',area:'mkt',label:'Resp. Marketing',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:50},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:true,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:true,ore_previste:40,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:false,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:0},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}},
        {id:'s_mar_form',tipo:'formazione',area:'form',label:'Docenze Marco',comp:{fisso:{on:false,val:0},ore_form:{on:true,ore:0,tariffa:35},pratiche:{on:true,nr:0,tariffa:10},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:50},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:false,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:false,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:0},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}},
        {id:'s_mar_vend',tipo:'vendite',area:'comm',label:'Vendite personali (50%)',comp:{fisso:{on:false,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:true,venduto:0,pct:3,prov_azienda:50},incassato:{on:false,pctArea:0},comm_crm:{on:true,val:0},bonus_kpi:{on:false,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:false,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:0},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}
      ]},
@@ -2239,10 +2368,10 @@ const DEF={
      slots:[{id:'s_mat_amm',tipo:'tecnico',area:'amm',label:'Amministrazione',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:true,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:false,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:false,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:0},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}]},
 
     // Michela — collaboratrice MKT
-    {id:'p_mic',nome:'Michela',ruolo_principale:'Collaboratrice Marketing',area:'hr',areaResp:'hr',
+    {id:'p_mic',nome:'Michela',ruolo_principale:'Collaboratrice Marketing',area:'mkt',areaResp:'mkt',
      tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
      note:'Collaboratrice MKT. Tipo contratto da definire.',
-     slots:[{id:'s_mic_mkt',tipo:'supervisione',area:'hr',label:'Marketing',comp:{fisso:{on:false,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:false,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:false,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:0},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}]},
+     slots:[{id:'s_mic_mkt',tipo:'supervisione',area:'mkt',label:'Marketing',comp:{fisso:{on:false,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:false,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:false,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:0},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}]},
 
     // Valentina Caserta — AMM, in maternità
     {id:'p_val',nome:'Valentina Caserta',ruolo_principale:'Amministrazione',area:'amm',areaResp:'amm',
@@ -2262,7 +2391,7 @@ const DEF={
      slots:[{id:'s_bo1',tipo:'supervisione',area:'sis',label:'Backoffice',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:false,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:false,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:0},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}]},
 
     {id:'pMKT',nome:'Marketing',ruolo_principale:'Marketing',area:'comm',areaResp:'comm',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',note:'',
-     slots:[{id:'s_mkt',tipo:'supervisione',area:'hr',label:'Marketing',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:false,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:false,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:0},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}]},
+     slots:[{id:'s_mkt',tipo:'supervisione',area:'mkt',label:'Marketing',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:false,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:false,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:0},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}]},
 
   ]
 };
@@ -2562,7 +2691,7 @@ function renderAll(){
   if(activePage?.id==='page-sistema')renderSistemaPage();
   if(activePage?.id==='page-dash')renderDash(f);
   if(activePage?.id==='page-storico')renderStorico();
-  if(['page-comm_page','page-form_page','page-amm_page','page-hr_page','page-seg_page'].includes(activePage?.id)) renderAreaPage();
+  if(['page-comm_page','page-form_page','page-amm_page','page-mkt_page','page-sorvsan_page','page-seg_page'].includes(activePage?.id)) renderAreaPage();
   if(activePage?.id==='page-produzione')renderProduzionePage();
   if(activePage?.id==='page-dash'){renderDash(f);}
   if(activePage?.id==='page-sim'){updateSim(simInc);}
@@ -2930,14 +3059,16 @@ function renderOrg(){
     pct:'Diretto CDA',color:'#1A6B3C',bg:'#EAF4EC',bd:'#B8DBBF',
     pi:gaia?S.personale.indexOf(gaia):-1});
 
-  // ── 5 MACRO AREE sotto SSI (Formazione esclusa dal livello diretto) ─────
-  const AREA_ORDER=['comm','prod','amm','hr','sis'];
+  // ── MACRO AREE sotto SSI (SPEC-v10 §3: Formazione/Sorv.San. sotto Produzione,
+  // Marketing sotto Commerciale, Segreteria staff a lato del CDA — esclusi dal
+  // livello diretto) ───────────────────────────────────────────────────────
+  const AREA_ORDER=['comm','prod','amm'];
   const AREA_COLORS={comm:'#1A6B3C',prod:'#0F4499',form:'#4A38B0',
-    amm:'#7A4A08',hr:'#A32020',sis:'#5A5850'};
-  let nProd=null;
+    amm:'#7A4A08',mkt:'#A32020',sorvsan:'#0F4499',sis:'#5A5850'};
+  let nProd=null,nComm=null;
 
-  AREA_ORDER.forEach(areaId=>{
-    const a=S.aree.find(x=>x.id===areaId);if(!a)return;
+  function mkAreaNode(areaId,parentPct){
+    const a=S.aree.find(x=>x.id===areaId);if(!a)return null;
     const bud=areaBudget(a),cost=areaCosto(a);
     const pctBud=inc>0?((bud/inc)*100).toFixed(1):0;
     const over=bud>0&&cost>bud;
@@ -2945,28 +3076,31 @@ function renderOrg(){
     const resp=S.personale.find(p=>p.areaResp===areaId&&p.livello==='C')
             ||S.personale.find(p=>p.areaResp===areaId&&p.isResp&&!p.isCapoArea);
     const pi=resp?S.personale.indexOf(resp):-1;
-    const nA=mkN({type:'area',areaId,label:a.nome,sub:fmt(bud),
-      pct:pctBud+'% inc. — '+(resp?resp.nome.split(' ')[0]:'—'),
+    return mkN({type:'area',areaId,label:a.nome,sub:fmt(bud),
+      pct:pctBud+(parentPct||'% inc. — ')+(resp?resp.nome.split(' ')[0]:'—'),
       color:col,bg:'#fff',bd:over?'#F0B8B8':'#C8C6BE',
       over,pi,budPct:bud>0?(cost/bud)*100:0,incPct:pctBud});
+  }
+
+  AREA_ORDER.forEach(areaId=>{
+    const nA=mkAreaNode(areaId);
+    if(!nA)return;
     lnk(nSSI,nA);
     if(areaId==='prod') nProd=nA;
+    if(areaId==='comm') nComm=nA;
   });
 
-  // ── FORMAZIONE: sotto-nodo di Produzione con linea tratteggiata ──────────
-  const aForm=S.aree.find(x=>x.id==='form');
-  if(nProd&&aForm){
-    const bud=areaBudget(aForm),cost=areaCosto(aForm);
-    const pctBud=inc>0?((bud/inc)*100).toFixed(1):0;
-    const over=bud>0&&cost>bud;
-    const respF=S.personale.find(p=>p.areaResp==='form'&&p.livello==='C')
-              ||S.personale.find(p=>p.areaResp==='form'&&p.isResp&&!p.isCapoArea);
-    const piF=respF?S.personale.indexOf(respF):-1;
-    const nForm=mkN({type:'area',areaId:'form',label:aForm.nome,sub:fmt(bud),
-      pct:pctBud+'% — '+(respF?respF.nome.split(' ')[0]:'—'),
-      color:'#4A38B0',bg:'#ECEAFC',bd:'#C8C3F5',
-      over,pi:piF,budPct:bud>0?(cost/bud)*100:0,incPct:pctBud});
-    lnk(nProd,nForm,'dash');
+  // ── SOTTO-AREE con linea tratteggiata (Formazione + Sorv.San. sotto
+  // Produzione, Marketing sotto Commerciale) ───────────────────────────────
+  if(nProd){
+    const nForm=mkAreaNode('form','% — ');
+    if(nForm)lnk(nProd,nForm,'dash');
+    const nSorv=mkAreaNode('sorvsan','% — ');
+    if(nSorv)lnk(nProd,nSorv,'dash');
+  }
+  if(nComm){
+    const nMkt=mkAreaNode('mkt','% — ');
+    if(nMkt)lnk(nComm,nMkt,'dash');
   }
 
   // ── LAYOUT ──────────────────────────────────────────────────────────────
@@ -2986,7 +3120,8 @@ function renderOrg(){
   posT(nGRFM,0,0);
 
   // ── POSIZIONA LATERALI (dopo posT, coordinate aree note) ────────────────
-  const mainAreas=allN.filter(n=>n.type==='area'&&n.areaId!=='form');
+  const SUBAREA_IDS=['form','mkt','sorvsan'];
+  const mainAreas=allN.filter(n=>n.type==='area'&&!SUBAREA_IDS.includes(n.areaId));
   const aMaxX=mainAreas.length?Math.max(...mainAreas.map(n=>n.x+n.w)):nSSI.x+CW;
   const aMinX=mainAreas.length?Math.min(...mainAreas.map(n=>n.x)):nSSI.x;
 
@@ -3002,6 +3137,13 @@ function renderOrg(){
     {f:nCDA.id,   t:nUtili.id, s:'v'},
     {f:nUtili.id, t:nGaia.id,  s:'v'}
   );
+
+  // ── SEGRETERIA: staff a lato del CDA (SPEC-v10 §3) ──────────────────────
+  const nSis=mkAreaNode('sis','% — ');
+  if(nSis){
+    nSis.x=nCDA.x; nSis.y=nGaia.y+CH+20;
+    allE.push({f:nCDA.id,t:nSis.id,s:'v'});
+  }
 
   // ── SVG bounds — filtra nodi senza coordinate valide ─────────────────────
   const validN=allN.filter(n=>isFinite(n.x)&&isFinite(n.y));
@@ -3131,7 +3273,7 @@ function renderOrg(){
       pctBadge.textContent=n.incPct+'%';fg.appendChild(pctBadge);
 
       const areaPageMap={comm:'comm_page',prod:'produzione',form:'form_page',
-                         amm:'amm_page',hr:'hr_page',sis:'seg_page'};
+                         amm:'amm_page',mkt:'mkt_page',sorvsan:'sorvsan_page',sis:'seg_page'};
       fg.addEventListener('click',()=>goPage(areaPageMap[n.areaId]||n.areaId));
       fg.style.cursor='pointer';
       fg.addEventListener('mouseenter',()=>{bf.setAttribute('fill',n.color);});
@@ -3308,18 +3450,19 @@ function renderStruttura(){
     const nPers=S.personale.filter(p=>p.area===a.id).length;
     const sec=document.createElement('div');
     sec.style.cssText='background:var(--card);border:1px solid var(--lift);border-radius:var(--rl);margin-bottom:10px;overflow:hidden';
-    sec.innerHTML=`       <div style="display:flex;align-items:center;gap:10px;padding:12px 15px;cursor:pointer;user-select:none" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'':'none'">         <span class="badge ${a.tipo==='RIC'?'b-ok':'b-nd'}">${a.tipo}</span>         <span style="font-size:13px;font-weight:600">${a.nome}</span>         <span style="font-size:11px;color:var(--ink3)">${nPers} risorse</span>         <span class="mono" style="margin-left:auto;font-size:13px">${fmt(bud)}</span>         <span class="badge ${ratio>100?'b-crit':ratio>80?'b-warn':'b-ok'}">${ratio>100?'OVER':'OK'}</span>       </div>       <div style="padding:12px 15px;border-top:1px solid var(--lift)">         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center">           <div class="field" style="margin:0;flex:1;min-width:120px">             <label>Nome</label>             <input value="${a.nome}" class="inp" onblur="S.aree[${ai}].nome=this.value;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">           </div>           <div class="field" style="margin:0">             <label>Tipo</label>             <select class="inp" onblur="S.aree[${ai}].tipo=this.value;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">               <option value="SUP" ${a.tipo==='SUP'?'selected':''}>SUP</option>               <option value="RIC" ${a.tipo==='RIC'?'selected':''}>RIC</option>             </select>           </div>           <div class="field" style="margin:0">             <label>Incidenza %</label>             <input type="number" value="${+a.incPct.toFixed(4)}" step="0.01" class="inp n" style="width:80px" onblur="S.aree[${ai}].incPct=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">           </div>           <div style="display:flex;align-items:flex-end;gap:6px">             <span style="font-size:11px;padding:3px 8px;background:var(--sheet);border-radius:var(--r)">Budget: <strong class="mono">${fmt(bud)}</strong></span>             <span style="font-size:11px;padding:3px 8px;background:${ratio>100?'var(--red-bg)':'var(--sheet)'};border-radius:var(--r)">Costo: <strong class="mono" style="color:${ratio>100?'var(--red)':'inherit'}">${fmt(cost)}</strong></span>           </div>         </div>         <div style="height:3px;background:var(--lift);border-radius:2px;overflow:hidden;margin-bottom:12px">           <div style="height:100%;width:${Math.min(ratio,100)}%;background:${ratio>100?'var(--red)':ratio>80?'var(--amber)':'var(--green)'};border-radius:2px"></div>         </div>         <div style="font-size:12px;font-weight:600;margin-bottom:6px">Micro aree KPI</div>         <table style="width:100%;border-collapse:collapse;font-size:12px">           <thead><tr>             <th style="text-align:left;padding:4px 6px;font-size:10px;color:var(--ink3);border-bottom:1px solid var(--lift);text-transform:uppercase;letter-spacing:.04em">Nome</th>             <th style="padding:4px 6px;font-size:10px;color:var(--ink3);border-bottom:1px solid var(--lift);text-align:right">Target</th>             <th style="padding:4px 6px;font-size:10px;color:var(--ink3);border-bottom:1px solid var(--lift);text-align:right">Effettivo</th>             <th style="padding:4px 6px;font-size:10px;color:var(--ink3);border-bottom:1px solid var(--lift);text-align:right">%</th>             <th></th>           </tr></thead>           <tbody>${a.micro.map((m,mi)=>{const km=kpiM(m);             return`<tr>
+    sec.innerHTML=`       <div style="display:flex;align-items:center;gap:10px;padding:12px 15px;cursor:pointer;user-select:none" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'':'none'">         <span class="badge ${a.tipo==='RIC'?'b-ok':'b-nd'}">${a.tipo}</span>         <span style="font-size:13px;font-weight:600">${a.nome}</span>         ${a.parentId?`<span style="font-size:10px;color:var(--ink3)">↳ sotto ${S.aree.find(x=>x.id===a.parentId)?.nome||a.parentId}</span>`:''}         <span style="font-size:11px;color:var(--ink3)">${nPers} risorse</span>         <span class="mono" style="margin-left:auto;font-size:13px">${fmt(bud)}</span>         <span class="badge ${ratio>100?'b-crit':ratio>80?'b-warn':'b-ok'}">${ratio>100?'OVER':'OK'}</span>       </div>       <div style="padding:12px 15px;border-top:1px solid var(--lift)">         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center">           <div class="field" style="margin:0;flex:1;min-width:120px">             <label>Nome</label>             <input value="${a.nome}" class="inp" onblur="S.aree[${ai}].nome=this.value;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">           </div>           <div class="field" style="margin:0">             <label>Tipo</label>             <select class="inp" onblur="S.aree[${ai}].tipo=this.value;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">               <option value="SUP" ${a.tipo==='SUP'?'selected':''}>SUP</option>               <option value="RIC" ${a.tipo==='RIC'?'selected':''}>RIC</option>             </select>           </div>           <div class="field" style="margin:0">             <label>Incidenza %</label>             <input type="number" value="${+a.incPct.toFixed(4)}" step="0.01" class="inp n" style="width:80px" onblur="S.aree[${ai}].incPct=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">           </div>           <div style="display:flex;align-items:flex-end;gap:6px">             <span style="font-size:11px;padding:3px 8px;background:var(--sheet);border-radius:var(--r)">Budget: <strong class="mono">${fmt(bud)}</strong></span>             <span style="font-size:11px;padding:3px 8px;background:${ratio>100?'var(--red-bg)':'var(--sheet)'};border-radius:var(--r)">Costo: <strong class="mono" style="color:${ratio>100?'var(--red)':'inherit'}">${fmt(cost)}</strong></span>           </div>         </div>         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center;padding:8px 10px;background:var(--sheet);border-radius:var(--r)">           <div class="field" style="margin:0">             <label>Natura</label>             <select class="inp" onblur="S.aree[${ai}].natura=this.value;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">               ${['produttiva','costo','staff','supporto'].map(n=>`<option value="${n}" ${a.natura===n?'selected':''}>${n}</option>`).join('')}             </select>           </div>           <div class="field" style="margin:0">             <label>Sotto-area di</label>             <select class="inp" onblur="S.aree[${ai}].parentId=this.value||null;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">               <option value="">— nessuna (macro area) —</option>               ${S.aree.filter(x=>x.id!==a.id).map(x=>`<option value="${x.id}" ${a.parentId===x.id?'selected':''}>${x.nome}</option>`).join('')}             </select>           </div>           <div class="field" style="margin:0">             <label>Priorità (coperta)</label>             <select class="inp" style="width:60px" onblur="S.aree[${ai}].priorita=parseInt(this.value)||2;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">               ${[1,2,3].map(n=>`<option value="${n}" ${(a.priorita||2)===n?'selected':''}>${n}</option>`).join('')}             </select>           </div>           <div class="field" style="margin:0">             <label>Budget fisso €/mese</label>             <input type="number" value="${(a.budget&&a.budget.fisso)||0}" class="inp n" style="width:90px" onblur="S.aree[${ai}].budget=S.aree[${ai}].budget||{};S.aree[${ai}].budget.fisso=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">           </div>           <div class="field" style="margin:0">             <label>Budget variabile %</label>             <input type="number" value="${(a.budget&&a.budget.variabilePct)||0}" step="0.01" class="inp n" style="width:80px" onblur="S.aree[${ai}].budget=S.aree[${ai}].budget||{};S.aree[${ai}].budget.variabilePct=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">           </div>           ${a.natura==='produttiva'?`<div class="field" style="margin:0">             <label>Fornitore fisso €/mese</label>             <input type="number" value="${a.fornitoreFisso||0}" class="inp n" style="width:90px" onblur="S.aree[${ai}].fornitoreFisso=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">           </div>`:''}           <div class="field" style="margin:0;display:flex;align-items:center;gap:4px">             <label style="margin:0">Chiusa</label>             <input type="checkbox" ${a.chiusa?'checked':''} onchange="S.aree[${ai}].chiusa=this.checked;renderAll()">           </div>         </div>         <div style="height:3px;background:var(--lift);border-radius:2px;overflow:hidden;margin-bottom:12px">           <div style="height:100%;width:${Math.min(ratio,100)}%;background:${ratio>100?'var(--red)':ratio>80?'var(--amber)':'var(--green)'};border-radius:2px"></div>         </div>         <div style="font-size:12px;font-weight:600;margin-bottom:6px">Micro aree KPI</div>         <table style="width:100%;border-collapse:collapse;font-size:12px">           <thead><tr>             <th style="text-align:left;padding:4px 6px;font-size:10px;color:var(--ink3);border-bottom:1px solid var(--lift);text-transform:uppercase;letter-spacing:.04em">Nome</th>             <th style="padding:4px 6px;font-size:10px;color:var(--ink3);border-bottom:1px solid var(--lift);text-align:right">Target</th>             <th style="padding:4px 6px;font-size:10px;color:var(--ink3);border-bottom:1px solid var(--lift);text-align:right">Effettivo</th>             <th style="padding:4px 6px;font-size:10px;color:var(--ink3);border-bottom:1px solid var(--lift);text-align:right">%</th>             <th></th>           </tr></thead>           <tbody>${a.micro.map((m,mi)=>{const km=kpiM(m);             return`<tr>
               <td style="padding:5px 6px;border-bottom:1px solid rgba(0,0,0,.04)"><div style="display:flex;align-items:center;gap:3px"><input value="${m.nome}" style="border:none;background:transparent;flex:1;font-size:12px;outline:none;font-family:'DM Sans',sans-serif" onblur="S.aree[${ai}].micro[${mi}].nome=this.value;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">${m.note?`<span class='tip-icon' style='cursor:help'>i<span class='tip-text left'>${m.note}</span></span>`:''}</div></td>
               <td style="padding:5px 6px;border-bottom:1px solid rgba(0,0,0,.04);text-align:right"><input type="number" value="${m.kt}" class="ki" onblur="S.aree[${ai}].micro[${mi}].kt=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()"></td>
               <td style="padding:5px 6px;border-bottom:1px solid rgba(0,0,0,.04);text-align:right"><input type="number" value="${m.ke}" class="ki" onblur="S.aree[${ai}].micro[${mi}].ke=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()"></td>
               <td style="padding:5px 6px;border-bottom:1px solid rgba(0,0,0,.04);text-align:right" class="${kpiCls(km)}">${km!==null?km+'%':'—'}</td>
               <td style="padding:5px 6px;border-bottom:1px solid rgba(0,0,0,.04)"><button class="btn xs danger" onclick="S.aree[${ai}].micro.splice(${mi},1);renderAll()">✕</button></td>
-            </tr>`;}).join('')}</tbody>         </table>         <div style="display:flex;gap:6px;margin-top:8px">           <button class="btn xs prim" onclick="S.aree[${ai}].micro.push({nome:'Nuova micro area',fisso:0,bonus:0,kt:101,ke:0,note:''});renderAll()">+ Micro area</button>           <button class="btn xs danger" onclick="if(confirm('Eliminare area ${a.nome}?')){S.aree.splice(${ai},1);renderAll()}">Elimina area</button>         </div>       </div>`;
+            </tr>`;}).join('')}</tbody>         </table>         <div style="display:flex;gap:6px;margin-top:8px">           <button class="btn xs prim" onclick="S.aree[${ai}].micro.push({nome:'Nuova micro area',fisso:0,bonus:0,kt:101,ke:0,note:''});renderAll()">+ Micro area</button>           <button class="btn xs" onclick="addArea('${a.id}')">+ Sotto-area / centro di costo</button>           <button class="btn xs danger" onclick="if(confirm('Eliminare area ${a.nome}?')){S.aree.splice(${ai},1);renderAll()}">Elimina area</button>         </div>       </div>`;
     cont.appendChild(sec);
   });
 }
-function addArea(){
-  S.aree.push({id:'a'+Date.now(),nome:'Nuova area',tipo:'SUP',desc:'',incPct:0,resp:'',micro:[]});
+function addArea(parentId){
+  S.aree.push({id:'a'+Date.now(),nome:parentId?'Nuovo centro di costo':'Nuova area',tipo:'SUP',desc:'',incPct:0,resp:'',
+    parentId:parentId||null,natura:parentId?'produttiva':'costo',priorita:2,budget:{fisso:0,variabilePct:0},chiusa:false,fornitoreFisso:0,micro:[]});
   renderAll();goPage('struttura');
 }
 
@@ -3351,10 +3494,23 @@ function renderSistemaPage(){
   });
 
   // Add new voce
-  html+=`<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">     <button class="btn sm prim" onclick="addSistemaVoce()">+ Aggiungi voce</button>     <button class="btn sm" onclick="addSistemaCategoria()">+ Nuova categoria</button>     <button class="btn sm" onclick="renderSistemaPage()">↺ Aggiorna</button>   </div>   <div id="stima-tasse-wrap" style="margin-top:16px"></div>`;
+  html+=`<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">     <button class="btn sm prim" onclick="addSistemaVoce()">+ Aggiungi voce</button>     <button class="btn sm" onclick="addSistemaCategoria()">+ Nuova categoria</button>     <button class="btn sm" onclick="renderSistemaPage()">↺ Aggiorna</button>   </div>`;
+
+  // ── VOCI PRIORITARIE (SPEC-v10 §4) — priorità 1, dormienti finché la
+  // cascata a priorità (Fase 3) non le somma in flow() ──────────────────────
+  const prioritari=S.prioritari||[];
+  const totPrio=prioritari.reduce((s,v)=>s+(v.val||0),0);
+  const tipiPrio=['leasing','f24','iva','rateizzo','tfr','accantonamento','custom'];
+  html+=`<div style="margin-top:20px;margin-bottom:10px;background:var(--card);border:1px solid var(--lift);border-radius:var(--rl);padding:14px">     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">       <div style="font-size:13px;font-weight:600">Voci prioritarie — priorità 1 (${prioritari.length})</div>       <div style="font-family:'DM Mono',monospace;font-size:16px;font-weight:300">${fmt(totPrio)} <span style="font-size:11px;color:var(--ink3)">/mese</span></div>     </div>     <div style="font-size:11px;color:var(--ink3);margin-bottom:10px">Leasing, F24, IVA, rateizzi, TFR, accantonamenti — garantite prima di tutto il resto (SPEC-v10 §5). Non ancora sommate nella cascata: arriva in Fase 3.</div>     ${prioritari.map((v,i)=>`       <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(0,0,0,.03)">         <input type="text" value="${v.nome}" style="flex:1;border:none;background:transparent;font-size:12px;outline:none;font-family:'DM Sans',sans-serif;color:var(--ink)"           onblur="S.prioritari[${i}].nome=this.value;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">         <select style="padding:3px 6px;border:1px solid var(--lift);border-radius:var(--r);font-size:11px;background:var(--sheet)"           onblur="S.prioritari[${i}].tipo=this.value;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">           ${tipiPrio.map(t=>`<option value="${t}" ${v.tipo===t?'selected':''}>${t}</option>`).join('')}         </select>         <input type="number" value="${v.val||0}" style="width:90px;padding:3px 6px;border:1px solid var(--lift);border-radius:var(--r);font-size:12px;font-family:'DM Mono',monospace;text-align:right;background:${(v.val||0)>0?'var(--blue-bg)':'var(--card)'}"           onblur="S.prioritari[${i}].val=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">         <span style="font-size:10px;color:var(--ink3);min-width:30px">/mese</span>         <button class="btn xs" style="padding:2px 6px;color:var(--red);border-color:var(--red)"           onclick="if(confirm('Eliminare voce prioritaria?')){S.prioritari.splice(${i},1);renderAll()}">✕</button>       </div>`).join('')}     <button class="btn sm prim" style="margin-top:8px" onclick="addPrioritario()">+ Voce prioritaria</button>   </div>   <div id="stima-tasse-wrap" style="margin-top:16px"></div>`;
 
   el.innerHTML=html;
   renderStimeTasse();
+}
+function addPrioritario(){
+  S.prioritari=S.prioritari||[];
+  S.prioritari.push({id:'pr_'+Date.now(),nome:'Nuova voce prioritaria',val:0,tipo:'custom',priorita:1});
+  renderSistemaPage();
+  notify('Voce prioritaria aggiunta');
 }
 
 function addSistemaVoce(){
@@ -3414,10 +3570,6 @@ function calcolaStimeTasse(){
   notify('Stime tasse aggiornate su incassato '+fmt(inc));
 }
 function renderSistema(){renderStep2();renderSistemaPage();}
-function addSistemaVoce(){
-  if(!S.sistemaFissi)S.sistemaFissi=[];
-  S.sistemaFissi.push({id:'sf'+Date.now(),nome:'Nuova voce',cat:'altro',val:0});
-}
 
 // ── DASHBOARD ─────────────────────────────
 
@@ -3871,7 +4023,7 @@ function showFormulaPopup(pi,si){
 
 // ── AGGIUNGI RISORSA MODAL ────────────────────────────────────────────────────
 function openAddRisorsaModal(areaId){
-  const labels={comm:'Commerciale',prod:'Produzione',form:'Formazione',amm:'Amministrazione',hr:'HR & Marketing',seg:'Segreteria'};
+  const labels={comm:'Commerciale',prod:'Produzione',form:'Formazione',amm:'Amministrazione',mkt:'Marketing',sorvsan:'Sorveglianza Sanitaria',seg:'Segreteria'};
   const areaLabel=labels[areaId]||areaId;
   const persAreaId=areaId==='seg'?'sis':areaId;
   document.getElementById('pop-title').textContent='+ Aggiungi risorsa — '+areaLabel;
@@ -4028,20 +4180,21 @@ function sectionHdr(title, color){
 let activeAreaPage = 'comm';
 
 function renderAreaDirect(areaKey){
-  const pageMap={comm:'comm_page',form:'form_page',amm:'amm_page',hr:'hr_page',seg:'seg_page'};
+  const pageMap={comm:'comm_page',form:'form_page',amm:'amm_page',mkt:'mkt_page',sorvsan:'sorvsan_page',seg:'seg_page'};
   const pageId=pageMap[areaKey]; if(!pageId) return;
   const el=document.getElementById('area-content-'+pageId); if(!el) return;
   if(areaKey==='comm')      renderAreaComm(el);
   else if(areaKey==='form') renderAreaForm(el);
   else if(areaKey==='amm')  renderAreaAmm(el);
-  else if(areaKey==='hr')   renderAreaHR(el);
+  else if(areaKey==='mkt')  renderAreaMkt(el);
+  else if(areaKey==='sorvsan') renderAreaSorvSan(el);
   else if(areaKey==='seg')  renderAreaSeg(el);
 }
 
 function renderAreaPage(){
   const reverseMap={
     'page-comm_page':'comm','page-form_page':'form',
-    'page-amm_page':'amm','page-hr_page':'hr','page-seg_page':'seg'
+    'page-amm_page':'amm','page-mkt_page':'mkt','page-sorvsan_page':'sorvsan','page-seg_page':'seg'
   };
   const ap=document.querySelector('.page.on'); if(!ap) return;
   const areaKey=reverseMap[ap.id]; if(!areaKey) return;
@@ -4375,23 +4528,18 @@ function renderAreaAmm(el){
   renderAreaKPIInto(el,'amm');
 }
 
-function renderAreaHR(el){
-  setTimeout(function(){renderMiniOrg('mini-org-hr','hr');},50);
+function renderAreaMkt(el){
+  setTimeout(function(){renderMiniOrg('mini-org-mkt','mkt');},50);
   if(!S.datiArea)S.datiArea={};
-  if(!S.datiArea.hr)S.datiArea.hr={colloquiNr:0,assunzioniNr:0,costoAssunzioneEur:0,soddisfazione:0,formazioniCompletate:0,costoAgenziaEur:0,costoAdsEur:0,fornitoriMKT:[{nome:'Telesales',tipo:'fornitore',val:0},{nome:'Marco il Coso',tipo:'fornitore',val:0},{nome:'Canva',tipo:'strumento',val:0}],programmiMKT:[],vociExtra:[],note:''};
-  var d=S.datiArea.hr;
+  if(!S.datiArea.mkt)S.datiArea.mkt={costoAgenziaEur:0,costoAdsEur:0,fornitoriMKT:[{nome:'Telesales',tipo:'fornitore',val:0},{nome:'Marco il Coso',tipo:'fornitore',val:0},{nome:'Canva',tipo:'strumento',val:0}],programmiMKT:[],vociExtra:[],note:''};
+  var d=S.datiArea.mkt;
   el.innerHTML='';
-
-  var warn=document.createElement('div');
-  warn.style.cssText='background:var(--amber-bg);border:1px solid #F5D898;border-radius:var(--r);padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--amber)';
-  warn.textContent='Attenzione: Area HR non presidiata al momento. Michela (collab.) riporta a Marketing.';
-  el.appendChild(warn);
 
   el.appendChild(mkSectionHdr('Costi Marketing MKT','#A32020'));
   var mktGrid=mkGrid(2); el.appendChild(mktGrid);
   [['Costo agenzia esterna','costoAgenziaEur'],['Costo pubblicita Ads','costoAdsEur']].forEach(function(fv){
     var inp=mkInput('number',d[fv[1]]||0,'',
-      'S.datiArea.hr.'+fv[1]+'=parseFloat(this.value)||0');
+      'S.datiArea.mkt.'+fv[1]+'=parseFloat(this.value)||0');
     var row=document.createElement('div');
     row.style.cssText='display:flex;align-items:center;gap:6px';
     row.appendChild(inp);
@@ -4408,7 +4556,7 @@ function renderAreaHR(el){
   el.appendChild(fornHdr);
 
   function renderFornitori(){
-    var listId='forn-list-hr';
+    var listId='forn-list-mkt';
     var existing=document.getElementById(listId);
     if(existing)existing.remove();
     var list=document.createElement('div');
@@ -4442,9 +4590,43 @@ function renderAreaHR(el){
 
   var resetBtn=document.createElement('button');
   resetBtn.className='btn sm'; resetBtn.textContent='Azzera mese';
-  resetBtn.onclick=function(){resetAreaDati('hr');};
+  resetBtn.onclick=function(){resetAreaDati('mkt');};
   el.appendChild(resetBtn);
-  renderAreaKPIInto(el,'hr');
+  renderAreaKPIInto(el,'mkt');
+}
+
+function renderAreaSorvSan(el){
+  setTimeout(function(){renderMiniOrg('mini-org-sorvsan','sorvsan');},50);
+  if(!S.datiArea)S.datiArea={};
+  if(!S.datiArea.sorvsan)S.datiArea.sorvsan={visiteEffettuateNr:0,nuoviMcNr:0,note:''};
+  var d=S.datiArea.sorvsan;
+  el.innerHTML='';
+
+  el.appendChild(mkSectionHdr('Sorveglianza Sanitaria — dati mensili','#0F4499'));
+  var grid=mkGrid(3); el.appendChild(grid);
+  [['Visite effettuate','visiteEffettuateNr'],['Nuovi MC attivati','nuoviMcNr']].forEach(function(fv){
+    var inp=mkInput('number',d[fv[1]]||0,'',
+      'S.datiArea.sorvsan.'+fv[1]+'=parseFloat(this.value)||0');
+    var row=document.createElement('div');
+    row.style.cssText='display:flex;align-items:center;gap:6px';
+    row.appendChild(inp);
+    grid.appendChild(mkCard(fv[0], row));
+  });
+
+  var noteCard=document.createElement('div');
+  noteCard.style.cssText='background:var(--card);border:1px solid var(--lift);border-radius:var(--r);padding:10px 12px';
+  noteCard.innerHTML='<div style="font-size:10px;color:var(--ink3);margin-bottom:4px">Note</div>';
+  var ta=document.createElement('textarea');
+  ta.style.cssText='width:100%;font-size:11px;border:1px solid var(--lift);border-radius:var(--r);padding:4px 6px;resize:none;background:var(--sheet)';
+  ta.rows=2; ta.value=d.note||'';
+  ta.addEventListener('blur',function(){S.datiArea.sorvsan.note=this.value;});
+  noteCard.appendChild(ta); grid.appendChild(noteCard);
+
+  var resetBtn=document.createElement('button');
+  resetBtn.className='btn sm'; resetBtn.textContent='Azzera mese';
+  resetBtn.onclick=function(){resetAreaDati('sorvsan');};
+  el.appendChild(resetBtn);
+  renderAreaKPIInto(el,'sorvsan');
 }
 
 function renderAreaSeg(el){
@@ -4523,7 +4705,8 @@ function renderMiniOrg(containerId, areaId){
     prod:{dir:'#0F4499',bg:'#E2EDFC',bd:'#B5D2F8'},
     form:{dir:'#4A38B0',bg:'#ECEAFC',bd:'#C8C3F5'},
     amm:{dir:'#7A4A08',bg:'#FDF1DC',bd:'#F5D898'},
-    hr:{dir:'#A32020',bg:'#FCEAEA',bd:'#F0B8B8'},
+    mkt:{dir:'#A32020',bg:'#FCEAEA',bd:'#F0B8B8'},
+    sorvsan:{dir:'#0F4499',bg:'#E2EDFC',bd:'#B5D2F8'},
     sis:{dir:'#5A5850',bg:'#F2F1ED',bd:'#C8C6BE'},
   };
   const C=COLORS[areaId]||COLORS.sis;
@@ -4644,9 +4827,9 @@ function renderMiniOrg(containerId, areaId){
     });
     nFra._add={label:'+ Risorsa',areaId:'amm'};
 
-  } else if(areaId==='hr'){
+  } else if(areaId==='mkt'){
     const mar=S.personale.find(p=>p.id==='p02');
-    const nMar=mkN({type:'dir',label:'Marco Macinai',pct:'Dir. HR & MKT',
+    const nMar=mkN({type:'dir',label:'Marco Macinai',pct:'Dir. Marketing',
       color:C.dir,bg:C.bg,bd:C.bd,pi:S.personale.indexOf(mar)});
     const mic=S.personale.find(p=>p.id==='p_mic');
     if(mic){
@@ -4655,7 +4838,7 @@ function renderMiniOrg(containerId, areaId){
       link(nMar,nMic);
     }
     // Fornitori MKT come nodi speciali
-    const forn=(S.datiArea?.hr?.fornitoriMKT||[]).slice(0,3);
+    const forn=(S.datiArea?.mkt?.fornitoriMKT||[]).slice(0,3);
     if(forn.length){
       const nForn=mkN({type:'group',label:'Fornitori MKT',pct:forn.length+' attivi',
         color:'#4A38B0',bg:'#ECEAFC',bd:'#C8C3F5',_toggle:'miniMktForn'});
@@ -4668,7 +4851,18 @@ function renderMiniOrg(containerId, areaId){
         });
       }
     }
-    nMar._add={label:'+ Risorsa',areaId:'hr'};
+    nMar._add={label:'+ Risorsa',areaId:'mkt'};
+
+  } else if(areaId==='sorvsan'){
+    const nSorv=mkN({type:'dir',label:'Sorveglianza Sanitaria',pct:'Area produttiva',
+      color:C.dir,bg:C.bg,bd:C.bd,pi:-1});
+    S.personale.filter(p=>p.area==='sorvsan').forEach(p=>{
+      const nP=mkN({type:'agent',label:p.nome.split(' ')[0],
+        pct:'Sorv. Sanitaria',color:'#0F4499',bg:'#E2EDFC',bd:'#B5D2F8',
+        pi:S.personale.indexOf(p)});
+      link(nSorv,nP);
+    });
+    nSorv._add={label:'+ Risorsa',areaId:'sorvsan'};
 
   } else if(areaId==='sis'){
     const nSis=mkN({type:'dir',label:'Segreteria',pct:'Area sistema',
@@ -5219,7 +5413,8 @@ function goPage(id, btn){
     comm_page:['Commerciale','Venduto, incassato, provvigioni, KPI agenti'],
     form_page:['Formazione','Ore erogate, persone aula, corsi, valore economico'],
     amm_page:['Amministrazione','Cash flow, fatture, F24, DSO, ottimizzazioni'],
-    hr_page:['HR','Colloqui, assunzioni, soddisfazione + costi MKT'],
+    mkt_page:['Marketing','Costi campagne, fornitori, ROI, lead'],
+    sorvsan_page:['Sorveglianza Sanitaria','Visite, nuovi MC, KPI area'],
     seg_page:['Segreteria','Chiamate, scadenze, richieste soci'],
     dash:['Dashboard CDA','Semafori e grafici mese corrente'],
     storico:['Storico mensile','Tutti gli snapshot salvati'],
@@ -5233,7 +5428,8 @@ function goPage(id, btn){
   if(id==='comm_page') setTimeout(()=>renderAreaDirect('comm'),30);
   else if(id==='form_page') setTimeout(()=>renderAreaDirect('form'),30);
   else if(id==='amm_page') setTimeout(()=>renderAreaDirect('amm'),30);
-  else if(id==='hr_page') setTimeout(()=>renderAreaDirect('hr'),30);
+  else if(id==='mkt_page') setTimeout(()=>renderAreaDirect('mkt'),30);
+  else if(id==='sorvsan_page') setTimeout(()=>renderAreaDirect('sorvsan'),30);
   else if(id==='seg_page') setTimeout(()=>renderAreaDirect('seg'),30);
   if(id==='sim'){
     const sl=document.getElementById('sim-slider');
