@@ -1962,10 +1962,17 @@ const DEF={
     {nome:'Accantonamenti',   pct:10.65,desc:'TFR, fondo rischi, riserva liquidità (target 3 mesi costi fissi)'},
   ],
 
-  // Voci prioritarie (priorità 1 — leasing/F24/IVA/rateizzi/TFR/accantonamenti, SPEC-v10 §4).
-  // Popolate dall'import PF (classificazione automatica) o a mano. Dormienti: non ancora
-  // sommate in flow() — la cascata a priorità è SPEC-v10 §5/§8, Fase 3.
+  // Voci prioritarie (default priorità 1 — leasing/F24/IVA/rateizzi/TFR/accantonamenti,
+  // SPEC-v10 §4). Popolate dall'import PF (classificazione automatica) o a mano.
+  // Sommate in flow() per priorità corrente — SPEC-v10 §5/§8, Fase 3.
   prioritari:[],
+  // Priorità di Sistema (overhead) e Tasse, ora voci "prioritarie" aggregate nella
+  // cascata invece di un termine fisso a parte (scelta esplicita Fase 3).
+  prioritaSistema:1,
+  prioritaTasse:1,
+  // Premi: voce residuale semplice (priorità 3 di default) — il motore KPI/slider/
+  // soglia sostenibilità è SPEC-v10 §9/§11, Fase 5, non ancora implementato.
+  premi:{val:0,priorita:3},
 
   sistemaFissi:[
     // ── AUTO AZIENDALI ────────────────────────────────────────────────────
@@ -2212,7 +2219,7 @@ const DEF={
 
     // ─── SOCI / DIRIGENTI ─────────────────────────────────────────────────
 
-    {id:'p01',nome:'Roberto Macinai',ruolo_principale:'Direttore Vendite',area:'comm',areaResp:'comm',
+    {id:'p01',nome:'Roberto Macinai',ruolo_principale:'Direttore Vendite',natura:'socio',fissoMensile:4800,area:'comm',areaResp:'comm',
      tipo_contratto:'MISTO',tariffaOraria:50,isResp:true,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'C',
      note:'Socio. Fisso in funzione ore ruolo DV. Provvigioni vendite personali: 50% Roberto, 50% azienda.',
      slots:[
@@ -2240,7 +2247,7 @@ const DEF={
               visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}
      ]},
 
-    {id:'p02',nome:'Marco Macinai',ruolo_principale:'Dir. Marketing',area:'mkt',areaResp:'mkt',
+    {id:'p02',nome:'Marco Macinai',ruolo_principale:'Dir. Marketing',natura:'socio',fissoMensile:4800,area:'mkt',areaResp:'mkt',
      tipo_contratto:'MISTO',tariffaOraria:45,isResp:true,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'C',
      note:'Socio. Resp HR + MKT. Provvigioni vendite diviso 2.',
      slots:[
@@ -2250,7 +2257,7 @@ const DEF={
        {id:'s_mar_vend',tipo:'vendite',area:'comm',label:'Vendite personali (50%)',comp:{fisso:{on:false,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:true,venduto:0,pct:3,prov_azienda:50},incassato:{on:false,pctArea:0},comm_crm:{on:true,val:0},bonus_kpi:{on:false,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:false,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:0},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}
      ]},
 
-    {id:'p03',nome:'Giovanna Panti',ruolo_principale:'Dir. Produzione',area:'prod',areaResp:'prod',
+    {id:'p03',nome:'Giovanna Panti',ruolo_principale:'Dir. Produzione',natura:'socio',fissoMensile:4800,area:'prod',areaResp:'prod',
      tipo_contratto:'MISTO',tariffaOraria:45,isResp:true,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'C',
      note:'Socia. Resp. Produzione. Docenze e documenti extra. Provvigioni vendite diviso 2.',
      slots:[
@@ -2259,7 +2266,7 @@ const DEF={
        {id:'s_gio_vend',tipo:'vendite',area:'comm',label:'Vendite personali (50%)',comp:{fisso:{on:false,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:true,venduto:0,pct:3,prov_azienda:50},incassato:{on:false,pctArea:0},comm_crm:{on:true,val:0},bonus_kpi:{on:false,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:false,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:0},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}
      ]},
 
-    {id:'p04',nome:'Francesco Martini',ruolo_principale:'CFO / Dir. Amministrazione',area:'amm',areaResp:'amm',
+    {id:'p04',nome:'Francesco Martini',ruolo_principale:'CFO / Dir. Amministrazione',natura:'socio',fissoMensile:4800,area:'amm',areaResp:'amm',
      tipo_contratto:'MISTO',tariffaOraria:45,isResp:true,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'C',
      note:'Socio. Fisso in funzione ore dedicate al ruolo.',
      slots:[
@@ -2267,7 +2274,7 @@ const DEF={
      ]},
     // ─── COMMERCIALE ──────────────────────────────────────────────────────
 
-    {id:'p05',nome:'Alessandro Raia',ruolo_principale:'Capo Area Fiorentina',area:'comm',areaResp:'comm',
+    {id:'p05',nome:'Alessandro Raia',ruolo_principale:'Capo Area Fiorentina',natura:'piva',area:'comm',areaResp:'comm',
      tipo_contratto:'DIP',tariffaOraria:30,isResp:true,isCapoArea:true,capoAreaDi:'comm',agentiIds:['p_mru','p_alb'],livello:'B',
      note:'CA. % incassato azienda. Vendite personali diviso 2. % su agenti.',
      slots:[
@@ -2277,7 +2284,7 @@ const DEF={
         comp:{fisso:{on:false,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:true,venduto:0,pct:3,prov_azienda:50},incassato:{on:false,pctArea:0},comm_crm:{on:true,val:0},bonus_kpi:{on:false,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:false,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:0},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}
      ]},
 
-    {id:'p06',nome:'Massimo Necci',ruolo_principale:'Capo Area Senese',area:'comm',areaResp:'comm',
+    {id:'p06',nome:'Massimo Necci',ruolo_principale:'Capo Area Senese',natura:'dipendente',area:'comm',areaResp:'comm',
      tipo_contratto:'DIP',tariffaOraria:30,isResp:true,isCapoArea:true,capoAreaDi:'comm',agentiIds:['p_dav','p_gig','p01','p02','p03'],livello:'B',
      note:'Tecnico senior con potenziale CA. Al momento no agenti.',
      slots:[
@@ -2286,75 +2293,75 @@ const DEF={
         comp:{fisso:{on:false,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:true,venduto:0,pct:3,prov_azienda:50},incassato:{on:false,pctArea:0},comm_crm:{on:true,val:0},bonus_kpi:{on:false,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:false,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:0},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}
      ]},
 
-    {id:'p_dav',nome:'Davide Gaziano',ruolo_principale:'Agente Commerciale',area:'comm',areaResp:'comm',
+    {id:'p_dav',nome:'Davide Gaziano',ruolo_principale:'Agente Commerciale',natura:'piva',area:'comm',areaResp:'comm',
      tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
      note:'Agente. % su incassato. Fisso al raggiungimento soglia X. Bonus canvass.',
      slots:[{id:'s_dav_ag',tipo:'vendite',area:'comm',label:'Vendite agente',
       comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:true,venduto:0,pct:0,prov_azienda:0},incassato:{on:true,pctArea:0},comm_crm:{on:true,val:0},bonus_kpi:{on:true,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:false,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:0},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}]},
 
-    {id:'p_alb',nome:'Alberto Mancini',ruolo_principale:'Agente Commerciale',area:'comm',areaResp:'comm',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',note:'Agente.',
+    {id:'p_alb',nome:'Alberto Mancini',ruolo_principale:'Agente Commerciale',natura:'piva',area:'comm',areaResp:'comm',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',note:'Agente.',
      slots:[{id:'s_alb_ag',tipo:'vendite',area:'comm',label:'Vendite agente',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:true,venduto:0,pct:0,prov_azienda:0},incassato:{on:true,pctArea:0},comm_crm:{on:true,val:0},bonus_kpi:{on:true,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:false,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:0},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}]},
 
-    {id:'p_gig',nome:'Gigliola',ruolo_principale:'Agente Commerciale',area:'comm',areaResp:'comm',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',note:'Agente.',
+    {id:'p_gig',nome:'Gigliola',ruolo_principale:'Agente Commerciale',natura:'piva',area:'comm',areaResp:'comm',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',note:'Agente.',
      slots:[{id:'s_gig_ag',tipo:'vendite',area:'comm',label:'Vendite agente',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:true,venduto:0,pct:0,prov_azienda:0},incassato:{on:true,pctArea:0},comm_crm:{on:true,val:0},bonus_kpi:{on:true,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:false,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:0},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}]},
 
-    {id:'p_mru',nome:'Mario Rufolo',ruolo_principale:'Agente Commerciale',area:'comm',areaResp:'comm',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',note:'Agente.',
+    {id:'p_mru',nome:'Mario Rufolo',ruolo_principale:'Agente Commerciale',natura:'piva',area:'comm',areaResp:'comm',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',note:'Agente.',
      slots:[{id:'s_mru_ag',tipo:'vendite',area:'comm',label:'Vendite agente',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:true,venduto:0,pct:0,prov_azienda:0},incassato:{on:true,pctArea:0},comm_crm:{on:true,val:0},bonus_kpi:{on:true,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:false,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:0},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}]},
 
     // ─── PRODUZIONE ───────────────────────────────────────────────────────
 
-    {id:'p07',nome:'Samuele',ruolo_principale:'RTO — Resp. Tecnico Organizzativo',area:'prod',areaResp:'prod',
+    {id:'p07',nome:'Samuele',ruolo_principale:'RTO — Resp. Tecnico Organizzativo',natura:'dipendente',area:'prod',areaResp:'prod',
      tipo_contratto:'DIP',tariffaOraria:30,isResp:true,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'B',
      note:'RTO. Fisso + docenze + documenti personali + bonus coordinamento gruppo (% su generato gruppo).',
      slots:[
        {id:'s_sam_rto',tipo:'responsabilita',area:'prod',label:'RTO Fisso + docenze',
         comp:{fisso:{on:true,val:2800},ore_form:{on:true,ore:0,tariffa:30},pratiche:{on:true,nr:0,tariffa:12},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:true,val:0},bonus_kpi:{on:true,val:800,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:true,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:true,ore_previste:80,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:false,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:0},generato_rto:{on:true,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}
      ]},
-    {id:'p_sil',nome:'Silvia',ruolo_principale:'Tecnico',area:'prod',areaResp:'prod',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
+    {id:'p_sil',nome:'Silvia',ruolo_principale:'Tecnico',natura:'dipendente',area:'prod',areaResp:'prod',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
      note:'Tecnico produzione. Generato calcolato su 7 voci. Obiettivo attivazione: €7500.',
      slots:[
        {id:'s_p_sil_tec',tipo:'tecnico',area:'prod',label:'Attività produzione',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:true,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:true,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:7500},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}
      ]},
-    {id:'p_eli',nome:'Elia',ruolo_principale:'Tecnico',area:'prod',areaResp:'prod',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
+    {id:'p_eli',nome:'Elia',ruolo_principale:'Tecnico',natura:'dipendente',area:'prod',areaResp:'prod',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
      note:'Tecnico produzione. Generato calcolato su 7 voci. Obiettivo attivazione: €7500.',
      slots:[
        {id:'s_p_eli_tec',tipo:'tecnico',area:'prod',label:'Attività produzione',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:true,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:true,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:7500},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}
      ]},
-    {id:'p_pel',nome:'Francesco Pelliccia',ruolo_principale:'Tecnico',area:'prod',areaResp:'prod',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
+    {id:'p_pel',nome:'Francesco Pelliccia',ruolo_principale:'Tecnico',natura:'dipendente',area:'prod',areaResp:'prod',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
      note:'Tecnico produzione. Generato calcolato su 7 voci. Obiettivo attivazione: €5000.',
      slots:[
        {id:'s_p_pel_tec',tipo:'tecnico',area:'prod',label:'Attività produzione',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:true,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:true,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:5000},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}
      ]},
-    {id:'p_sim',nome:'Simone',ruolo_principale:'Tecnico',area:'prod',areaResp:'prod',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
+    {id:'p_sim',nome:'Simone',ruolo_principale:'Tecnico',natura:'dipendente',area:'prod',areaResp:'prod',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
      note:'Tecnico produzione. Generato calcolato su 7 voci. Obiettivo attivazione: €7500.',
      slots:[
        {id:'s_p_sim_tec',tipo:'tecnico',area:'prod',label:'Attività produzione',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:true,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:true,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:7500},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}
      ]},
-    {id:'p_guc',nome:'Guccio',ruolo_principale:'Tecnico',area:'prod',areaResp:'prod',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
+    {id:'p_guc',nome:'Guccio',ruolo_principale:'Tecnico',natura:'dipendente',area:'prod',areaResp:'prod',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
      note:'Tecnico produzione. Generato calcolato su 7 voci. Obiettivo attivazione: €6000.',
      slots:[
        {id:'s_p_guc_tec',tipo:'tecnico',area:'prod',label:'Attività produzione',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:true,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:true,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:6000},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}
      ]},
-    {id:'p_ale',nome:'Alessandro',ruolo_principale:'Tecnico',area:'prod',areaResp:'prod',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
+    {id:'p_ale',nome:'Alessandro',ruolo_principale:'Tecnico',natura:'piva',area:'prod',areaResp:'prod',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
      note:'Tecnico produzione. Generato calcolato su 7 voci. Obiettivo attivazione: €7500.',
      slots:[
        {id:'s_p_ale_tec',tipo:'tecnico',area:'prod',label:'Attività produzione',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:true,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:true,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:7500},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}
      ]},
-    {id:'p_ces',nome:'Cesare',ruolo_principale:'Tecnico',area:'prod',areaResp:'prod',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
+    {id:'p_ces',nome:'Cesare',ruolo_principale:'Tecnico',natura:'dipendente',area:'prod',areaResp:'prod',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
      note:'Tecnico produzione. Generato calcolato su 7 voci. Obiettivo attivazione: €6500.',
      slots:[
        {id:'s_p_ces_tec',tipo:'tecnico',area:'prod',label:'Attività produzione',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:true,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:true,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:6500},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}
      ]},
     // ─── FORMAZIONE ───────────────────────────────────────────────────────
 
-    {id:'p11',nome:'Niccolò',ruolo_principale:'Responsabile Formazione',area:'form',areaResp:'form',
+    {id:'p11',nome:'Niccolò',ruolo_principale:'Responsabile Formazione',natura:'dipendente',area:'form',areaResp:'form',
      tipo_contratto:'DIP',tariffaOraria:30,isResp:true,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'B',
      note:'RF. Fisso in funzione ore ruolo. Bonus KPI.',
      slots:[
        {id:'s_nic_rf',tipo:'responsabilita',area:'form',label:'Resp. Formazione',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:true,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:true,ore_previste:80,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:false,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:0},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}
      ]},
 
-    {id:'p12',nome:'Gaia',ruolo_principale:'Coord. Sorveglianza Sanitaria',area:'prod',areaResp:'prod',
+    {id:'p12',nome:'Gaia',ruolo_principale:'Coord. Sorveglianza Sanitaria',natura:'dipendente',area:'prod',areaResp:'prod',
      tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
      note:'Coord. Medici Competenti. Bonus: €1/visita oltre 180. €50 per ogni nuovo MC contrattualizzato.',
      slots:[
@@ -2364,33 +2371,33 @@ const DEF={
 
     // ─── AMMINISTRAZIONE / SISTEMA ────────────────────────────────────────
 
-    {id:'p15',nome:'Mattia Guardiani',ruolo_principale:'Amministrazione',area:'amm',areaResp:'amm',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',note:'% su incassato. Fisso.',
+    {id:'p15',nome:'Mattia Guardiani',ruolo_principale:'Amministrazione',natura:'dipendente',area:'amm',areaResp:'amm',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',note:'% su incassato. Fisso.',
      slots:[{id:'s_mat_amm',tipo:'tecnico',area:'amm',label:'Amministrazione',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:true,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:false,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:false,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:0},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}]},
 
     // Michela — collaboratrice MKT
-    {id:'p_mic',nome:'Michela',ruolo_principale:'Collaboratrice Marketing',area:'mkt',areaResp:'mkt',
+    {id:'p_mic',nome:'Michela',ruolo_principale:'Collaboratrice Marketing',natura:'piva',area:'mkt',areaResp:'mkt',
      tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
      note:'Collaboratrice MKT. Tipo contratto da definire.',
      slots:[{id:'s_mic_mkt',tipo:'supervisione',area:'mkt',label:'Marketing',comp:{fisso:{on:false,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:false,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:false,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:0},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}]},
 
     // Valentina Caserta — AMM, in maternità
-    {id:'p_val',nome:'Valentina Caserta',ruolo_principale:'Amministrazione',area:'amm',areaResp:'amm',
+    {id:'p_val',nome:'Valentina Caserta',ruolo_principale:'Amministrazione',natura:'dipendente',area:'amm',areaResp:'amm',
      tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
      note:'In maternità. Costo mensile lordo ~€2.200. Rientro da definire.',
      inMaternita:true,
      slots:[{id:'s_val_amm',tipo:'supervisione',area:'amm',label:'Amministrazione',comp:{fisso:{on:false,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:false,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:false,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:0},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}]},
 
     // Alessandro Biotti — tecnico
-    {id:'p_bio',nome:'Alessandro Biotti',ruolo_principale:'Tecnico',area:'prod',areaResp:'prod',
+    {id:'p_bio',nome:'Alessandro Biotti',ruolo_principale:'Tecnico',natura:'dipendente',area:'prod',areaResp:'prod',
      tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
      note:'Tecnico produzione. Costo lordo ~€2.050/mese.',
      slots:[{id:'s_bio_tec',tipo:'tecnico',area:'prod',label:'Attività produzione',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:true,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:true,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:6000},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}]},
 
 
-    {id:'pBO1',nome:'Segreteria Direzione',ruolo_principale:'Backoffice',area:'sis',areaResp:'sis',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',note:'',
+    {id:'pBO1',nome:'Segreteria Direzione',ruolo_principale:'Backoffice',natura:'piva',area:'sis',areaResp:'sis',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',note:'',
      slots:[{id:'s_bo1',tipo:'supervisione',area:'sis',label:'Backoffice',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:false,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:false,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:0},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}]},
 
-    {id:'pMKT',nome:'Marketing',ruolo_principale:'Marketing',area:'comm',areaResp:'comm',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',note:'',
+    {id:'pMKT',nome:'Marketing',ruolo_principale:'Marketing',natura:'piva',area:'comm',areaResp:'comm',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',note:'',
      slots:[{id:'s_mkt',tipo:'supervisione',area:'mkt',label:'Marketing',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:false,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:false,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:0},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}]},
 
   ]
@@ -2477,6 +2484,50 @@ function calcSlot(p, slot){
 
 
 // Calcola compenso totale persona (somma di tutti gli slot)
+// ── PERSONALE A LORDO — natura dipendente/socio/P.IVA (SPEC-v10 §7, Fase 3) ──
+// Sostituisce SOLO il garantito (prima: Σ slot.comp.fisso.val, quasi sempre 0).
+// Le componenti variabili (venduto, capo_agenti, generato_tecnico, ecc. in calcSlot)
+// restano identiche — servono per centri di costo e premi nelle fasi successive.
+function stripAccents(s){return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');}
+function nameTokens(s){return stripAccents(s).toLowerCase().replace(/[^a-z\s]+/g,' ').split(/\s+/).filter(Boolean);}
+
+// Matching bipartito greedy tra le persone natura='dipendente' e i 13 record del
+// file importato (S.importDipendenti): risolve per specificità (più token in comune
+// vince) e unicità (un record del file non può essere assegnato a due persone) —
+// evita che un nome generico (es. "Alessandro") rubi il match di uno più specifico
+// (es. "Alessandro Biotti") quando entrambi condividono un token col file.
+function matchDipendenteRecord(p){
+  if(p.natura!=='dipendente')return null;
+  const dipendenti=S.importDipendenti||[];
+  if(!dipendenti.length)return null;
+  const candidates=[];
+  S.personale.filter(x=>x.natura==='dipendente').forEach(pp=>{
+    const ppt=new Set(nameTokens(pp.nome));
+    if(!ppt.size)return;
+    dipendenti.forEach(d=>{
+      const dt=new Set(nameTokens(d.nome));
+      if([...ppt].every(t=>dt.has(t)))candidates.push({pid:pp.id,dnome:d.nome,score:ppt.size});
+    });
+  });
+  candidates.sort((a,b)=>b.score-a.score);
+  const usedP=new Set(),usedD=new Set();
+  let winner=null;
+  candidates.forEach(c=>{
+    if(usedP.has(c.pid)||usedD.has(c.dnome))return;
+    usedP.add(c.pid);usedD.add(c.dnome);
+    if(c.pid===p.id)winner=c.dnome;
+  });
+  return winner?dipendenti.find(d=>d.nome===winner)||null:null;
+}
+function garantitoNatura(p){
+  if(p.natura==='dipendente'){
+    const rec=matchDipendenteRecord(p);
+    return rec?rec.costoAziendaMensile:0;
+  }
+  if(p.natura==='socio')return p.fissoMensile||0;
+  return 0; // piva: nessun garantito, il compenso è variabile/area
+}
+
 function calcPersona(p){
   const slots = p.slots || [];
   if(slots.length === 0){
@@ -2484,15 +2535,17 @@ function calcPersona(p){
     return calcSlotLegacy(p);
   }
   const results = slots.map(sl => calcSlot(p, sl));
-  const totale   = results.reduce((s,r)=>s+r.totale,0);
-  const garantito= results.reduce((s,r)=>s+r.garantito,0);
+  const totaleSlot = results.reduce((s,r)=>s+r.totale,0);
+  const garantitoSlot= results.reduce((s,r)=>s+r.garantito,0);
+  const garantito = garantitoNatura(p);
+  const totale   = totaleSlot - garantitoSlot + garantito; // sostituisce solo il garantito
   const variabile= results.reduce((s,r)=>s+r.variabile,0);
   const condizionale=results.reduce((s,r)=>s+r.condizionale,0);
   const commissioni=results.reduce((s,r)=>s+r.commissioni,0);
   const capo_prov=results.reduce((s,r)=>s+r.capo_prov,0);
   const kpiOk=results.some(r=>r.kpiOk);
   // For bar chart
-  const fisso=results.reduce((s,r)=>s+r.fisso,0);
+  const fisso=garantito;
   const ore_form=results.reduce((s,r)=>s+r.ore_form,0);
   const pratiche=results.reduce((s,r)=>s+r.pratiche,0);
   const visite=results.reduce((s,r)=>s+r.visite,0);
@@ -2534,13 +2587,13 @@ function calcSlotLegacy(p){
       }
     });
   }
-  const totale=fisso+ore_form+pratiche+visite+venduto_com+incassato_a+comm_crm+bonus+bando+oreExtra+capo_prov;
-  const garantito=fisso;
+  const garantito=garantitoNatura(p);
+  const totale=garantito+ore_form+pratiche+visite+venduto_com+incassato_a+comm_crm+bonus+bando+oreExtra+capo_prov;
   const variabile=ore_form+pratiche+visite+venduto_com+incassato_a+bando+oreExtra+capo_prov;
   const condizionale=bonus;
   const commissioni=comm_crm;
   return{totale,garantito,variabile,condizionale,commissioni,capo_prov,kpiOk,aBud,
-         fisso,ore_form,pratiche,visite,venduto_com,incassato_a,bando,oreExtra,slotResults:null};
+         fisso:garantito,ore_form,pratiche,visite,venduto_com,incassato_a,bando,oreExtra,slotResults:null};
 }
 
 // Get total venduto for an area (used by CA/DV % calcs)
@@ -2613,8 +2666,57 @@ function flow(){
   const areD=S.aree.reduce((s,a)=>s+areaBudget(a),0);
   const pool=inc-grfm;
   const distTot=grfm+cda+areD;
-  const utili=inc-grfm-sistema-costiFissi-costiVar-acc-tasse-pers-cda-areD;
-  return{inc,grfm,pool,sistema,costiFissi,costiVar,acc,tasse,pers,cda,areD,distTot,utili};
+
+  // ══════════════════════════════════════════════════════════════════════
+  // CASCATA A PRIORITÀ (SPEC-v10 §5/§8, Fase 3) — sostituisce "utili" come
+  // cifra autoritativa. I campi sopra restano per i cruscotti legacy
+  // (waterfall/simulatore/storico) che non sommano più a questo utili
+  // (rework dashboard è Fase 5, §11 soglia sostenibilità — fuori scope qui).
+  // ══════════════════════════════════════════════════════════════════════
+
+  // GARANTITO (§7): dipendenti (costoAziendaAnnuo/12) + soci (fissoMensile) +
+  // CDA (compenso fisso governance) — priorità 1, mai comprimibile.
+  const garantitoPersonale=S.personale.reduce((s,p)=>s+garantitoNatura(p),0);
+  const garantito=garantitoPersonale+cda;
+
+  // Sistema (overhead) e Tasse diventano voci "prioritarie" aggregate (scelta
+  // esplicita di Roberto: altrimenti sparirebbero dalla cascata) — seguono la
+  // stessa logica di priorità/compressione di S.prioritari[].
+  const prioritariBase=[
+    ...(S.prioritari||[]).map(v=>({nome:v.nome,val:v.val||0,priorita:v.priorita||1})),
+    {nome:'Sistema (overhead)',val:sistema,priorita:S.prioritaSistema||1},
+    {nome:'Tasse',val:tasse,priorita:S.prioritaTasse||1},
+  ];
+  const prioritariP1=prioritariBase.filter(v=>v.priorita===1).reduce((s,v)=>s+v.val,0);
+
+  const liquidita=inc-grfm-prioritariP1-garantito; // ← LIQUIDITÀ DISPONIBILE
+
+  // Pool comprimibile (§8): voci prioritarie NON a priorità 1 (demote a 2/3 da
+  // Roberto) + budget di ogni area (fisso+variabile%, bucket sulla priorità
+  // propria dell'area, default 2) + premi (voce residuale semplice, default 3).
+  const pool2e3=[
+    ...prioritariBase.filter(v=>v.priorita!==1),
+    ...S.aree.map(a=>({nome:a.nome,
+      val:((a.budget&&a.budget.fisso)||0)+(((a.budget&&a.budget.variabilePct)||0)/100)*inc,
+      priorita:a.priorita||2})),
+    {nome:'Premi',val:(S.premi&&S.premi.val)||0,priorita:(S.premi&&S.premi.priorita)||3},
+  ];
+  const poolP1=pool2e3.filter(v=>v.priorita===1).reduce((s,v)=>s+v.val,0); // "protetta" dentro il pool
+  const poolP2Rich=pool2e3.filter(v=>v.priorita===2).reduce((s,v)=>s+v.val,0);
+  const poolP3Rich=pool2e3.filter(v=>v.priorita===3).reduce((s,v)=>s+v.val,0);
+  const capienza=Math.max(0,liquidita-poolP1);
+  let poolP2Eff,poolP3Eff;
+  if(capienza>=poolP2Rich+poolP3Rich){poolP2Eff=poolP2Rich;poolP3Eff=poolP3Rich;}
+  else if(capienza>=poolP2Rich){poolP2Eff=poolP2Rich;poolP3Eff=Math.max(0,capienza-poolP2Rich);}
+  else{poolP2Eff=capienza;poolP3Eff=0;} // comprimi PRIMA il grado 3, poi il 2, mai il grado 1
+
+  const utili=liquidita-poolP1-poolP2Eff-poolP3Eff; // ← nuova cifra autoritativa
+
+  return{inc,grfm,pool,sistema,costiFissi,costiVar,acc,tasse,pers,cda,areD,distTot,utili,
+         garantito,garantitoPersonale,prioritariP1,liquidita,
+         budgetAreeFisso:S.aree.reduce((s,a)=>s+((a.budget&&a.budget.fisso)||0),0),
+         budgetAreeVar:S.aree.reduce((s,a)=>s+(((a.budget&&a.budget.variabilePct)||0)/100)*inc,0),
+         premi:(S.premi&&S.premi.val)||0,poolP2Rich,poolP3Rich,poolP2Eff,poolP3Eff,poolP1};
 }
 
 
@@ -3364,7 +3466,7 @@ function openPersonaPop(pi){
   document.getElementById('pop-title').textContent='Configura: '+p.nome;
   document.getElementById('pop-act').style.display='flex';
   const body=document.getElementById('pop-body');
-  body.innerHTML=`     <div class="pf"><label>Nome</label><input id="pp-nome" value="${p.nome}"></div>     <div class="pf"><label>Ruolo principale</label><input id="pp-ruolo" value="${p.ruolo_principale}"></div>     <div class="pf"><label>Area principale</label><select id="pp-area">       <option value="">—</option>${S.aree.map(a=>`<option value="${a.id}" ${p.area===a.id?'selected':''}>${a.nome}</option>`).join('')}     </select></div>     <div class="pf"><label>Area responsabilità</label><select id="pp-arearesp">       <option value="">—</option>${S.aree.map(a=>`<option value="${a.id}" ${p.areaResp===a.id?'selected':''}>${a.nome}</option>`).join('')}     </select></div>     <div class="pf"><label>Contratto</label><select id="pp-ct">       <option value="DIP" ${p.tipo_contratto==='DIP'?'selected':''}>Dipendente</option>       <option value="PIVA" ${p.tipo_contratto==='PIVA'?'selected':''}>P.IVA</option>       <option value="MISTO" ${p.tipo_contratto==='MISTO'?'selected':''}>Misto</option>     </select></div>     <div class="pf"><label>Tariffa oraria €/h</label><input type="number" id="pp-tariffa" value="${p.tariffaOraria||0}"></div>     <div class="pf"><label>Livello</label><select id="pp-liv">       <option value="A" ${p.livello==='A'?'selected':''}>A — Operativo</option>       <option value="B" ${p.livello==='B'?'selected':''}>B — Responsabile</option>       <option value="C" ${p.livello==='C'?'selected':''}>C — Dirigente/Socio</option>       <option value="D" ${p.livello==='D'?'selected':''}>D — Esterno</option>     </select></div>     <div class="pop-div"></div>     <div style="display:flex;gap:10px;font-size:12px;flex-wrap:wrap">       <label><input type="checkbox" ${p.isResp?'checked':''} id="pp-resp"> Responsabile/Dirigente</label>       <label><input type="checkbox" ${p.isCapoArea?'checked':''} id="pp-ca"> Capo Area</label>     </div>     <div class="pf" style="margin-top:8px"><label>Note</label><input id="pp-note" value="${p.note||''}"></div>     <div class="pop-div"></div>     <div style="margin-bottom:6px;font-size:12px;font-weight:600">Slot attività (${(p.slots||[]).length})</div>     ${(p.slots||[]).map((sl,si)=>`
+  body.innerHTML=`     <div class="pf"><label>Nome</label><input id="pp-nome" value="${p.nome}"></div>     <div class="pf"><label>Ruolo principale</label><input id="pp-ruolo" value="${p.ruolo_principale}"></div>     <div class="pf"><label>Area principale</label><select id="pp-area">       <option value="">—</option>${S.aree.map(a=>`<option value="${a.id}" ${p.area===a.id?'selected':''}>${a.nome}</option>`).join('')}     </select></div>     <div class="pf"><label>Area responsabilità</label><select id="pp-arearesp">       <option value="">—</option>${S.aree.map(a=>`<option value="${a.id}" ${p.areaResp===a.id?'selected':''}>${a.nome}</option>`).join('')}     </select></div>     <div class="pf"><label>Contratto</label><select id="pp-ct">       <option value="DIP" ${p.tipo_contratto==='DIP'?'selected':''}>Dipendente</option>       <option value="PIVA" ${p.tipo_contratto==='PIVA'?'selected':''}>P.IVA</option>       <option value="MISTO" ${p.tipo_contratto==='MISTO'?'selected':''}>Misto</option>     </select></div>     <div class="pf"><label>Natura (garantito, SPEC-v10 §7)</label><select id="pp-natura" onchange="document.getElementById('pp-fisso-wrap').style.display=this.value==='socio'?'block':'none';document.getElementById('pp-dip-wrap').style.display=this.value==='dipendente'?'block':'none'">       <option value="dipendente" ${p.natura==='dipendente'?'selected':''}>Dipendente — costoAziendaAnnuo/12</option>       <option value="socio" ${p.natura==='socio'?'selected':''}>Socio — fisso mensile</option>       <option value="piva" ${(!p.natura||p.natura==='piva')?'selected':''}>P.IVA — nessun garantito</option>     </select></div>     <div class="pf" id="pp-fisso-wrap" style="display:${p.natura==='socio'?'block':'none'}"><label>Fisso mensile € (socio)</label><input type="number" id="pp-fisso" value="${p.fissoMensile||4800}"></div>     <div id="pp-dip-wrap" style="display:${p.natura==='dipendente'?'block':'none'};font-size:11px;color:var(--ink3);padding:4px 0">       ${(()=>{const rec=matchDipendenteRecord(p);return rec?('Matchato con «'+rec.nome+'» — garantito '+fmt(rec.costoAziendaMensile)+'/mese'):'⚠️ Nessun match nel file dipendenti importato (S.importDipendenti) — garantito 0€ finché non importi il file o non correggi il nome.';})()}     </div>     <div class="pf"><label>Tariffa oraria €/h</label><input type="number" id="pp-tariffa" value="${p.tariffaOraria||0}"></div>     <div class="pf"><label>Livello</label><select id="pp-liv">       <option value="A" ${p.livello==='A'?'selected':''}>A — Operativo</option>       <option value="B" ${p.livello==='B'?'selected':''}>B — Responsabile</option>       <option value="C" ${p.livello==='C'?'selected':''}>C — Dirigente/Socio</option>       <option value="D" ${p.livello==='D'?'selected':''}>D — Esterno</option>     </select></div>     <div class="pop-div"></div>     <div style="display:flex;gap:10px;font-size:12px;flex-wrap:wrap">       <label><input type="checkbox" ${p.isResp?'checked':''} id="pp-resp"> Responsabile/Dirigente</label>       <label><input type="checkbox" ${p.isCapoArea?'checked':''} id="pp-ca"> Capo Area</label>     </div>     <div class="pf" style="margin-top:8px"><label>Note</label><input id="pp-note" value="${p.note||''}"></div>     <div class="pop-div"></div>     <div style="margin-bottom:6px;font-size:12px;font-weight:600">Slot attività (${(p.slots||[]).length})</div>     ${(p.slots||[]).map((sl,si)=>`
       <div style="border:1px solid var(--lift);border-radius:var(--r);padding:7px 9px;margin-bottom:5px;background:var(--sheet)">
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
           <span style="font-size:14px">${SLOT_ICON[sl.tipo]||'📦'}</span>
@@ -3392,6 +3494,9 @@ function openPersonaPop(pi){
     p.area=document.getElementById('pp-area').value;
     p.areaResp=document.getElementById('pp-arearesp').value;
     p.tipo_contratto=document.getElementById('pp-ct').value;
+    p.natura=document.getElementById('pp-natura').value;
+    const ppFisso=document.getElementById('pp-fisso');
+    if(ppFisso)p.fissoMensile=parseFloat(ppFisso.value)||0;
     p.tariffaOraria=parseFloat(document.getElementById('pp-tariffa').value)||0;
     p.livello=document.getElementById('pp-liv').value;
     p.isResp=document.getElementById('pp-resp').checked;
@@ -3501,7 +3606,8 @@ function renderSistemaPage(){
   const prioritari=S.prioritari||[];
   const totPrio=prioritari.reduce((s,v)=>s+(v.val||0),0);
   const tipiPrio=['leasing','f24','iva','rateizzo','tfr','accantonamento','custom'];
-  html+=`<div style="margin-top:20px;margin-bottom:10px;background:var(--card);border:1px solid var(--lift);border-radius:var(--rl);padding:14px">     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">       <div style="font-size:13px;font-weight:600">Voci prioritarie — priorità 1 (${prioritari.length})</div>       <div style="font-family:'DM Mono',monospace;font-size:16px;font-weight:300">${fmt(totPrio)} <span style="font-size:11px;color:var(--ink3)">/mese</span></div>     </div>     <div style="font-size:11px;color:var(--ink3);margin-bottom:10px">Leasing, F24, IVA, rateizzi, TFR, accantonamenti — garantite prima di tutto il resto (SPEC-v10 §5). Non ancora sommate nella cascata: arriva in Fase 3.</div>     ${prioritari.map((v,i)=>`       <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(0,0,0,.03)">         <input type="text" value="${v.nome}" style="flex:1;border:none;background:transparent;font-size:12px;outline:none;font-family:'DM Sans',sans-serif;color:var(--ink)"           onblur="S.prioritari[${i}].nome=this.value;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">         <select style="padding:3px 6px;border:1px solid var(--lift);border-radius:var(--r);font-size:11px;background:var(--sheet)"           onblur="S.prioritari[${i}].tipo=this.value;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">           ${tipiPrio.map(t=>`<option value="${t}" ${v.tipo===t?'selected':''}>${t}</option>`).join('')}         </select>         <input type="number" value="${v.val||0}" style="width:90px;padding:3px 6px;border:1px solid var(--lift);border-radius:var(--r);font-size:12px;font-family:'DM Mono',monospace;text-align:right;background:${(v.val||0)>0?'var(--blue-bg)':'var(--card)'}"           onblur="S.prioritari[${i}].val=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">         <span style="font-size:10px;color:var(--ink3);min-width:30px">/mese</span>         <button class="btn xs" style="padding:2px 6px;color:var(--red);border-color:var(--red)"           onclick="if(confirm('Eliminare voce prioritaria?')){S.prioritari.splice(${i},1);renderAll()}">✕</button>       </div>`).join('')}     <button class="btn sm prim" style="margin-top:8px" onclick="addPrioritario()">+ Voce prioritaria</button>   </div>   <div id="stima-tasse-wrap" style="margin-top:16px"></div>`;
+  const prioSelect=(cur,onChange)=>`<select style="padding:3px 6px;border:1px solid var(--lift);border-radius:var(--r);font-size:11px;background:var(--sheet)" onblur="${onChange}" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">${[1,2,3].map(n=>`<option value="${n}" ${(cur||1)===n?'selected':''}>prio ${n}</option>`).join('')}</select>`;
+  html+=`<div style="margin-top:20px;margin-bottom:10px;background:var(--card);border:1px solid var(--lift);border-radius:var(--rl);padding:14px">     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">       <div style="font-size:13px;font-weight:600">Voci prioritarie (${prioritari.length})</div>       <div style="font-family:'DM Mono',monospace;font-size:16px;font-weight:300">${fmt(totPrio)} <span style="font-size:11px;color:var(--ink3)">/mese</span></div>     </div>     <div style="font-size:11px;color:var(--ink3);margin-bottom:10px">Leasing, F24, IVA, rateizzi, TFR, accantonamenti — priorità modificabile (§8): grado 1 mai compresso, 2/3 compressi se la liquidità disponibile non basta (Fase 3).</div>     ${prioritari.map((v,i)=>`       <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(0,0,0,.03)">         <input type="text" value="${v.nome}" style="flex:1;border:none;background:transparent;font-size:12px;outline:none;font-family:'DM Sans',sans-serif;color:var(--ink)"           onblur="S.prioritari[${i}].nome=this.value;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">         <select style="padding:3px 6px;border:1px solid var(--lift);border-radius:var(--r);font-size:11px;background:var(--sheet)"           onblur="S.prioritari[${i}].tipo=this.value;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">           ${tipiPrio.map(t=>`<option value="${t}" ${v.tipo===t?'selected':''}>${t}</option>`).join('')}         </select>         ${prioSelect(v.priorita,`S.prioritari[${i}].priorita=parseInt(this.value)||1;renderAll()`)}         <input type="number" value="${v.val||0}" style="width:90px;padding:3px 6px;border:1px solid var(--lift);border-radius:var(--r);font-size:12px;font-family:'DM Mono',monospace;text-align:right;background:${(v.val||0)>0?'var(--blue-bg)':'var(--card)'}"           onblur="S.prioritari[${i}].val=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">         <span style="font-size:10px;color:var(--ink3);min-width:30px">/mese</span>         <button class="btn xs" style="padding:2px 6px;color:var(--red);border-color:var(--red)"           onclick="if(confirm('Eliminare voce prioritaria?')){S.prioritari.splice(${i},1);renderAll()}">✕</button>       </div>`).join('')}     <button class="btn sm prim" style="margin-top:8px" onclick="addPrioritario()">+ Voce prioritaria</button>     <div class="pop-div"></div>     <div style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:12px">       <span style="flex:1">Sistema (overhead, ${fmt(totSis)}/mese) — priorità</span>       ${prioSelect(S.prioritaSistema,`S.prioritaSistema=parseInt(this.value)||1;renderAll()`)}     </div>     <div style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:12px">       <span style="flex:1">Tasse (${fmt(totTasse())}/mese) — priorità</span>       ${prioSelect(S.prioritaTasse,`S.prioritaTasse=parseInt(this.value)||1;renderAll()`)}     </div>     <div class="pop-div"></div>     <div style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:12px">       <span style="flex:1">Premi (voce residuale semplice — motore KPI in Fase 5) €/mese</span>       <input type="number" value="${(S.premi&&S.premi.val)||0}" style="width:90px;padding:3px 6px;border:1px solid var(--lift);border-radius:var(--r);font-size:12px;font-family:'DM Mono',monospace;text-align:right"         onblur="S.premi=S.premi||{};S.premi.val=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">       ${prioSelect(S.premi&&S.premi.priorita,`S.premi=S.premi||{};S.premi.priorita=parseInt(this.value)||3;renderAll()`)}     </div>   </div>   <div id="stima-tasse-wrap" style="margin-top:16px"></div>`;
 
   el.innerHTML=html;
   renderStimeTasse();
@@ -5390,6 +5496,38 @@ function renderDashCharts(f){
       }, plugins:{ legend:{labels:{font:{size:10}}} } }
     });
   }
+  renderCascataPriorita(f);
+}
+
+// ── CASCATA A PRIORITÀ — vista di validazione (SPEC-v10 §5/§8, Fase 3) ───
+function renderCascataPriorita(f){
+  const el=document.getElementById('dash-flow');
+  if(!el)return;
+  const inc=Math.max(f.inc,1);
+  const step=(lbl,val,cls)=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--lift);font-size:12px">
+    <span style="flex:1">${lbl}</span>
+    <span class="mono" style="${cls||''}">${fmt(val)}</span>
+    <span style="font-size:10px;color:var(--ink3);min-width:48px;text-align:right">${((val/inc)*100).toFixed(1)}%</span>
+  </div>`;
+  el.innerHTML=`
+    <div style="font-size:12px;font-weight:600;margin-bottom:8px;color:var(--ink3)">Cascata a priorità (Fase 3)</div>
+    ${step('Incassato (100%)',f.inc)}
+    ${step('− GRFM',f.grfm,'color:var(--purple)')}
+    ${step('− Prioritari (leasing/F24/IVA/Sistema/Tasse... a priorità 1)',f.prioritariP1,'color:var(--red)')}
+    ${step('− Garantito (dipendenti+soci+CDA)',f.garantito,'color:var(--red)')}
+    <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:2px solid var(--ink);font-size:12px;font-weight:600;background:var(--blue-bg)">
+      <span style="flex:1">= Liquidità disponibile</span>
+      <span class="mono">${fmt(f.liquidita)}</span>
+      <span style="font-size:10px;color:var(--ink3);min-width:48px;text-align:right">${((f.liquidita/inc)*100).toFixed(1)}%</span>
+    </div>
+    ${step('− Budget aree (effettivo, prio 2)',f.poolP2Eff,'color:var(--amber)')}
+    ${step('− Premi (effettivo, prio 3)',f.poolP3Eff,'color:var(--amber)')}
+    ${f.poolP2Eff<f.poolP2Rich||f.poolP3Eff<f.poolP3Rich?`<div style="font-size:10px;color:var(--red);padding:3px 0">⚠ Compressione attiva: richiesti ${fmt(f.poolP2Rich+f.poolP3Rich)}, capienza insufficiente — vedi §8.</div>`:''}
+    <div style="display:flex;align-items:center;gap:8px;padding:7px 0;font-size:13px;font-weight:600">
+      <span style="flex:1">= Utili</span>
+      <span class="mono" style="color:${f.utili<0?'var(--red)':'var(--green)'}">${fmt(f.utili)}</span>
+      <span style="font-size:10px;color:var(--ink3);min-width:48px;text-align:right">${((f.utili/inc)*100).toFixed(1)}%</span>
+    </div>`;
 }
 
 // ── OVERRIDE renderDash per aggiungere grafici ────
