@@ -1174,6 +1174,10 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
       <div style="font-size:11px;color:var(--ink3)">Se in Fase 1 avevi già confermato un import, rilancia la classificazione (Fase 2) senza dover ricaricare i file: sposta le voci IVA/leasing/F24/TFR/rateizzi/accantonamenti in "Voci prioritarie" e tagga le altre con l'area riconosciuta.</div>
       <button class="btn sm" onclick="riclassificaImport()">↺ Riclassifica import</button>
     </div>
+    <div style="background:var(--card);border:1px solid var(--lift);border-radius:var(--rl);padding:12px 14px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+      <div style="font-size:11px;color:var(--ink3)">Rilancia il match nome-dipendente contro S.importDipendenti (utile se hai cambiato natura a una persona a mano dopo l'import, senza dover reimportare il file).</div>
+      <button class="btn sm" onclick="const r=applicaMatchDipendenti();renderAll();notify(r.matched+'/'+(r.matched+r.unmatched.length)+' agganciati'+(r.unmatched.length?' — non trovati: '+r.unmatched.join(', '):''))">↺ Riesegui match dipendenti</button>
+    </div>
     <div id="import-preview"></div>
   </div>
 
@@ -1677,6 +1681,17 @@ function renderImportPreview(){
   let html='';
 
   if(pendingImport.pf){
+    // Contatori espliciti "cosa verrà scritto" alla conferma — richiesta esplicita
+    // dopo che in un test precedente non era chiaro se l'import avesse scritto o no.
+    const nonEsc=pendingImport.pf.filter(v=>!v.escludi);
+    const willMerge=nonEsc.filter(v=>v.mergeInto).length;
+    const willPrio=nonEsc.filter(v=>!v.mergeInto&&classifyPFRow(v).dest==='prioritari').length;
+    const willSist=nonEsc.length-willMerge-willPrio;
+    html+=`<div style="background:#eaf4ec;border:1px solid #B8DBBF;border-radius:var(--rl);padding:12px 14px;margin-bottom:14px;font-size:12px;color:#1A6B3C">
+      <strong>Alla conferma verranno scritte ${nonEsc.length} righe non escluse:</strong>
+      ${willSist} nuove in Sistema, ${willPrio} nuove in Prioritari, ${willMerge} unite a voci esistenti.
+      ${pendingImport.dipendenti?` + ${pendingImport.dipendenti.length} dipendenti da agganciare per nome.`:''}
+    </div>`;
     const summary=importPFSummaryByArea();
     const totFisso=summary.reduce((s,r)=>s+r.fisso,0);
     const totVar=summary.reduce((s,r)=>s+r.variabile,0);
@@ -1757,18 +1772,26 @@ function renderImportPreview(){
   }
 
   if(pendingImport.dipendenti){
+    const pairs=bipartiteMatchDipendenti(pendingImport.dipendenti);
+    const matchedByFile={};
+    Object.entries(pairs).forEach(([pid,dnome])=>{matchedByFile[dnome]=S.personale.find(p=>p.id===pid);});
+    const nMatched=Object.keys(matchedByFile).length;
     html+=`<div style="background:var(--card);border:1px solid var(--lift);border-radius:var(--rl);padding:14px;margin-bottom:14px">
       <div style="font-size:12px;font-weight:600;margin-bottom:8px">Dipendenti (${pendingImport.dipendenti.length}) — costo azienda annuo → mensile garantito = annuo/12</div>
+      <div style="font-size:12px;margin-bottom:8px;padding:6px 10px;border-radius:var(--r);background:${nMatched===pendingImport.dipendenti.length?'#eaf4ec':'#fff3cd'};color:${nMatched===pendingImport.dipendenti.length?'#1A6B3C':'#8a6d00'}">
+        ${nMatched}/${pendingImport.dipendenti.length} agganciati a una persona natura='dipendente' in Struttura personale.
+      </div>
       <table style="width:100%;border-collapse:collapse;font-size:12px">
         <thead><tr style="text-align:left;color:var(--ink3);font-size:10px;text-transform:uppercase">
-          <th style="padding:4px 6px">Nome</th><th style="padding:4px 6px" class="mono">Costo azienda annuo €</th><th style="padding:4px 6px" class="mono">Mensile €</th>
+          <th style="padding:4px 6px">Nome (file)</th><th style="padding:4px 6px" class="mono">Costo azienda annuo €</th><th style="padding:4px 6px" class="mono">Mensile €</th><th style="padding:4px 6px">Aggancio</th>
         </tr></thead>
         <tbody>
-        ${pendingImport.dipendenti.map(d=>`<tr style="border-top:1px solid var(--lift)">
+        ${pendingImport.dipendenti.map(d=>{const m=matchedByFile[d.nome];return `<tr style="border-top:1px solid var(--lift)">
           <td style="padding:4px 6px">${d.nome}</td>
           <td style="padding:4px 6px" class="mono">${fmt(d.costoAziendaAnnuo)}</td>
           <td style="padding:4px 6px" class="mono">${fmt(d.costoAziendaMensile)}</td>
-        </tr>`).join('')}
+          <td style="padding:4px 6px">${m?`<span class="badge" style="background:#eaf4ec;color:#1A6B3C">→ ${m.nome}</span>`:`<span class="badge" style="background:#fcdede;color:#A32020">⚠️ nessun match</span>`}</td>
+        </tr>`;}).join('')}
         </tbody>
       </table>
     </div>`;
@@ -1834,7 +1857,9 @@ function findPossibileDoppione(v){
 
 function applyImport(){
   if(!pendingImport.pf&&!pendingImport.dipendenti){notify('Nessun dato da importare');return;}
-  let n=0,nPrio=0;
+  const sfCountBefore=(S.sistemaFissi||[]).length;
+  const prioCountBefore=(S.prioritari||[]).length;
+  let n=0,nPrio=0,nMerge=0;
   if(pendingImport.pf){
     S.sistemaFissi=S.sistemaFissi||[];
     S.prioritari=S.prioritari||[];
@@ -1842,7 +1867,7 @@ function applyImport(){
       if(v.mergeInto){
         // "Unisci": aggiorna la voce Sistema esistente invece di crearne una nuova
         const sf=S.sistemaFissi.find(x=>x.id===v.mergeInto);
-        if(sf){sf.val=Math.round((v.annuo/12)*100)/100;sf.areaPF=v.areaPF;sf.natura=v.natura;n++;return;}
+        if(sf){sf.val=Math.round((v.annuo/12)*100)/100;sf.areaPF=v.areaPF;sf.natura=v.natura;nMerge++;return;}
       }
       const cls=classifyPFRow(v);
       if(cls.dest==='prioritari'){
@@ -1866,12 +1891,26 @@ function applyImport(){
   if(pendingImport.previsionale){
     S.importPrevisionale=pendingImport.previsionale.filter(v=>!v.escludi);
   }
+  let dipMatch=null;
   if(pendingImport.dipendenti){
     S.importDipendenti=pendingImport.dipendenti;
+    dipMatch=applicaMatchDipendenti();
+  }
+  // Verifica difensiva: i conteggi post-scrittura devono tornare con quelli attesi.
+  const sfCountAfter=S.sistemaFissi.length, prioCountAfter=S.prioritari.length;
+  const sfDelta=sfCountAfter-sfCountBefore, prioDelta=prioCountAfter-prioCountBefore;
+  console.log('[applyImport] Sistema:',sfCountBefore,'→',sfCountAfter,'(+'+sfDelta+', atteso +'+n+')',
+              '| Prioritari:',prioCountBefore,'→',prioCountAfter,'(+'+prioDelta+', atteso +'+nPrio+')',
+              '| Unite:',nMerge, dipMatch?'| Dipendenti matchati: '+dipMatch.matched+'/'+(dipMatch.matched+dipMatch.unmatched.length):'');
+  if(sfDelta!==n||prioDelta!==nPrio){
+    console.error('[applyImport] MISMATCH conteggi attesi vs scritti — vedi log sopra.');
   }
   renderAll();
   scheduleSync();
-  notify('✅ Import applicato ('+n+' voci sistema, '+nPrio+' prioritarie) — vedi Fase 3 per la cascata');
+  let msg='✅ Import applicato: '+n+' voci in Sistema (ora '+sfCountAfter+' totali), '+nPrio+' in Prioritari (ora '+prioCountAfter+' totali)';
+  if(nMerge)msg+=', '+nMerge+' unite';
+  if(dipMatch)msg+=' — dipendenti: '+dipMatch.matched+'/'+(dipMatch.matched+dipMatch.unmatched.length)+' agganciati'+(dipMatch.unmatched.length?' (non trovati: '+dipMatch.unmatched.join(', ')+')':'');
+  notify(msg);
 }
 
 // Riclassifica retroattivamente le voci sistemaFissi già importate in Fase 1
@@ -2496,36 +2535,70 @@ function nameTokens(s){return stripAccents(s).toLowerCase().replace(/[^a-z\s]+/g
 // vince) e unicità (un record del file non può essere assegnato a due persone) —
 // evita che un nome generico (es. "Alessandro") rubi il match di uno più specifico
 // (es. "Alessandro Biotti") quando entrambi condividono un token col file.
-function matchDipendenteRecord(p){
-  if(p.natura!=='dipendente')return null;
-  const dipendenti=S.importDipendenti||[];
-  if(!dipendenti.length)return null;
+// Nucleo del matching bipartito greedy, condiviso tra il match "live" (contro
+// S.importDipendenti) e l'anteprima import (contro pendingImport.dipendenti, PRIMA
+// della conferma — così "13/13 agganciati" è verificabile subito, non solo dopo).
+// Risolve per specificità (più token in comune vince, es. "Alessandro Biotti" batte
+// "Alessandro" sullo stesso file-record) e unicità (un record del file non può
+// essere assegnato a due persone).
+function bipartiteMatchDipendenti(dipendentiList){
   const candidates=[];
   S.personale.filter(x=>x.natura==='dipendente').forEach(pp=>{
     const ppt=new Set(nameTokens(pp.nome));
     if(!ppt.size)return;
-    dipendenti.forEach(d=>{
+    dipendentiList.forEach(d=>{
       const dt=new Set(nameTokens(d.nome));
       if([...ppt].every(t=>dt.has(t)))candidates.push({pid:pp.id,dnome:d.nome,score:ppt.size});
     });
   });
   candidates.sort((a,b)=>b.score-a.score);
-  const usedP=new Set(),usedD=new Set();
-  let winner=null;
+  const usedP=new Set(),usedD=new Set(),pairs={};
   candidates.forEach(c=>{
     if(usedP.has(c.pid)||usedD.has(c.dnome))return;
     usedP.add(c.pid);usedD.add(c.dnome);
-    if(c.pid===p.id)winner=c.dnome;
+    pairs[c.pid]=c.dnome;
   });
+  return pairs; // {personaId: nomeFileMatchato}
+}
+function matchDipendenteRecord(p){
+  if(p.natura!=='dipendente')return null;
+  const dipendenti=S.importDipendenti||[];
+  if(!dipendenti.length)return null;
+  const pairs=bipartiteMatchDipendenti(dipendenti);
+  const winner=pairs[p.id];
   return winner?dipendenti.find(d=>d.nome===winner)||null:null;
 }
 function garantitoNatura(p){
   if(p.natura==='dipendente'){
+    // Preferisci il valore già scritto sulla persona (da applicaMatchDipendenti() o
+    // dal selettore manuale) — visibile nell'export JSON. Fallback al match live solo
+    // se non è mai stato calcolato (es. natura cambiata a mano senza rilanciare il match).
+    if(typeof p.costoAziendaMensile==='number')return p.costoAziendaMensile;
     const rec=matchDipendenteRecord(p);
     return rec?rec.costoAziendaMensile:0;
   }
   if(p.natura==='socio')return p.fissoMensile||0;
   return 0; // piva: nessun garantito, il compenso è variabile/area
+}
+
+// Scrive costoAziendaAnnuo/costoAziendaMensile sulle persone natura='dipendente'
+// matchate contro S.importDipendenti — chiamata dopo l'import e da un bottone manuale.
+// Ritorna {matched, unmatched} per il riscontro in UI.
+function applicaMatchDipendenti(){
+  const unmatched=[];
+  let matched=0;
+  S.personale.filter(p=>p.natura==='dipendente').forEach(p=>{
+    const rec=matchDipendenteRecord(p);
+    if(rec){
+      p.costoAziendaAnnuo=rec.costoAziendaAnnuo;
+      p.costoAziendaMensile=rec.costoAziendaMensile;
+      p.dipendenteMatchNome=rec.nome;
+      matched++;
+    }else{
+      unmatched.push(p.nome);
+    }
+  });
+  return{matched,unmatched};
 }
 
 function calcPersona(p){
@@ -3466,7 +3539,21 @@ function openPersonaPop(pi){
   document.getElementById('pop-title').textContent='Configura: '+p.nome;
   document.getElementById('pop-act').style.display='flex';
   const body=document.getElementById('pop-body');
-  body.innerHTML=`     <div class="pf"><label>Nome</label><input id="pp-nome" value="${p.nome}"></div>     <div class="pf"><label>Ruolo principale</label><input id="pp-ruolo" value="${p.ruolo_principale}"></div>     <div class="pf"><label>Area principale</label><select id="pp-area">       <option value="">—</option>${S.aree.map(a=>`<option value="${a.id}" ${p.area===a.id?'selected':''}>${a.nome}</option>`).join('')}     </select></div>     <div class="pf"><label>Area responsabilità</label><select id="pp-arearesp">       <option value="">—</option>${S.aree.map(a=>`<option value="${a.id}" ${p.areaResp===a.id?'selected':''}>${a.nome}</option>`).join('')}     </select></div>     <div class="pf"><label>Contratto</label><select id="pp-ct">       <option value="DIP" ${p.tipo_contratto==='DIP'?'selected':''}>Dipendente</option>       <option value="PIVA" ${p.tipo_contratto==='PIVA'?'selected':''}>P.IVA</option>       <option value="MISTO" ${p.tipo_contratto==='MISTO'?'selected':''}>Misto</option>     </select></div>     <div class="pf"><label>Natura (garantito, SPEC-v10 §7)</label><select id="pp-natura" onchange="document.getElementById('pp-fisso-wrap').style.display=this.value==='socio'?'block':'none';document.getElementById('pp-dip-wrap').style.display=this.value==='dipendente'?'block':'none'">       <option value="dipendente" ${p.natura==='dipendente'?'selected':''}>Dipendente — costoAziendaAnnuo/12</option>       <option value="socio" ${p.natura==='socio'?'selected':''}>Socio — fisso mensile</option>       <option value="piva" ${(!p.natura||p.natura==='piva')?'selected':''}>P.IVA — nessun garantito</option>     </select></div>     <div class="pf" id="pp-fisso-wrap" style="display:${p.natura==='socio'?'block':'none'}"><label>Fisso mensile € (socio)</label><input type="number" id="pp-fisso" value="${p.fissoMensile||4800}"></div>     <div id="pp-dip-wrap" style="display:${p.natura==='dipendente'?'block':'none'};font-size:11px;color:var(--ink3);padding:4px 0">       ${(()=>{const rec=matchDipendenteRecord(p);return rec?('Matchato con «'+rec.nome+'» — garantito '+fmt(rec.costoAziendaMensile)+'/mese'):'⚠️ Nessun match nel file dipendenti importato (S.importDipendenti) — garantito 0€ finché non importi il file o non correggi il nome.';})()}     </div>     <div class="pf"><label>Tariffa oraria €/h</label><input type="number" id="pp-tariffa" value="${p.tariffaOraria||0}"></div>     <div class="pf"><label>Livello</label><select id="pp-liv">       <option value="A" ${p.livello==='A'?'selected':''}>A — Operativo</option>       <option value="B" ${p.livello==='B'?'selected':''}>B — Responsabile</option>       <option value="C" ${p.livello==='C'?'selected':''}>C — Dirigente/Socio</option>       <option value="D" ${p.livello==='D'?'selected':''}>D — Esterno</option>     </select></div>     <div class="pop-div"></div>     <div style="display:flex;gap:10px;font-size:12px;flex-wrap:wrap">       <label><input type="checkbox" ${p.isResp?'checked':''} id="pp-resp"> Responsabile/Dirigente</label>       <label><input type="checkbox" ${p.isCapoArea?'checked':''} id="pp-ca"> Capo Area</label>     </div>     <div class="pf" style="margin-top:8px"><label>Note</label><input id="pp-note" value="${p.note||''}"></div>     <div class="pop-div"></div>     <div style="margin-bottom:6px;font-size:12px;font-weight:600">Slot attività (${(p.slots||[]).length})</div>     ${(p.slots||[]).map((sl,si)=>`
+  body.innerHTML=`     <div class="pf"><label>Nome</label><input id="pp-nome" value="${p.nome}"></div>     <div class="pf"><label>Ruolo principale</label><input id="pp-ruolo" value="${p.ruolo_principale}"></div>     <div class="pf"><label>Area principale</label><select id="pp-area">       <option value="">—</option>${S.aree.map(a=>`<option value="${a.id}" ${p.area===a.id?'selected':''}>${a.nome}</option>`).join('')}     </select></div>     <div class="pf"><label>Area responsabilità</label><select id="pp-arearesp">       <option value="">—</option>${S.aree.map(a=>`<option value="${a.id}" ${p.areaResp===a.id?'selected':''}>${a.nome}</option>`).join('')}     </select></div>     <div class="pf"><label>Contratto</label><select id="pp-ct">       <option value="DIP" ${p.tipo_contratto==='DIP'?'selected':''}>Dipendente</option>       <option value="PIVA" ${p.tipo_contratto==='PIVA'?'selected':''}>P.IVA</option>       <option value="MISTO" ${p.tipo_contratto==='MISTO'?'selected':''}>Misto</option>     </select></div>     <div class="pf"><label>Natura (garantito, SPEC-v10 §7)</label><select id="pp-natura" onchange="document.getElementById('pp-fisso-wrap').style.display=this.value==='socio'?'block':'none';document.getElementById('pp-dip-wrap').style.display=this.value==='dipendente'?'block':'none'">       <option value="dipendente" ${p.natura==='dipendente'?'selected':''}>Dipendente — costoAziendaAnnuo/12</option>       <option value="socio" ${p.natura==='socio'?'selected':''}>Socio — fisso mensile</option>       <option value="piva" ${(!p.natura||p.natura==='piva')?'selected':''}>P.IVA — nessun garantito</option>     </select></div>     <div class="pf" id="pp-fisso-wrap" style="display:${p.natura==='socio'?'block':'none'}"><label>Fisso mensile € (socio)</label><input type="number" id="pp-fisso" value="${p.fissoMensile||4800}"></div>     <div id="pp-dip-wrap" style="display:${p.natura==='dipendente'?'block':'none'};font-size:11px;color:var(--ink3);padding:4px 0">       ${(()=>{
+         const auto=matchDipendenteRecord(p);
+         const dips=S.importDipendenti||[];
+         const curOverride=p.dipendenteMatchNome&&dips.find(d=>d.nome===p.dipendenteMatchNome);
+         const effRec=curOverride||auto;
+         const status=effRec?('Garantito attuale: «'+effRec.nome+'» — '+fmt(effRec.costoAziendaMensile)+'/mese'):'⚠️ Nessun match — garantito 0€ finché non importi il file o non assegni a mano.';
+         const opts=dips.map(d=>`<option value="${d.nome}" ${p.dipendenteMatchNome===d.nome?'selected':''}>${d.nome} — ${fmt(d.costoAziendaMensile)}/mese</option>`).join('');
+         return `<div style="margin-bottom:4px">${status}</div>
+           <label style="font-size:10px">Aggancio manuale (sovrascrive l'auto-match)</label>
+           <select id="pp-dip-match" style="width:100%;padding:3px 5px;border:1px solid var(--lift);border-radius:var(--r);font-size:11px;background:var(--card)"
+             onchange="S.personale[${pi}].dipendenteMatchNome=this.value||null;if(this.value){const d=(S.importDipendenti||[]).find(x=>x.nome===this.value);if(d){S.personale[${pi}].costoAziendaAnnuo=d.costoAziendaAnnuo;S.personale[${pi}].costoAziendaMensile=d.costoAziendaMensile;}}else{delete S.personale[${pi}].costoAziendaAnnuo;delete S.personale[${pi}].costoAziendaMensile;}renderAll();openPersonaPop(${pi})">
+             <option value="">— auto (${auto?auto.nome:'nessun match'}) —</option>
+             ${opts}
+           </select>`;
+       })()}     </div>     <div class="pf"><label>Tariffa oraria €/h</label><input type="number" id="pp-tariffa" value="${p.tariffaOraria||0}"></div>     <div class="pf"><label>Livello</label><select id="pp-liv">       <option value="A" ${p.livello==='A'?'selected':''}>A — Operativo</option>       <option value="B" ${p.livello==='B'?'selected':''}>B — Responsabile</option>       <option value="C" ${p.livello==='C'?'selected':''}>C — Dirigente/Socio</option>       <option value="D" ${p.livello==='D'?'selected':''}>D — Esterno</option>     </select></div>     <div class="pop-div"></div>     <div style="display:flex;gap:10px;font-size:12px;flex-wrap:wrap">       <label><input type="checkbox" ${p.isResp?'checked':''} id="pp-resp"> Responsabile/Dirigente</label>       <label><input type="checkbox" ${p.isCapoArea?'checked':''} id="pp-ca"> Capo Area</label>     </div>     <div class="pf" style="margin-top:8px"><label>Note</label><input id="pp-note" value="${p.note||''}"></div>     <div class="pop-div"></div>     <div style="margin-bottom:6px;font-size:12px;font-weight:600">Slot attività (${(p.slots||[]).length})</div>     ${(p.slots||[]).map((sl,si)=>`
       <div style="border:1px solid var(--lift);border-radius:var(--r);padding:7px 9px;margin-bottom:5px;background:var(--sheet)">
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
           <span style="font-size:14px">${SLOT_ICON[sl.tipo]||'📦'}</span>
