@@ -4259,21 +4259,35 @@ async function saveSnap(){
   const premiSnap=maturaPremi(f,now);
   const snap={data:mese,ts:now.toISOString(),inc:f.inc,pool:f.pool,
     sistema:f.sistema,tasse:f.tasse,pers:f.pers,utili:f.utili,premi:premiSnap};
+
+  // Dedup per mese: se salvo due volte lo stesso mese aggiorno invece di
+  // duplicare — sia in locale (rimpiazza la voce con lo stesso .data) sia in
+  // cloud (UPDATE sulla riga esistente invece di un nuovo INSERT).
+  const existingIdx=S.snaps.findIndex(s=>s.data===mese);
+  let existingSupaId=(existingIdx>=0&&S.snaps[existingIdx]._supaId)||null;
+  if(existingIdx>=0)S.snaps.splice(existingIdx,1);
   S.snaps.unshift(snap);
   renderStorico();
+
   if(db){
     try{
-      const {data,error}=await db.from('compensi_snapshots')
-        .insert({mese, data_json:{...snap, state:JSON.parse(JSON.stringify(S))}, note:''})
-        .select('id').single();
+      if(!existingSupaId){
+        const{data:found,error:findErr}=await db.from('compensi_snapshots')
+          .select('id').eq('mese',mese).order('created_at',{ascending:false}).limit(1);
+        if(!findErr&&found&&found.length)existingSupaId=found[0].id;
+      }
+      const payload={mese, data_json:{...snap, state:JSON.parse(JSON.stringify(S))}, note:''};
+      const{data,error}=existingSupaId
+        ? await db.from('compensi_snapshots').update(payload).eq('id',existingSupaId).select('id').single()
+        : await db.from('compensi_snapshots').insert(payload).select('id').single();
       if(error||!data){
         // Non far credere che sia andato tutto bene: esito esplicito, e lo
         // snapshot resta comunque salvato in locale (S.snaps/localStorage).
         notify('Salvataggio cloud non riuscito: '+(error?error.message:'nessuna riga restituita')+' — tenuto solo in locale');
-        console.error('Supabase insert error:',error);
+        console.error('Supabase insert/update error:',error);
       } else {
         snap._supaId=data.id;
-        notify('Snapshot salvato ☁️');
+        notify(existingSupaId?'Snapshot del mese aggiornato ☁️':'Snapshot salvato ☁️');
       }
     } catch(e){
       notify('Salvataggio cloud non riuscito: errore di rete — tenuto solo in locale');
@@ -4283,22 +4297,45 @@ async function saveSnap(){
     notify('Snapshot salvato in locale (Supabase non disponibile)');
   }
 }
+// Snapshot di test (mese fittizio, es. "TEST 2099-01...") o con anno >= 2090
+// non devono comparire nell'app — restano nel DB (niente DELETE via app, §14),
+// ma sono invisibili qui. Vale sia per gli snapshot locali che per quelli
+// caricati da cloud (loadSupaSnaps li scarta a monte, vedi sotto).
+function snapVisibile(s){
+  if(!s)return false;
+  if(s.data&&/test/i.test(s.data))return false;
+  const anno=s.ts?new Date(s.ts).getFullYear():null;
+  if(anno!==null&&anno>=2090)return false;
+  return true;
+}
+// Dedup per mese: se esistono più righe per lo stesso mese (es. doppio
+// salvataggio prima di questa versione), mostra solo la più recente.
+function snapsVisibiliDedup(){
+  const visibili=S.snaps.filter(snapVisibile);
+  const perMese=new Map();
+  visibili.forEach(s=>{
+    const cur=perMese.get(s.data);
+    if(!cur||new Date(s.ts)>new Date(cur.ts))perMese.set(s.data,s);
+  });
+  return[...perMese.values()].sort((a,b)=>new Date(b.ts)-new Date(a.ts));
+}
 function renderStorico(){
   const f=flow();
   const sc=document.getElementById('storico-current');
   if(sc)sc.innerHTML=`<div class="snap-vals">     <div class="sv"><span>Incassato</span><strong>${fmt(f.inc)}</strong></div>     <div class="sv"><span>Sistema</span><strong style="color:var(--red)">${fmt(f.sistema)}</strong></div>     <div class="sv"><span>Personale</span><strong style="color:var(--amber)">${fmt(f.pers)}</strong></div>     <div class="sv"><span>Tasse</span><strong style="color:var(--amber)">${fmt(f.tasse)}</strong></div>     <div class="sv"><span>Premi (P3 eff.)</span><strong style="color:var(--amber)">${fmt(f.poolP3Eff)}</strong></div>     <div class="sv"><span>Utili</span><strong style="color:${f.utili<0?'var(--red)':'var(--green)'}">${fmt(f.utili)}</strong></div>   </div>`;
   const sl=document.getElementById('snap-list');if(!sl)return;
-  if(!S.snaps.length){
+  const visibili=snapsVisibiliDedup();
+  if(!visibili.length){
     sl.innerHTML='<div class="empty">Nessuno snapshot. Usa "Salva mese corrente" al passo 7.</div>';
     if(db&&!_supaSnapsFetched) loadSupaSnaps();
     return;
   }
-  sl.innerHTML=S.snaps.map((s,i)=>`<div class="snap">     <div class="snap-m">${s.data}${s._cloud?'<span style="font-size:9px;color:var(--ink3);margin-left:5px">☁️</span>':''} <button class="btn xs danger" style="margin-left:6px" onclick="deleteSnap(${i})">✕</button></div>     <div class="snap-vals">       <div class="sv"><span>Incassato</span><strong>${fmt(s.inc)}</strong></div>       <div class="sv"><span>Personale</span><strong style="color:var(--amber)">${fmt(s.pers||0)}</strong></div>       <div class="sv"><span>Tasse</span><strong style="color:var(--amber)">${fmt(s.tasse||0)}</strong></div>       <div class="sv"><span>Premi liquidati</span><strong style="color:var(--amber)">${fmt((s.premi&&s.premi.liquidatoTot)||0)}</strong></div>       <div class="sv"><span>Utili</span><strong style="color:${s.utili<0?'var(--red)':'var(--green)'}">${fmt(s.utili)}</strong></div>     </div>   </div>`).join('');
+  sl.innerHTML=visibili.map((s)=>{const i=S.snaps.indexOf(s);return`<div class="snap">     <div class="snap-m">${s.data}${s._cloud?'<span style="font-size:9px;color:var(--ink3);margin-left:5px">☁️</span>':''} <button class="btn xs danger" style="margin-left:6px" onclick="deleteSnap(${i})">✕</button></div>     <div class="snap-vals">       <div class="sv"><span>Incassato</span><strong>${fmt(s.inc)}</strong></div>       <div class="sv"><span>Personale</span><strong style="color:var(--amber)">${fmt(s.pers||0)}</strong></div>       <div class="sv"><span>Tasse</span><strong style="color:var(--amber)">${fmt(s.tasse||0)}</strong></div>       <div class="sv"><span>Premi liquidati</span><strong style="color:var(--amber)">${fmt((s.premi&&s.premi.liquidatoTot)||0)}</strong></div>       <div class="sv"><span>Utili</span><strong style="color:${s.utili<0?'var(--red)':'var(--green)'}">${fmt(s.utili)}</strong></div>     </div>   </div>`;}).join('');
   if(db&&!_supaSnapsFetched) loadSupaSnaps();
   const cw=document.getElementById('snap-chart-wrap');if(cw)cw.style.display='';
   const c=document.getElementById('storico-chart');if(!c)return;
   if(stInst)stInst.destroy();
-  const rv=[...S.snaps].reverse();
+  const rv=[...visibili].reverse();
   stInst=new Chart(c,{type:'bar',
     data:{labels:rv.map(s=>s.data),datasets:[
       {label:'Incassato',data:rv.map(s=>s.inc),backgroundColor:'#4A38B0'},
@@ -4329,6 +4366,9 @@ async function loadSupaSnaps(){
     let added=0;
     data.forEach(row=>{
       if(localTs.has(row.created_at)) return;
+      // Righe di test (mese fittizio) o anno >= 2090 non entrano nemmeno in
+      // memoria — restano nel DB ma non devono comparire da nessuna parte.
+      if(!snapVisibile({data:row.mese,ts:row.created_at})) return;
       const dj=row.data_json||{};
       S.snaps.push({
         data:row.mese||'—', ts:row.created_at,
