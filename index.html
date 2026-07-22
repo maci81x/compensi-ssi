@@ -5907,7 +5907,7 @@ function updateSim(v){
   renderSimKPI(f);
   renderSimWaterfall(f);
   renderSimAree(f);
-  renderSimBreakEven();
+  renderSimBreakEven(f);
   renderSimScenarios();
 }
 
@@ -5962,24 +5962,36 @@ function renderSimAree(f){
   });
 }
 
+// Break-even allineato alla cascata a priorità (SPEC-v10 §5/§8, Fase 5): la
+// cascata non è lineare (grfm e budget variabile aree scalano con l'incassato,
+// ma prioritari/garantito sono € fissi, e i pool P2/P3 vengono compressi sotto
+// una certa soglia) — niente formula "a parte": ricerca numerica (bisezione)
+// usando la STESSA flow() del Dashboard/semaforo, così il simulatore non può
+// mai dare un numero diverso dalla dashboard sulla stessa domanda.
 function calcBreakEven(){
-  // Stima incassato minimo per utili = 0
-  // utili = inc - grfm% - sistema_fisso - costi%_tot - tasse_fisse - personale_garantito - cda
-  const pctTot = (S.voci[0].pct + S.voci[1].pct + S.voci[2].pct + S.voci[3].pct) / 100;
-  const fissi = totSistema() + totTasse() + S.personale.reduce((s,p)=>s+calcPersona(p).garantito,0) + S.cda;
-  const be = fissi / (1 - pctTot);
-  return Math.round(be);
+  const origInc=S.incassato;
+  const utiliAt=(inc)=>{S.incassato=inc;const u=flow().utili;S.incassato=origInc;return u;};
+  if(utiliAt(0)>=0)return 0;
+  let lo=0,hi=Math.max(origInc*3,10000);
+  let guard=0;
+  while(utiliAt(hi)<0&&guard<40){hi*=2;guard++;}
+  for(let i=0;i<60;i++){
+    const mid=(lo+hi)/2;
+    if(utiliAt(mid)>=0)hi=mid;else lo=mid;
+  }
+  return Math.round(hi);
 }
 
-function renderSimBreakEven(){
+function renderSimBreakEven(f){
   const el = document.getElementById('sim-break-even'); if(!el) return;
+  if(!f)f=flow();
   const be = calcBreakEven();
   const dist = simInc - be;
   const safe = dist >= 0;
-  el.innerHTML = `     <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">       <div style="flex:1;min-width:200px">         <div style="font-size:11px;color:var(--ink3);margin-bottom:4px">Incassato minimo per non andare in perdita</div>         <div style="font-size:28px;font-weight:300;font-family:'DM Mono',monospace;color:var(--ink)">${fmt(be)}</div>         <div style="font-size:12px;margin-top:4px;color:${safe?'var(--green)':'var(--red)'}">           ${safe ? '✓ Sei sopra il break-even di ' + fmt(dist) : '⚠ Sei sotto il break-even di ' + fmt(Math.abs(dist))}         </div>       </div>       <div style="flex:1;min-width:200px">         <div style="font-size:11px;color:var(--ink3);margin-bottom:6px">Composizione costi fissi</div>         ${[           ['Sistema fissi', totSistema()],           ['Tasse (stima)', totTasse()],           ['Personale garantito', S.personale.reduce((s,p)=>s+calcPersona(p).garantito,0)],           ['CDA', S.cda],         ].map(([l,v]) => `<div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0">
+  el.innerHTML = `     <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">       <div style="flex:1;min-width:200px">         <div style="font-size:11px;color:var(--ink3);margin-bottom:4px">Incassato minimo per non andare in perdita (cascata a priorità)</div>         <div style="font-size:28px;font-weight:300;font-family:'DM Mono',monospace;color:var(--ink)">${fmt(be)}</div>         <div style="font-size:12px;margin-top:4px;color:${safe?'var(--green)':'var(--red)'}">           ${safe ? '✓ Sei sopra il break-even di ' + fmt(dist) : '⚠ Sei sotto il break-even di ' + fmt(Math.abs(dist))}         </div>       </div>       <div style="flex:1;min-width:200px">         <div style="font-size:11px;color:var(--ink3);margin-bottom:6px">Composizione cascata (incassato simulato, §5)</div>         ${[           ['GRFM', f.grfm],           ['Prioritari (P1)', f.prioritariP1],           ['Garantito (dipendenti+soci+CDA)', f.garantito],           ['Budget aree (P2, effettivo)', f.poolP2Eff],           ['Premi (P3, effettivo)', f.poolP3Eff],         ].map(([l,v]) => `<div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0">
           <span style="color:var(--ink3)">${l}</span>
           <span class="mono" style="font-size:11px">${fmt(v)}</span>
-        </div>`).join('')}         <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:600;padding:4px 0;border-top:1px solid var(--lift);margin-top:4px">           <span>Tot. costi fissi</span>           <span class="mono">${fmt(totSistema()+totTasse()+S.personale.reduce((s,p)=>s+calcPersona(p).garantito,0)+S.cda)}</span>         </div>       </div>     </div>`;
+        </div>`).join('')}         <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:600;padding:4px 0;border-top:1px solid var(--lift);margin-top:4px">           <span>Tot. dedotto (= incassato − utili)</span>           <span class="mono">${fmt(f.grfm+f.prioritariP1+f.garantito+f.poolP2Eff+f.poolP3Eff)}</span>         </div>       </div>     </div>`;
 }
 
 function renderSimScenarios(){
