@@ -1428,6 +1428,11 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
       <div style="font-size:13px;font-weight:600;margin-bottom:8px">Andamento</div>
       <div style="position:relative;height:180px"><canvas id="storico-chart"></canvas></div>
     </div>
+    <div style="background:var(--card);border:1px solid var(--lift);border-radius:var(--rl);padding:14px;margin-top:12px">
+      <div style="font-size:13px;font-weight:600;margin-bottom:2px">Andamento reale 2026 (Controllo di gestione)</div>
+      <div style="font-size:11px;color:var(--ink3);margin-bottom:8px">Fatturato e costi esterni mensili — dato reale, non dal modello</div>
+      <div style="position:relative;height:180px"><canvas id="reale-chart"></canvas></div>
+    </div>
   </div>
 
 </div><!-- /main -->
@@ -2038,6 +2043,7 @@ let orgExp={};
 let orgOpenPop={};
 let popCb=null;
 let stInst=null;
+let realeChartInst=null;
 
 const CAT_ICONS={affitto:'🏢',utenze:'⚡',software:'💻',assicurazione:'🛡️',consulenza:'📋',altro:'📦'};
 
@@ -2047,6 +2053,22 @@ const DEF={
   incassatoSettimanale:0,
   incassatoMode:'calc',
   pins:{cda:'0000',comm:'1111',prod:'2222',form:'3333',amm:'4444',hr:'5555'},
+
+  // Dati reali 2026 da 26_Controllo_di_gestione.xlsx (§C, Fase 6) — foglio
+  // GESTIONALE (fatturato/costi esterni mensili) + foglio REALE (margine
+  // reale mensile, benchmark indipendente dal modello). Servono a precompilare
+  // l'incassato del mese con un dato vero invece del default, e come confronto
+  // margine modello vs reale (§C, se divergono molto è un segnale che il
+  // modello va corretto — non li sovrascrive, sono solo un riferimento).
+  storicoReale:[
+    {mese:'Gennaio',anno:2026,fatturato:146127.13,costiEsterni:86702.29,margineRealePct:17.72},
+    {mese:'Febbraio',anno:2026,fatturato:153373.36,costiEsterni:135043.88,margineRealePct:13.68},
+    {mese:'Marzo',anno:2026,fatturato:184552.79,costiEsterni:129852.22,margineRealePct:29.64},
+    {mese:'Aprile',anno:2026,fatturato:183531.65,costiEsterni:139900.57,margineRealePct:23.77},
+    {mese:'Maggio',anno:2026,fatturato:203740.19,costiEsterni:147732.69,margineRealePct:27.49},
+  ],
+  margineRealeYTD:23.41,
+  meseRealeSelezionato:null, // es. 'Marzo 2026' — impostato quando si preseleziona un mese reale
 
   voci:[
     {nome:'GRFM',             pct:5.0,  desc:'Quota trattenuta dalla holding — non distribuita'},
@@ -2219,23 +2241,23 @@ const DEF={
     {id:'pf_60d14g6',nome:'JOB & SAFETY Srl',cat:'Sorveglianza Sanitaria',areaPF:'Sorveglianza Sanitaria',natura:'variabile',areaId:'sorvsan',val:1430.67},
     {id:'pf_tuphagb',nome:'SELME SRL',cat:'Sorveglianza Sanitaria',areaPF:'Sorveglianza Sanitaria',natura:'variabile',areaId:'sorvsan',val:0},
     {id:'pf_197gays',nome:'GRAZIANI MARIA PAOLA',cat:'Privacy',areaPF:'Produzione',natura:'variabile',areaId:'prod',val:0},
-    {id:'pf_yvx0272',nome:'ECOGAM srl',cat:'Ambiente',areaPF:'Produzione',natura:'variabile',areaId:'prod',val:3662.75},
-    {id:'pf_2adi6mz',nome:'GRACCI LABORATORI SRL',cat:'Ambiente',areaPF:'Produzione',natura:'variabile',areaId:'prod',val:209.43},
-    {id:'pf_im1jhic',nome:'VWR INTERNATIONAL',cat:'Ambiente',areaPF:'Produzione',natura:'variabile',areaId:'prod',val:0},
-    {id:'pf_docc2vt',nome:'Securlab srl',cat:'Ambiente',areaPF:'Produzione',natura:'variabile',areaId:'prod',val:98.27},
-    {id:'pf_h3fewy7',nome:'Galli Veronica',cat:'Ambiente',areaPF:'Produzione',natura:'variabile',areaId:'prod',val:0},
+    {id:'pf_yvx0272',nome:'ECOGAM srl',cat:'Ambiente',areaPF:'Produzione',natura:'variabile',areaId:'c_ambiente',val:3662.75},
+    {id:'pf_2adi6mz',nome:'GRACCI LABORATORI SRL',cat:'Ambiente',areaPF:'Produzione',natura:'variabile',areaId:'c_ambiente',val:209.43},
+    {id:'pf_im1jhic',nome:'VWR INTERNATIONAL',cat:'Ambiente',areaPF:'Produzione',natura:'variabile',areaId:'c_ambiente',val:0},
+    {id:'pf_docc2vt',nome:'Securlab srl',cat:'Ambiente',areaPF:'Produzione',natura:'variabile',areaId:'c_ambiente',val:98.27},
+    {id:'pf_h3fewy7',nome:'Galli Veronica',cat:'Ambiente',areaPF:'Produzione',natura:'variabile',areaId:'c_ambiente',val:0},
     {id:'pf_ncixim7',nome:'Stomeo Luca',cat:'Formazione',areaPF:'Formazione',natura:'variabile',areaId:'form',val:17.68},
-    {id:'pf_4qt1o35',nome:'EMME ANTINCENDIO',cat:'Antincendio',areaPF:'Produzione',natura:'variabile',areaId:'prod',val:0},
-    {id:'pf_25qd3v0',nome:'Manganelli STP srl',cat:'Antincendio',areaPF:'Produzione',natura:'variabile',areaId:'prod',val:234.22},
-    {id:'pf_g24qrvm',nome:'Simone Barbagli',cat:'Antincendio',areaPF:'Produzione',natura:'variabile',areaId:'prod',val:1484.78},
-    {id:'pf_0we6vkf',nome:'Tavanti Project',cat:'Antincendio',areaPF:'Produzione',natura:'variabile',areaId:'prod',val:567.3},
-    {id:'pf_c4oar27',nome:'CHELI STELLA',cat:'Antincendio',areaPF:'Produzione',natura:'variabile',areaId:'prod',val:0},
-    {id:'pf_196hp72',nome:'E.S.M.A. Estintori Srl',cat:'Antincendio',areaPF:'Produzione',natura:'variabile',areaId:'prod',val:761.38},
-    {id:'pf_lpnfxxr',nome:'GTA ESTINTORI DI MEONI A., DI IOIA F. E BALDI D. SNC',cat:'Antincendio',areaPF:'Produzione',natura:'variabile',areaId:'prod',val:411.34},
-    {id:'pf_ddro0ck',nome:'GPA GAS SRL',cat:'Antincendio',areaPF:'Produzione',natura:'variabile',areaId:'prod',val:6.66},
-    {id:'pf_dbylsw7',nome:'DINUSOVA Andrea',cat:'Antincendio',areaPF:'Produzione',natura:'variabile',areaId:'prod',val:0},
-    {id:'pf_prmyrto',nome:'HT Srl',cat:'Verifiche Terra',areaPF:'Produzione',natura:'variabile',areaId:'prod',val:264.33},
-    {id:'pf_r9pz3ra',nome:'MGA Consulting SRLS',cat:'Verifiche Terra',areaPF:'Produzione',natura:'variabile',areaId:'prod',val:20.83},
+    {id:'pf_4qt1o35',nome:'EMME ANTINCENDIO',cat:'Antincendio',areaPF:'Produzione',natura:'variabile',areaId:'c_antincendio',val:0},
+    {id:'pf_25qd3v0',nome:'Manganelli STP srl',cat:'Antincendio',areaPF:'Produzione',natura:'variabile',areaId:'c_antincendio',val:234.22},
+    {id:'pf_g24qrvm',nome:'Simone Barbagli',cat:'Antincendio',areaPF:'Produzione',natura:'variabile',areaId:'c_antincendio',val:1484.78},
+    {id:'pf_0we6vkf',nome:'Tavanti Project',cat:'Antincendio',areaPF:'Produzione',natura:'variabile',areaId:'c_antincendio',val:567.3},
+    {id:'pf_c4oar27',nome:'CHELI STELLA',cat:'Antincendio',areaPF:'Produzione',natura:'variabile',areaId:'c_antincendio',val:0},
+    {id:'pf_196hp72',nome:'E.S.M.A. Estintori Srl',cat:'Antincendio',areaPF:'Produzione',natura:'variabile',areaId:'c_antincendio',val:761.38},
+    {id:'pf_lpnfxxr',nome:'GTA ESTINTORI DI MEONI A., DI IOIA F. E BALDI D. SNC',cat:'Antincendio',areaPF:'Produzione',natura:'variabile',areaId:'c_antincendio',val:411.34},
+    {id:'pf_ddro0ck',nome:'GPA GAS SRL',cat:'Antincendio',areaPF:'Produzione',natura:'variabile',areaId:'c_antincendio',val:6.66},
+    {id:'pf_dbylsw7',nome:'DINUSOVA Andrea',cat:'Antincendio',areaPF:'Produzione',natura:'variabile',areaId:'c_antincendio',val:0},
+    {id:'pf_prmyrto',nome:'HT Srl',cat:'Verifiche Terra',areaPF:'Produzione',natura:'variabile',areaId:'c_verifiche_terra',val:264.33},
+    {id:'pf_r9pz3ra',nome:'MGA Consulting SRLS',cat:'Verifiche Terra',areaPF:'Produzione',natura:'variabile',areaId:'c_verifiche_terra',val:20.83},
     {id:'pf_k5wr6gf',nome:'SVANTEK',cat:'Manutenzione Strumenti',areaPF:'Sistema',natura:'variabile',areaId:null,val:316.18},
     {id:'pf_j7kawq4',nome:'Manuel Spina',cat:'Commerciali',areaPF:'Commerciale',natura:'variabile',areaId:'comm',val:9.75},
     {id:'pf_gdz435z',nome:'Alessandro Raia',cat:'Commerciali',areaPF:'Commerciale',natura:'variabile',areaId:'comm',val:1372.5},
@@ -2300,6 +2322,18 @@ const DEF={
     {id:'comm',nome:'Commerciale',tipo:'RIC',desc:'Vendite, rinnovi, CRM, agenti',incPct:17.25,
      resp:'Roberto Macinai',
      parentId:null,natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:17.25},chiusa:false,
+     // Provvigioni agenti (PF SI 2026.xlsx, cat "Commerciali") — dato reale già
+     // importato in S.sistemaFissi (areaId:'comm'), riportato qui in dettaglio
+     // fornitore per area come richiesto (§A seed costi centri).
+     fornitoreFisso:3729.85,
+     fornitori:[
+       {nome:'Alessandro Raia',valMensile:1372.5},
+       {nome:'Mario Rufolo (Artigea)',valMensile:831.03},
+       {nome:'Mancini Alberto',valMensile:582.91},
+       {nome:'Massimo Giusti',valMensile:467},
+       {nome:'Davide Gaziano',valMensile:466.66},
+       {nome:'Manuel Spina',valMensile:9.75},
+     ],
      micro:[
        {nome:'Preventivi accettati/fatti %',      fisso:0,bonus:0,kt:101,ke:0,note:'Nr preventivi accettati / nr preventivi fatti × 100. Monitoraggio mensile.'},
        {nome:'Incassi in linea sul venduto %',     fisso:0,bonus:0,kt:101,ke:0,note:'Incassato reale / venduto contrattualizzato × 100.'},
@@ -2359,6 +2393,24 @@ const DEF={
     {id:'form',nome:'Formazione',tipo:'RIC',desc:'Corsi sicurezza, docenze, attestati, registro presenze',incPct:8.5,
      resp:'Niccolò',
      parentId:'prod',natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:8.5},chiusa:false,
+     // 14 docenti esterni con costo reale (PF SI 2026.xlsx, cat "Formazione") — §A seed costi centri.
+     fornitoreFisso:1703.52,
+     fornitori:[
+       {nome:'Marchiaturificio delle Crete',valMensile:622.24},
+       {nome:'Luca Pagni',valMensile:259.63},
+       {nome:'Alberto Baessato',valMensile:191.53},
+       {nome:'Vega Formazione',valMensile:183.39},
+       {nome:'Morelli Massimo',valMensile:106.32},
+       {nome:'Eleonora De Angelis',valMensile:95.5},
+       {nome:'Felici Andrea',valMensile:79.22},
+       {nome:'Filippo Lascialfari',valMensile:40.3},
+       {nome:'Benedetta Greco',valMensile:29.33},
+       {nome:'Assoservizi Srl',valMensile:28.47},
+       {nome:'Marco Melani',valMensile:21.25},
+       {nome:'Stomeo Luca',valMensile:17.68},
+       {nome:'Masserelli Edoardo',valMensile:16.83},
+       {nome:'Borrani Caterina',valMensile:11.83},
+     ],
      micro:[
        {nome:'Ore formazione erogate vs pianificate %', fisso:0,bonus:0,kt:101,ke:0,note:'Ore effettivamente erogate / ore pianificate nel mese × 100.'},
        {nome:'% corsi completati vs avviati',           fisso:0,bonus:0,kt:101,ke:0,note:'Corsi portati a termine / corsi avviati × 100.'},
@@ -2375,7 +2427,21 @@ const DEF={
     // ── SORVEGLIANZA SANITARIA (nuova, sotto Produzione — SPEC-v10 §3) ─────
     {id:'sorvsan',nome:'Sorveglianza Sanitaria',tipo:'RIC',desc:'Visite mediche, medici competenti, gestione protocolli sanitari',incPct:0,
      resp:'',
-     parentId:'prod',natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:0},chiusa:false,fornitoreFisso:0,
+     parentId:'prod',natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:0},chiusa:false,
+     // Fornitori/medici reali (PF SI 2026.xlsx, cat "Sorveglianza Sanitaria") — §A seed costi centri.
+     fornitoreFisso:7201.77,
+     fornitori:[
+       {nome:'Stemar Srl',valMensile:3489.3},
+       {nome:'Job & Safety Srl',valMensile:1430.67},
+       {nome:'Centro Analisi Cliniche Alba Srl',valMensile:744.07},
+       {nome:'Biscioni Emanuela',valMensile:722.85},
+       {nome:'Studi Medici Toscana Srl',valMensile:695.79},
+       {nome:'Dott. Chezzi Massimo',valMensile:69.67},
+       {nome:'SecureLab Srl',valMensile:32.67},
+       {nome:'Galassi Luigi',valMensile:8.5},
+       {nome:'Synlab Med Srl',valMensile:5},
+       {nome:'Laboratorio G.A.M.M.A. Srl',valMensile:3.25},
+     ],
      micro:[
        {nome:'Visite effettuate nr',             fisso:0,bonus:0,kt:0,ke:0,note:'Nr visite mediche effettuate nel mese (da comp.visite_mc dei medici competenti).'},
        {nome:'Nuovi MC attivati nr',             fisso:0,bonus:0,kt:0,ke:0,note:'Nr nuovi medici competenti attivati nel mese.'},
@@ -2402,26 +2468,43 @@ const DEF={
     // un budget/KPI indipendente proprio. valore€ arriva da generato_tecnico
     // dove esiste già un campo collegato (vedi CENTRO_TECNICO_FIELD); i centri
     // senza campo ancora collegato restano a 0€ finché non se ne aggiunge uno.
-    {id:'c_analisi',nome:'Analisi',tipo:'RIC',desc:'Centro di costo — Analisi',incPct:0,resp:'',
-     parentId:'prod',natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:0},chiusa:true,fornitoreFisso:0,micro:[]},
-    {id:'c_antincendio',nome:'Antincendio',tipo:'RIC',desc:'Centro di costo — Antincendio',incPct:0,resp:'',
-     parentId:'prod',natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:0},chiusa:true,fornitoreFisso:0,micro:[]},
-    {id:'c_ambiente',nome:'Ambiente',tipo:'RIC',desc:'Centro di costo — Ambiente',incPct:0,resp:'',
-     parentId:'prod',natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:0},chiusa:true,fornitoreFisso:0,micro:[]},
-    {id:'c_estintori',nome:'Estintori',tipo:'RIC',desc:'Centro di costo — Estintori',incPct:0,resp:'',
-     parentId:'prod',natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:0},chiusa:true,fornitoreFisso:0,micro:[]},
+    // Analisi assorbita in Ambiente (Gracci/Securlab sono laboratori di analisi,
+    // non un centro a sé — PF SI 2026.xlsx) ed Estintori assorbito in
+    // Antincendio (ESMA/GTA) — richiesta esplicita di riallineamento alla
+    // realtà del PF. Privacy/Acustica rimossi: nessun costo/ricavo reale nel
+    // PF era loro attribuito (valori a zero ovunque).
+    {id:'c_antincendio',nome:'Antincendio',tipo:'RIC',desc:'Centro di costo — Antincendio (include ex "Estintori": ESMA, GTA)',incPct:0,resp:'',
+     parentId:'prod',natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:0},chiusa:true,
+     fornitoreFisso:3465.68,ricavoModo:'tecnico',
+     fornitori:[
+       {nome:'Simone Barbagli',valMensile:1484.78},
+       {nome:'E.S.M.A. Estintori Srl',valMensile:761.38},
+       {nome:'Tavanti Project',valMensile:567.3},
+       {nome:'GTA Estintori (Meoni/Ioia/Baldi)',valMensile:411.34},
+       {nome:'Manganelli STP Srl',valMensile:234.22},
+       {nome:'GPA Gas Srl',valMensile:6.66},
+     ],micro:[]},
+    {id:'c_ambiente',nome:'Ambiente',tipo:'RIC',desc:'Centro di costo — Ambiente (include ex "Analisi": Gracci, Securlab)',incPct:0,resp:'',
+     parentId:'prod',natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:0},chiusa:true,
+     fornitoreFisso:3970.45,ricavoModo:'tecnico',
+     fornitori:[
+       {nome:'Ecogam Srl',valMensile:3662.75},
+       {nome:'Gracci Laboratori Srl',valMensile:209.43},
+       {nome:'Securlab Srl',valMensile:98.27},
+     ],micro:[]},
     {id:'c_cantieri',nome:'Cantieri',tipo:'RIC',desc:'Centro di costo — Cantieri',incPct:0,resp:'',
-     parentId:'prod',natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:0},chiusa:true,fornitoreFisso:0,micro:[]},
+     parentId:'prod',natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:0},chiusa:true,fornitoreFisso:0,ricavoModo:'tecnico',micro:[]},
     {id:'c_rspp',nome:'RSPP',tipo:'RIC',desc:'Centro di costo — RSPP',incPct:0,resp:'',
-     parentId:'prod',natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:0},chiusa:true,fornitoreFisso:0,micro:[]},
+     parentId:'prod',natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:0},chiusa:true,fornitoreFisso:0,ricavoModo:'tecnico',micro:[]},
     {id:'c_verifiche_terra',nome:'Verifiche Terra',tipo:'RIC',desc:'Centro di costo — Verifiche Terra',incPct:0,resp:'',
-     parentId:'prod',natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:0},chiusa:true,fornitoreFisso:0,micro:[]},
+     parentId:'prod',natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:0},chiusa:true,
+     fornitoreFisso:285.16,ricavoModo:'manuale',ricavoManuale:0,ricavoPct:0,
+     fornitori:[
+       {nome:'HT Srl',valMensile:264.33},
+       {nome:'MGA Consulting Srls',valMensile:20.83},
+     ],micro:[]},
     {id:'c_documenti',nome:'Documenti',tipo:'RIC',desc:'Centro di costo — Documenti',incPct:0,resp:'',
-     parentId:'prod',natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:0},chiusa:true,fornitoreFisso:0,micro:[]},
-    {id:'c_privacy',nome:'Privacy',tipo:'RIC',desc:'Centro di costo — Privacy',incPct:0,resp:'',
-     parentId:'prod',natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:0},chiusa:true,fornitoreFisso:0,micro:[]},
-    {id:'c_acustica',nome:'Acustica',tipo:'RIC',desc:'Centro di costo — Acustica',incPct:0,resp:'',
-     parentId:'prod',natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:0},chiusa:true,fornitoreFisso:0,micro:[]},
+     parentId:'prod',natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:0},chiusa:true,fornitoreFisso:0,ricavoModo:'tecnico',micro:[]},
 
   ],
   tasse:[
@@ -2572,7 +2655,7 @@ const DEF={
      // Nessun costoOrario/oreMensili: nel file dipendenti il suo LORDO PAGA è
      // un fisso mensile senza gg/ore tracciate (contratto diverso dagli altri
      // tecnici) — costoVar centri per lui resta 0 finché non si valorizza a mano.
-     ripartizioneCentri:{c_analisi:10,c_antincendio:10,c_ambiente:10,c_estintori:10,c_cantieri:10,c_rspp:10,c_verifiche_terra:10,c_documenti:10,c_privacy:10,c_acustica:10},oreEffettiveCentro:{},
+     ripartizioneCentri:{c_antincendio:16.67,c_ambiente:16.67,c_cantieri:16.67,c_rspp:16.67,c_verifiche_terra:16.67,c_documenti:16.65},oreEffettiveCentro:{},
      area:'comm',areaResp:'comm',
      tipo_contratto:'DIP',tariffaOraria:30,isResp:true,isCapoArea:true,capoAreaDi:'comm',agentiIds:['p_dav','p_gig','p01','p02','p03'],livello:'B',
      note:'Tecnico senior con potenziale CA. Al momento no agenti.',
@@ -2606,27 +2689,27 @@ const DEF={
        {id:'s_sam_rto',tipo:'responsabilita',area:'prod',label:'RTO Fisso + docenze',
         comp:{fisso:{on:true,val:2800},ore_form:{on:true,ore:0,tariffa:30},pratiche:{on:true,nr:0,tariffa:12},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:true,val:0},bonus_kpi:{on:true,val:800,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:true,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:true,ore_previste:80,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:false,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:0},generato_rto:{on:true,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}
      ]},
-    {id:'p_sil',nome:'Silvia',ruolo_principale:'Tecnico',natura:'dipendente',costoAziendaAnnuo:31066.41,costoAziendaMensile:2588.87,dipendenteMatchNome:'CIPRIANI SILVIA',costoOrario:37.84,oreMensili:136.8,ripartizioneCentri:{c_analisi:10,c_antincendio:10,c_ambiente:10,c_estintori:10,c_cantieri:10,c_rspp:10,c_verifiche_terra:10,c_documenti:10,c_privacy:10,c_acustica:10},oreEffettiveCentro:{},area:'prod',areaResp:'prod',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
+    {id:'p_sil',nome:'Silvia',ruolo_principale:'Tecnico',natura:'dipendente',costoAziendaAnnuo:31066.41,costoAziendaMensile:2588.87,dipendenteMatchNome:'CIPRIANI SILVIA',costoOrario:37.84,oreMensili:136.8,ripartizioneCentri:{c_antincendio:16.67,c_ambiente:16.67,c_cantieri:16.67,c_rspp:16.67,c_verifiche_terra:16.67,c_documenti:16.65},oreEffettiveCentro:{},area:'prod',areaResp:'prod',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
      note:'Tecnico produzione. Generato calcolato su 7 voci. Obiettivo attivazione: €7500.',
      slots:[
        {id:'s_p_sil_tec',tipo:'tecnico',area:'prod',label:'Attività produzione',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:true,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:true,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:7500},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}
      ]},
-    {id:'p_eli',nome:'Elia',ruolo_principale:'Tecnico',natura:'dipendente',costoAziendaAnnuo:15802,costoAziendaMensile:1316.83,dipendenteMatchNome:'ALDINUCCI ELIA',costoOrario:17.09,oreMensili:154.1,ripartizioneCentri:{c_analisi:10,c_antincendio:10,c_ambiente:10,c_estintori:10,c_cantieri:10,c_rspp:10,c_verifiche_terra:10,c_documenti:10,c_privacy:10,c_acustica:10},oreEffettiveCentro:{},area:'prod',areaResp:'prod',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
+    {id:'p_eli',nome:'Elia',ruolo_principale:'Tecnico',natura:'dipendente',costoAziendaAnnuo:15802,costoAziendaMensile:1316.83,dipendenteMatchNome:'ALDINUCCI ELIA',costoOrario:17.09,oreMensili:154.1,ripartizioneCentri:{c_antincendio:16.67,c_ambiente:16.67,c_cantieri:16.67,c_rspp:16.67,c_verifiche_terra:16.67,c_documenti:16.65},oreEffettiveCentro:{},area:'prod',areaResp:'prod',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
      note:'Tecnico produzione. Generato calcolato su 7 voci. Obiettivo attivazione: €7500.',
      slots:[
        {id:'s_p_eli_tec',tipo:'tecnico',area:'prod',label:'Attività produzione',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:true,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:true,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:7500},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}
      ]},
-    {id:'p_pel',nome:'Francesco Pelliccia',ruolo_principale:'Tecnico',natura:'dipendente',costoAziendaAnnuo:9707.44,costoAziendaMensile:808.95,dipendenteMatchNome:'PELLICCIA FRANCESCO',costoOrario:28.47,oreMensili:113.7,ripartizioneCentri:{c_analisi:10,c_antincendio:10,c_ambiente:10,c_estintori:10,c_cantieri:10,c_rspp:10,c_verifiche_terra:10,c_documenti:10,c_privacy:10,c_acustica:10},oreEffettiveCentro:{},area:'prod',areaResp:'prod',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
+    {id:'p_pel',nome:'Francesco Pelliccia',ruolo_principale:'Tecnico',natura:'dipendente',costoAziendaAnnuo:9707.44,costoAziendaMensile:808.95,dipendenteMatchNome:'PELLICCIA FRANCESCO',costoOrario:28.47,oreMensili:113.7,ripartizioneCentri:{c_antincendio:16.67,c_ambiente:16.67,c_cantieri:16.67,c_rspp:16.67,c_verifiche_terra:16.67,c_documenti:16.65},oreEffettiveCentro:{},area:'prod',areaResp:'prod',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
      note:'Tecnico produzione. Generato calcolato su 7 voci. Obiettivo attivazione: €5000.',
      slots:[
        {id:'s_p_pel_tec',tipo:'tecnico',area:'prod',label:'Attività produzione',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:true,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:true,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:5000},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}
      ]},
-    {id:'p_sim',nome:'Simone',ruolo_principale:'Tecnico',natura:'dipendente',costoAziendaAnnuo:21761.69,costoAziendaMensile:1813.47,dipendenteMatchNome:'GAMBINI SIMONE',costoOrario:24.84,oreMensili:146,ripartizioneCentri:{c_analisi:10,c_antincendio:10,c_ambiente:10,c_estintori:10,c_cantieri:10,c_rspp:10,c_verifiche_terra:10,c_documenti:10,c_privacy:10,c_acustica:10},oreEffettiveCentro:{},area:'prod',areaResp:'prod',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
+    {id:'p_sim',nome:'Simone',ruolo_principale:'Tecnico',natura:'dipendente',costoAziendaAnnuo:21761.69,costoAziendaMensile:1813.47,dipendenteMatchNome:'GAMBINI SIMONE',costoOrario:24.84,oreMensili:146,ripartizioneCentri:{c_antincendio:16.67,c_ambiente:16.67,c_cantieri:16.67,c_rspp:16.67,c_verifiche_terra:16.67,c_documenti:16.65},oreEffettiveCentro:{},area:'prod',areaResp:'prod',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
      note:'Tecnico produzione. Generato calcolato su 7 voci. Obiettivo attivazione: €7500.',
      slots:[
        {id:'s_p_sim_tec',tipo:'tecnico',area:'prod',label:'Attività produzione',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:true,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:true,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:7500},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}
      ]},
-    {id:'p_guc',nome:'Guccio',ruolo_principale:'Tecnico',natura:'dipendente',costoAziendaAnnuo:17508.93,costoAziendaMensile:1459.08,dipendenteMatchNome:'CORSI GUCCIO',costoOrario:19.5,oreMensili:149.7,ripartizioneCentri:{c_analisi:10,c_antincendio:10,c_ambiente:10,c_estintori:10,c_cantieri:10,c_rspp:10,c_verifiche_terra:10,c_documenti:10,c_privacy:10,c_acustica:10},oreEffettiveCentro:{},area:'prod',areaResp:'prod',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
+    {id:'p_guc',nome:'Guccio',ruolo_principale:'Tecnico',natura:'dipendente',costoAziendaAnnuo:17508.93,costoAziendaMensile:1459.08,dipendenteMatchNome:'CORSI GUCCIO',costoOrario:19.5,oreMensili:149.7,ripartizioneCentri:{c_antincendio:16.67,c_ambiente:16.67,c_cantieri:16.67,c_rspp:16.67,c_verifiche_terra:16.67,c_documenti:16.65},oreEffettiveCentro:{},area:'prod',areaResp:'prod',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
      note:'Tecnico produzione. Generato calcolato su 7 voci. Obiettivo attivazione: €6000.',
      slots:[
        {id:'s_p_guc_tec',tipo:'tecnico',area:'prod',label:'Attività produzione',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:true,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:true,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:6000},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}
@@ -2636,7 +2719,7 @@ const DEF={
      slots:[
        {id:'s_p_ale_tec',tipo:'tecnico',area:'prod',label:'Attività produzione',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:true,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:true,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:7500},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}
      ]},
-    {id:'p_ces',nome:'Cesare',ruolo_principale:'Tecnico',natura:'dipendente',costoAziendaAnnuo:7225.21,costoAziendaMensile:602.1,dipendenteMatchNome:'CRISTOFORI CESARE',costoOrario:7.76,oreMensili:155.2,ripartizioneCentri:{c_analisi:10,c_antincendio:10,c_ambiente:10,c_estintori:10,c_cantieri:10,c_rspp:10,c_verifiche_terra:10,c_documenti:10,c_privacy:10,c_acustica:10},oreEffettiveCentro:{},area:'prod',areaResp:'prod',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
+    {id:'p_ces',nome:'Cesare',ruolo_principale:'Tecnico',natura:'dipendente',costoAziendaAnnuo:7225.21,costoAziendaMensile:602.1,dipendenteMatchNome:'CRISTOFORI CESARE',costoOrario:7.76,oreMensili:155.2,ripartizioneCentri:{c_antincendio:16.67,c_ambiente:16.67,c_cantieri:16.67,c_rspp:16.67,c_verifiche_terra:16.67,c_documenti:16.65},oreEffettiveCentro:{},area:'prod',areaResp:'prod',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
      note:'Tecnico produzione. Generato calcolato su 7 voci. Obiettivo attivazione: €6500.',
      slots:[
        {id:'s_p_ces_tec',tipo:'tecnico',area:'prod',label:'Attività produzione',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:true,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:true,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:6500},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}
@@ -2677,7 +2760,7 @@ const DEF={
      slots:[{id:'s_val_amm',tipo:'supervisione',area:'amm',label:'Amministrazione',comp:{fisso:{on:false,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:false,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:false,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:0},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}]},
 
     // Alessandro Biotti — tecnico
-    {id:'p_bio',nome:'Alessandro Biotti',ruolo_principale:'Tecnico',natura:'dipendente',costoAziendaAnnuo:24277.95,costoAziendaMensile:2023.16,dipendenteMatchNome:'BIOTTI ALESSANDRO',costoOrario:26.72,oreMensili:151.4,ripartizioneCentri:{c_analisi:10,c_antincendio:10,c_ambiente:10,c_estintori:10,c_cantieri:10,c_rspp:10,c_verifiche_terra:10,c_documenti:10,c_privacy:10,c_acustica:10},oreEffettiveCentro:{},area:'prod',areaResp:'prod',
+    {id:'p_bio',nome:'Alessandro Biotti',ruolo_principale:'Tecnico',natura:'dipendente',costoAziendaAnnuo:24277.95,costoAziendaMensile:2023.16,dipendenteMatchNome:'BIOTTI ALESSANDRO',costoOrario:26.72,oreMensili:151.4,ripartizioneCentri:{c_antincendio:16.67,c_ambiente:16.67,c_cantieri:16.67,c_rspp:16.67,c_verifiche_terra:16.67,c_documenti:16.65},oreEffettiveCentro:{},area:'prod',areaResp:'prod',
      tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
      note:'Tecnico produzione. Costo lordo ~€2.050/mese.',
      slots:[{id:'s_bio_tec',tipo:'tecnico',area:'prod',label:'Attività produzione',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:true,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:true,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:6000},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}]},
@@ -2984,8 +3067,10 @@ function areaCosto(a){
 // Acustica) non hanno ancora una voce di produzione collegata: valore€ resta
 // 0 finché non viene aggiunto un campo dedicato — sono "creabili" (CRUD già
 // presente su S.aree) più che operativi.
-const CENTRI_IDS=['c_analisi','c_antincendio','c_ambiente','c_estintori','c_cantieri','c_rspp','c_verifiche_terra','c_documenti','c_privacy','c_acustica'];
-const CENTRO_TECNICO_FIELD={c_analisi:'analisi',c_estintori:'estintori',c_cantieri:'cantieri',c_rspp:'rspp',c_documenti:'documenti'};
+const CENTRI_IDS=['c_antincendio','c_ambiente','c_cantieri','c_rspp','c_verifiche_terra','c_documenti'];
+// Analisi assorbita in Ambiente, Estintori assorbito in Antincendio — i campi
+// di generato_tecnico non cambiano nome, solo il centro che li possiede.
+const CENTRO_TECNICO_FIELD={c_ambiente:'analisi',c_antincendio:'estintori',c_cantieri:'cantieri',c_rspp:'rspp',c_documenti:'documenti'};
 const GENERATO_TEC_TERM={
   documenti:g=>(g.documenti||0)*(g.pct_doc||0.22),
   analisi:g=>(g.analisi||0)*(g.pct_analisi||0.20),
@@ -2993,7 +3078,19 @@ const GENERATO_TEC_TERM={
   cantieri:g=>(g.cantieri||0)*(g.pct_cant||0.15),
   estintori:g=>(g.estintori||0)*(g.pct_est||0.02),
 };
+// Ricavo per centro (SPEC-v10 §D, Fase 6): il fatturato nei file sorgente non
+// è mai spezzato per servizio, quindi oltre al valore "tecnico" (già presente,
+// da generato_tecnico dove esiste un campo collegato) sono ammessi due modi
+// alternativi, scelti per centro con `ricavoModo` — switchabili in qualunque
+// momento senza perdere i dati dell'altro modo:
+//  'tecnico'     → dato calcolato da generato_tecnico (comportamento storico)
+//  'manuale'     → valore € inserito a mano (dato preciso)
+//  'percentuale' → % dell'incassato del mese, editabile (coerente con la
+//                  ripartizione ore già esistente su altri centri)
 function centroValore(centro){
+  const modo=centro.ricavoModo||(CENTRO_TECNICO_FIELD[centro.id]?'tecnico':'manuale');
+  if(modo==='manuale')return centro.ricavoManuale||0;
+  if(modo==='percentuale')return((centro.ricavoPct||0)/100)*S.incassato;
   const field=CENTRO_TECNICO_FIELD[centro.id];
   if(!field)return 0;
   const term=GENERATO_TEC_TERM[field];
@@ -3001,6 +3098,13 @@ function centroValore(centro){
     const g=sl.comp&&sl.comp.generato_tecnico;
     return(g&&g.on)?ss+term(g):ss;
   },0),0);
+}
+// Somma delle % dei centri attualmente in modo 'percentuale' — informativo,
+// come il controllo già esistente sulla ripartizione ore (§6 richiesta B).
+function checkRicavoPct(){
+  const centriPct=CENTRI_IDS.map(id=>S.aree.find(a=>a.id===id)).filter(c=>c&&(c.ricavoModo||'')==='percentuale');
+  const sum=centriPct.reduce((s,c)=>s+(c.ricavoPct||0),0);
+  return{centri:centriPct,sum};
 }
 // Ore di un tecnico imputate a un centro: l'override manuale (dato reale)
 // vince sempre sulla ripartizione % (dato stimato) — SPEC-v10 §6 richiesta B.
@@ -3013,7 +3117,12 @@ function getOreCentro(p,centroId){
 function centroCostoVar(centro){
   return S.personale.reduce((s,p)=>s+getOreCentro(p,centro.id)*(p.costoOrario||0),0);
 }
-function centroCostoFisso(centro){return centro.fornitoreFisso||0;}
+// Se il centro/area ha un elenco fornitori dettagliato (§A seed costi centri),
+// quello è autoritativo — evita di tenere due numeri (totale + elenco) che
+// potrebbero disallinearsi; fornitoreFisso resta il fallback manuale per i
+// centri senza fornitori noti (es. Cantieri/RSPP/Documenti, solo lavoro interno).
+function areaFornitoriTot(a){return(a.fornitori||[]).reduce((s,f)=>s+(f.valMensile||0),0);}
+function centroCostoFisso(centro){return(centro.fornitori&&centro.fornitori.length)?areaFornitoriTot(centro):(centro.fornitoreFisso||0);}
 function centroMargine(centro){return centroValore(centro)-centroCostoFisso(centro)-centroCostoVar(centro);}
 function centroMarginePct(centro){
   const v=centroValore(centro);
@@ -3097,6 +3206,22 @@ function totCommCRM(){return S.personale.reduce((s,p)=>s+calcPersona(p).commissi
 // areaBudget è usata anche da calcSlot — deve stare qui
 function areaBudget(a){return(a.incPct/100)*S.incassato;}
 
+// Fissi vs variabili per area (§B, Fase 6) — i dati sono già importati con
+// natura (fisso/variabile) e areaId per riga (PF SI 2026.xlsx §2.1/§10), ma
+// non erano mai stati mostrati raggruppati e separati per area: questo è
+// esattamente quel raggruppamento, a partire da S.sistemaFissi.
+function areaFissiVariabili(area,includeChildren){
+  const ids=includeChildren?[area.id,...S.aree.filter(a=>a.parentId===area.id).map(a=>a.id)]:[area.id];
+  const voci=(S.sistemaFissi||[]).filter(v=>ids.includes(v.areaId));
+  const fisse=voci.filter(v=>v.natura==='fisso');
+  const variabili=voci.filter(v=>v.natura!=='fisso');
+  const totFisso=fisse.reduce((s,v)=>s+(v.val||0),0);
+  const totVar=variabili.reduce((s,v)=>s+(v.val||0),0);
+  return{fisse,variabili,totFisso,totVar,totale:totFisso+totVar,
+    pctFisso:S.incassato>0?(totFisso/S.incassato)*100:0,
+    pctVar:S.incassato>0?(totVar/S.incassato)*100:0};
+}
+
 // KPI helpers
 function kpiM(m){return(m.kt&&m.kt>0)?Math.round((m.ke/m.kt)*100):null;}
 function kpiA(a){
@@ -3158,6 +3283,29 @@ function sostenibilita(f){
   const inc=f.inc;
   const color=inc<Z?'rosso':inc<Y?'giallo':'verde';
   return{Z,Y,X,color,deltaZ:inc-Z,deltaY:inc-Y,deltaX:inc-X};
+}
+
+// ── BENCHMARK MARGINE MODELLO vs REALE — SPEC-v10 §C, Fase 6 ──────────────
+// Margine "modello": utili come % dell'incassato, la stessa cifra autoritativa
+// della cascata a priorità (§5) — non un altro calcolo a parte.
+function margineModelloPct(f){return f.inc>0?(f.utili/f.inc)*100:null;}
+// Se è stato preselezionato un mese reale (vedi applicaMeseReale), confronta
+// con quel mese preciso; altrimenti usa lo YTD come riferimento generico.
+function margineRealeBenchmark(){
+  const sel=S.meseRealeSelezionato;
+  if(sel){
+    const m=(S.storicoReale||[]).find(r=>(r.mese+' '+r.anno)===sel);
+    if(m)return{pct:m.margineRealePct,label:sel};
+  }
+  return{pct:S.margineRealeYTD,label:'YTD 2026'};
+}
+function applicaMeseReale(mese,anno){
+  const m=(S.storicoReale||[]).find(r=>r.mese===mese&&r.anno===anno);
+  if(!m)return;
+  S.incassato=m.fatturato;
+  S.meseRealeSelezionato=mese+' '+anno;
+  renderAll();
+  notify('Incassato precompilato da '+mese+' '+anno+' (dato reale Controllo di gestione): '+fmt(m.fatturato));
 }
 
 // FLOW — cascata completa
@@ -3389,6 +3537,28 @@ function renderStep1(){
     const badge=isDirect?'diretto':isSett?'× 4.33 sett.':'mensile';
     const badgeClr=isDirect?'var(--blue)':'var(--green)';
     riepilogo.innerHTML=`<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--green-bg);border:1px solid var(--green);border-radius:var(--r)"><span style="font-size:13px;color:var(--green);font-weight:600">Incassato questo mese:</span><span style="font-size:20px;font-weight:700;color:var(--green);font-family:'DM Mono',monospace">${fmt(f.inc)}</span><span style="font-size:10px;color:#fff;padding:2px 8px;background:${badgeClr};border-radius:10px">${badge}</span></div>`;
+    // Precompila da dati reali 2026 (§C, Fase 6) — Controllo di gestione,
+    // foglio GESTIONALE (fatturato mensile), invece del default generico.
+    let realePicker=document.getElementById('s1-reale-picker');
+    if(!realePicker){
+      realePicker=document.createElement('div');
+      realePicker.id='s1-reale-picker';
+      realePicker.style.cssText='margin-top:8px';
+      riepilogo.insertAdjacentElement('afterend',realePicker);
+    }
+    const sr=S.storicoReale||[];
+    const bench=margineRealeBenchmark();
+    const mp=margineModelloPct(f);
+    const divergeMolto=mp!==null&&Math.abs(mp-bench.pct)>5;
+    realePicker.innerHTML=`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 10px;background:var(--sheet);border-radius:var(--r);font-size:11px">
+        <span style="color:var(--ink3)">Precompila da reale 2026 (Controllo di gestione):</span>
+        <select id="s1-reale-sel" class="inp" style="width:auto;display:inline-block">
+          ${sr.map(r=>`<option value="${r.mese}|${r.anno}" ${S.meseRealeSelezionato===(r.mese+' '+r.anno)?'selected':''}>${r.mese} ${r.anno} — ${fmt(r.fatturato)}</option>`).join('')}
+        </select>
+        <button class="btn xs prim" onclick="const v=document.getElementById('s1-reale-sel').value.split('|');applicaMeseReale(v[0],parseInt(v[1]))">Applica</button>
+        <span style="margin-left:auto">Margine modello: <strong class="mono">${mp!==null?mp.toFixed(1)+'%':'—'}</strong> · Margine reale (${bench.label}): <strong class="mono">${bench.pct.toFixed(1)}%</strong>
+        ${divergeMolto?'<strong style="color:var(--red)"> ⚠ divergono molto — rivedi il modello</strong>':''}</span>
+      </div>`;
   }
 
   // ── toggle modalità ────────────────────────────
@@ -3636,6 +3806,54 @@ function renderStep7(){
 }
 
 // ── ORGANIGRAMMA ─────────────────────────
+// ── ORGANIGRAMMA — DRAG & DROP REPARENTING (SPEC-v10 §E, Fase 6) ──────────
+let orgDragState=null;
+let _orgLastMoved=null; // {areaId,until} — flash di conferma visiva dopo un drop
+let orgLastReparent=null; // {areaId,prevParentId,nome,parentNome} — per l'undo
+
+function orgSvgPoint(evt,svg,g){
+  const pt=svg.createSVGPoint();
+  pt.x=evt.clientX;pt.y=evt.clientY;
+  return pt.matrixTransform(g.getScreenCTM().inverse());
+}
+// Un'area non può diventare figlia di se stessa né di un proprio discendente
+// (impedirebbe un ciclo nell'albero) — cammina dall'eventuale nuovo genitore
+// verso l'alto e controlla se incontra l'area che si sta spostando.
+function isSelfOrDescendant(areaId,candidateParentId){
+  let cur=S.aree.find(a=>a.id===candidateParentId);
+  while(cur){
+    if(cur.id===areaId)return true;
+    cur=cur.parentId?S.aree.find(a=>a.id===cur.parentId):null;
+  }
+  return false;
+}
+function applyReparent(areaId,newParentId){
+  const a=S.aree.find(x=>x.id===areaId);if(!a)return false;
+  if(areaId===newParentId||isSelfOrDescendant(areaId,newParentId)){
+    notify('⚠ Mossa non permessa: un\'area non può finire sotto se stessa o un suo discendente');
+    return false;
+  }
+  const newParent=S.aree.find(x=>x.id===newParentId);
+  orgLastReparent={areaId,prevParentId:a.parentId,nome:a.nome,parentNome:newParent?newParent.nome:'—'};
+  a.parentId=newParentId;
+  _orgLastMoved={areaId,until:Date.now()+1600};
+  renderAll();
+  notify('Spostato "'+a.nome+'" sotto "'+(newParent?newParent.nome:'—')+'" — puoi annullare qui sotto');
+  setTimeout(()=>{if(_orgLastMoved&&_orgLastMoved.areaId===areaId)_orgLastMoved=null;renderOrg();},1650);
+  return true;
+}
+function undoReparent(){
+  if(!orgLastReparent)return;
+  const a=S.aree.find(x=>x.id===orgLastReparent.areaId);
+  if(a){
+    a.parentId=orgLastReparent.prevParentId;
+    notify('Spostamento annullato: "'+a.nome+'" torna al suo posto');
+    renderAll();
+  }
+  orgLastReparent=null;
+  renderOrg();
+}
+
 function renderOrg(){
   const wrap=document.getElementById('org-tree');if(!wrap)return;
   if(!S.personale||!S.personale.length){wrap.innerHTML='';return;}
@@ -3667,13 +3885,16 @@ function renderOrg(){
     pct:'Diretto CDA',color:'#1A6B3C',bg:'#EAF4EC',bd:'#B8DBBF',
     pi:gaia?S.personale.indexOf(gaia):-1});
 
-  // ── MACRO AREE sotto SSI (SPEC-v10 §3: Formazione/Sorv.San. sotto Produzione,
-  // Marketing sotto Commerciale, Segreteria staff a lato del CDA — esclusi dal
-  // livello diretto) ───────────────────────────────────────────────────────
-  const AREA_ORDER=['comm','prod','amm'];
+  // ── AREE sotto SSI — albero generico da S.aree[].parentId (SPEC-v10 §3 di
+  // default: Formazione/Sorv.San. sotto Produzione, Marketing sotto
+  // Commerciale; Segreteria resta staff a lato del CDA finché non viene
+  // trascinata altrove, §E Fase 6 drag&drop). I centri di costo (chiusi,
+  // rollup §5.1) non compaiono come nodi propri.
   const AREA_COLORS={comm:'#1A6B3C',prod:'#0F4499',form:'#4A38B0',
     amm:'#7A4A08',mkt:'#A32020',sorvsan:'#0F4499',sis:'#5A5850'};
   let nProd=null,nComm=null;
+  const orgAreas=S.aree.filter(a=>!CENTRI_IDS.includes(a.id));
+  const areaNodeById={};
 
   function mkAreaNode(areaId,parentPct){
     const a=S.aree.find(x=>x.id===areaId);if(!a)return null;
@@ -3684,32 +3905,30 @@ function renderOrg(){
     const resp=S.personale.find(p=>p.areaResp===areaId&&p.livello==='C')
             ||S.personale.find(p=>p.areaResp===areaId&&p.isResp&&!p.isCapoArea);
     const pi=resp?S.personale.indexOf(resp):-1;
-    return mkN({type:'area',areaId,label:a.nome,sub:fmt(bud),
+    const n=mkN({type:'area',areaId,label:a.nome,sub:fmt(bud),
       pct:pctBud+(parentPct||'% inc. — ')+(resp?resp.nome.split(' ')[0]:'—'),
       color:col,bg:'#fff',bd:over?'#F0B8B8':'#C8C6BE',
       over,pi,budPct:bud>0?(cost/bud)*100:0,incPct:pctBud});
+    areaNodeById[areaId]=n;
+    return n;
   }
 
-  AREA_ORDER.forEach(areaId=>{
-    const nA=mkAreaNode(areaId);
+  // Segreteria resta nella posizione storica "staff a lato del CDA" finché il
+  // suo parentId non viene esplicitamente impostato trascinandola su un'altra
+  // area (isSelfOrDescendant/applyReparent, più sotto).
+  const sisArea=orgAreas.find(a=>a.id==='sis');
+  const sisIsDefault=!sisArea||!sisArea.parentId;
+  const topLevel=orgAreas.filter(a=>!a.parentId&&!(a.id==='sis'&&sisIsDefault));
+
+  function walkArea(a,parentNode,dashed){
+    const nA=mkAreaNode(a.id,dashed?'% — ':undefined);
     if(!nA)return;
-    lnk(nSSI,nA);
-    if(areaId==='prod') nProd=nA;
-    if(areaId==='comm') nComm=nA;
-  });
-
-  // ── SOTTO-AREE con linea tratteggiata (Formazione + Sorv.San. sotto
-  // Produzione, Marketing sotto Commerciale) ───────────────────────────────
-  if(nProd){
-    const nForm=mkAreaNode('form','% — ');
-    if(nForm)lnk(nProd,nForm,'dash');
-    const nSorv=mkAreaNode('sorvsan','% — ');
-    if(nSorv)lnk(nProd,nSorv,'dash');
+    if(parentNode)lnk(parentNode,nA,dashed?'dash':'v');else lnk(nSSI,nA);
+    if(a.id==='prod')nProd=nA;
+    if(a.id==='comm')nComm=nA;
+    orgAreas.filter(x=>x.parentId===a.id).forEach(c=>walkArea(c,nA,true));
   }
-  if(nComm){
-    const nMkt=mkAreaNode('mkt','% — ');
-    if(nMkt)lnk(nComm,nMkt,'dash');
-  }
+  topLevel.forEach(a=>walkArea(a,null,false));
 
   // ── LAYOUT ──────────────────────────────────────────────────────────────
   function stW(n){
@@ -3728,8 +3947,7 @@ function renderOrg(){
   posT(nGRFM,0,0);
 
   // ── POSIZIONA LATERALI (dopo posT, coordinate aree note) ────────────────
-  const SUBAREA_IDS=['form','mkt','sorvsan'];
-  const mainAreas=allN.filter(n=>n.type==='area'&&!SUBAREA_IDS.includes(n.areaId));
+  const mainAreas=allN.filter(n=>n.type==='area'&&topLevel.some(a=>a.id===n.areaId));
   const aMaxX=mainAreas.length?Math.max(...mainAreas.map(n=>n.x+n.w)):nSSI.x+CW;
   const aMinX=mainAreas.length?Math.min(...mainAreas.map(n=>n.x)):nSSI.x;
 
@@ -3746,11 +3964,14 @@ function renderOrg(){
     {f:nUtili.id, t:nGaia.id,  s:'v'}
   );
 
-  // ── SEGRETERIA: staff a lato del CDA (SPEC-v10 §3) ──────────────────────
-  const nSis=mkAreaNode('sis','% — ');
-  if(nSis){
-    nSis.x=nCDA.x; nSis.y=nGaia.y+CH+20;
-    allE.push({f:nCDA.id,t:nSis.id,s:'v'});
+  // ── SEGRETERIA: staff a lato del CDA per default (SPEC-v10 §3) — solo se
+  // non è stata trascinata altrove (in tal caso è già stata resa da walkArea).
+  if(sisIsDefault){
+    const nSis=mkAreaNode('sis','% — ');
+    if(nSis){
+      nSis.x=nCDA.x; nSis.y=nGaia.y+CH+20;
+      allE.push({f:nCDA.id,t:nSis.id,s:'v'});
+    }
   }
 
   // ── SVG bounds — filtra nodi senza coordinate valide ─────────────────────
@@ -3817,6 +4038,10 @@ function renderOrg(){
     rx.setAttribute('stroke-width',n.over?'2':'1');
     if(n.over)rx.setAttribute('stroke-dasharray','4,2');
     fg.appendChild(rx);
+    n._rectEl=rx;
+    if(_orgLastMoved&&_orgLastMoved.areaId===n.areaId&&Date.now()<_orgLastMoved.until){
+      rx.setAttribute('stroke','#1A6B3C');rx.setAttribute('stroke-width','3');
+    }
 
     if(['area','ca','cda_staff'].includes(n.type)){
       const bar=document.createElementNS(NS,'rect');
@@ -3882,10 +4107,68 @@ function renderOrg(){
 
       const areaPageMap={comm:'comm_page',prod:'produzione',form:'form_page',
                          amm:'amm_page',mkt:'mkt_page',sorvsan:'sorvsan_page',sis:'seg_page'};
-      fg.addEventListener('click',()=>goPage(areaPageMap[n.areaId]||n.areaId));
-      fg.style.cursor='pointer';
-      fg.addEventListener('mouseenter',()=>{bf.setAttribute('fill',n.color);});
-      fg.addEventListener('mouseleave',()=>{bf.setAttribute('fill',n.over?'#A32020':n.budPct>80?'#7A4A08':'#1A6B3C');});
+      fg.style.cursor='grab';
+      fg.addEventListener('mouseenter',()=>{if(!orgDragState)bf.setAttribute('fill',n.color);});
+      fg.addEventListener('mouseleave',()=>{if(!orgDragState)bf.setAttribute('fill',n.over?'#A32020':n.budPct>80?'#7A4A08':'#1A6B3C');});
+
+      // ── DRAG & DROP REPARENTING (SPEC-v10 §E, Fase 6) ───────────────────
+      // Click semplice (nessun movimento) apre la pagina area come prima;
+      // un trascinamento su un'altra card ne cambia il parentId, con
+      // evidenza visiva del bersaglio, flash di conferma e possibilità di
+      // annullare (isSelfOrDescendant blocca le mosse illegali).
+      fg.addEventListener('pointerdown',(evt)=>{
+        if(evt.button!==0)return;
+        const p=orgSvgPoint(evt,svg,g);
+        orgDragState={areaId:n.areaId,startX:p.x,startY:p.y,moved:false,ghost:null,overId:null};
+        try{fg.setPointerCapture(evt.pointerId);}catch(e){}
+      });
+      fg.addEventListener('pointermove',(evt)=>{
+        if(!orgDragState||orgDragState.areaId!==n.areaId)return;
+        const p=orgSvgPoint(evt,svg,g);
+        const dx=p.x-orgDragState.startX,dy=p.y-orgDragState.startY;
+        if(!orgDragState.moved&&Math.hypot(dx,dy)>6){
+          orgDragState.moved=true;
+          fg.style.cursor='grabbing';
+          const ghost=document.createElementNS(NS,'rect');
+          ghost.setAttribute('width',n.w);ghost.setAttribute('height',n.h);ghost.setAttribute('rx','7');
+          ghost.setAttribute('fill',n.color);ghost.setAttribute('opacity','0.25');
+          ghost.setAttribute('pointer-events','none');
+          g.appendChild(ghost);
+          orgDragState.ghost=ghost;
+          fg.style.opacity='0.4';
+        }
+        if(orgDragState.moved){
+          orgDragState.ghost.setAttribute('transform','translate('+(n.x+dx)+','+(n.y+dy)+')');
+          let overId=null;
+          allN.forEach(n2=>{
+            if(n2.type!=='area'||n2.areaId===n.areaId)return;
+            if(p.x>=n2.x&&p.x<=n2.x+n2.w&&p.y>=n2.y&&p.y<=n2.y+n2.h)overId=n2.areaId;
+          });
+          orgDragState.overId=overId;
+          allN.forEach(n2=>{
+            if(n2.type!=='area'||!n2._rectEl)return;
+            const legal=overId===n2.areaId&&!isSelfOrDescendant(n.areaId,n2.areaId);
+            n2._rectEl.setAttribute('stroke',overId===n2.areaId?(legal?'#1A6B3C':'#A32020'):(n2.bd||'#C8C6BE'));
+            n2._rectEl.setAttribute('stroke-width',overId===n2.areaId?'3':(n2.over?'2':'1'));
+          });
+        }
+      });
+      const endDrag=(evt)=>{
+        if(!orgDragState||orgDragState.areaId!==n.areaId)return;
+        const wasDrag=orgDragState.moved,overId=orgDragState.overId;
+        if(orgDragState.ghost)orgDragState.ghost.remove();
+        fg.style.opacity='1';fg.style.cursor='grab';
+        allN.forEach(n2=>{
+          if(n2.type!=='area'||!n2._rectEl)return;
+          n2._rectEl.setAttribute('stroke',n2.bd||'#C8C6BE');
+          n2._rectEl.setAttribute('stroke-width',n2.over?'2':'1');
+        });
+        orgDragState=null;
+        if(wasDrag&&overId)applyReparent(n.areaId,overId);
+        else if(!wasDrag)goPage(areaPageMap[n.areaId]||n.areaId);
+      };
+      fg.addEventListener('pointerup',endDrag);
+      fg.addEventListener('pointercancel',endDrag);
     }
 
     if(n.pi>=0){
@@ -3899,8 +4182,9 @@ function renderOrg(){
   });
 
   const info=document.createElement('div');
-  info.style.cssText='font-size:11px;color:var(--ink3);margin-top:10px;padding:0 4px';
-  info.textContent='Clicca su un area per aprirla. Formazione appare come sotto-nodo di Produzione (linea tratteggiata).';
+  info.style.cssText='font-size:11px;color:var(--ink3);margin-top:10px;padding:0 4px;display:flex;align-items:center;gap:10px;flex-wrap:wrap';
+  info.innerHTML='<span>Clicca su un\'area per aprirla, trascinala su un\'altra per spostarla (cambia il genitore).</span>'
+    +(orgLastReparent?`<button class="btn xs" onclick="undoReparent()">↺ Annulla: "${orgLastReparent.nome}" → "${orgLastReparent.parentNome}"</button>`:'');
 
   wrap.innerHTML='';
   wrap.style.cssText='overflow:auto;padding:16px';
@@ -4081,9 +4365,28 @@ function renderStruttura(){
          <div><div style="font-size:9px;color:var(--ink3);text-transform:uppercase">Margine %</div><div class="mono" style="font-size:13px">${roll.marginePct!==null?roll.marginePct.toFixed(1)+'%':'—'}</div></div>
          <div><div style="font-size:9px;color:var(--ink3);text-transform:uppercase">Peso su SSI</div><div class="mono" style="font-size:13px">${roll.pesoPct.toFixed(1)}%</div></div>
        </div>`:'';
+    // Fissi vs Variabili per area (§B, Fase 6) — composizione dei costi già
+    // importati (S.sistemaFissi, natura+areaId), raggruppati e separati per
+    // area, in € e in % sull'incassato, con drill-down alle voci.
+    const fv=areaFissiVariabili(a);
+    const fvHtml=fv.fisse.length||fv.variabili.length?`<div style="margin-bottom:10px;padding:8px 10px;background:var(--sheet);border-radius:var(--r)">
+         <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:${fv.fisse.length||fv.variabili.length?'6px':'0'}">
+           <div><div style="font-size:9px;color:var(--ink3);text-transform:uppercase">Costi fissi</div><div class="mono" style="font-size:14px">${fmt(fv.totFisso)} <span style="font-size:10px;color:var(--ink3)">(${fv.pctFisso.toFixed(1)}% inc.)</span></div></div>
+           <div><div style="font-size:9px;color:var(--ink3);text-transform:uppercase">Costi variabili</div><div class="mono" style="font-size:14px">${fmt(fv.totVar)} <span style="font-size:10px;color:var(--ink3)">(${fv.pctVar.toFixed(1)}% inc.)</span></div></div>
+         </div>
+         <details><summary style="font-size:10px;color:var(--ink3);cursor:pointer">${fv.fisse.length+fv.variabili.length} voci — dettaglio</summary>
+           <table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:4px">
+             ${[...fv.fisse.map(v=>({...v,_t:'fisso'})),...fv.variabili.map(v=>({...v,_t:'variabile'}))].map(v=>`<tr>
+               <td style="padding:2px 6px">${v.nome}</td>
+               <td style="padding:2px 6px;color:var(--ink3);font-size:10px">${v._t}</td>
+               <td style="padding:2px 6px;text-align:right" class="mono">${fmt(v.val||0)}</td>
+             </tr>`).join('')}
+           </table>
+         </details>
+       </div>`:'';
     const sec=document.createElement('div');
     sec.style.cssText='background:var(--card);border:1px solid var(--lift);border-radius:var(--rl);margin-bottom:10px;overflow:hidden';
-    sec.innerHTML=`       <div style="display:flex;align-items:center;gap:10px;padding:12px 15px;cursor:pointer;user-select:none" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'':'none'">         <span class="badge ${a.tipo==='RIC'?'b-ok':'b-nd'}">${a.tipo}</span>         <span style="font-size:13px;font-weight:600">${a.nome}</span>         ${a.parentId?`<span style="font-size:10px;color:var(--ink3)">↳ sotto ${S.aree.find(x=>x.id===a.parentId)?.nome||a.parentId}</span>`:''}         <span style="font-size:11px;color:var(--ink3)">${nPers} risorse</span>         <span class="mono" style="margin-left:auto;font-size:13px">${fmt(bud)}</span>         <span class="badge ${ratio>100?'b-crit':ratio>80?'b-warn':'b-ok'}">${ratio>100?'OVER':'OK'}</span>       </div>       <div style="padding:12px 15px;border-top:1px solid var(--lift)">         ${rollHtml}         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center">           <div class="field" style="margin:0;flex:1;min-width:120px">             <label>Nome</label>             <input value="${a.nome}" class="inp" onblur="S.aree[${ai}].nome=this.value;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">           </div>           <div class="field" style="margin:0">             <label>Tipo</label>             <select class="inp" onblur="S.aree[${ai}].tipo=this.value;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">               <option value="SUP" ${a.tipo==='SUP'?'selected':''}>SUP</option>               <option value="RIC" ${a.tipo==='RIC'?'selected':''}>RIC</option>             </select>           </div>           <div class="field" style="margin:0">             <label>Incidenza %</label>             <input type="number" value="${+a.incPct.toFixed(4)}" step="0.01" class="inp n" style="width:80px" onblur="S.aree[${ai}].incPct=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">           </div>           <div style="display:flex;align-items:flex-end;gap:6px">             <span style="font-size:11px;padding:3px 8px;background:var(--sheet);border-radius:var(--r)">Budget: <strong class="mono">${fmt(bud)}</strong></span>             <span style="font-size:11px;padding:3px 8px;background:${ratio>100?'var(--red-bg)':'var(--sheet)'};border-radius:var(--r)">Costo: <strong class="mono" style="color:${ratio>100?'var(--red)':'inherit'}">${fmt(cost)}</strong></span>           </div>         </div>         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center;padding:8px 10px;background:var(--sheet);border-radius:var(--r)">           <div class="field" style="margin:0">             <label>Natura</label>             <select class="inp" onblur="S.aree[${ai}].natura=this.value;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">               ${['produttiva','costo','staff','supporto'].map(n=>`<option value="${n}" ${a.natura===n?'selected':''}>${n}</option>`).join('')}             </select>           </div>           <div class="field" style="margin:0">             <label>Sotto-area di</label>             <select class="inp" onblur="S.aree[${ai}].parentId=this.value||null;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">               <option value="">— nessuna (macro area) —</option>               ${S.aree.filter(x=>x.id!==a.id).map(x=>`<option value="${x.id}" ${a.parentId===x.id?'selected':''}>${x.nome}</option>`).join('')}             </select>           </div>           <div class="field" style="margin:0">             <label>Priorità (coperta)</label>             <select class="inp" style="width:60px" onblur="S.aree[${ai}].priorita=parseInt(this.value)||2;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">               ${[1,2,3].map(n=>`<option value="${n}" ${(a.priorita||2)===n?'selected':''}>${n}</option>`).join('')}             </select>           </div>           <div class="field" style="margin:0">             <label>Budget fisso €/mese</label>             <input type="number" value="${(a.budget&&a.budget.fisso)||0}" class="inp n" style="width:90px" onblur="S.aree[${ai}].budget=S.aree[${ai}].budget||{};S.aree[${ai}].budget.fisso=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">           </div>           <div class="field" style="margin:0">             <label>Budget variabile %</label>             <input type="number" value="${(a.budget&&a.budget.variabilePct)||0}" step="0.01" class="inp n" style="width:80px" onblur="S.aree[${ai}].budget=S.aree[${ai}].budget||{};S.aree[${ai}].budget.variabilePct=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">           </div>           ${a.natura==='produttiva'?`<div class="field" style="margin:0">             <label>Fornitore fisso €/mese</label>             <input type="number" value="${a.fornitoreFisso||0}" class="inp n" style="width:90px" onblur="S.aree[${ai}].fornitoreFisso=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">           </div>`:''}           <div class="field" style="margin:0;display:flex;align-items:center;gap:4px">             <label style="margin:0">Chiusa</label>             <input type="checkbox" ${a.chiusa?'checked':''} onchange="S.aree[${ai}].chiusa=this.checked;renderAll()">           </div>         </div>         <div style="height:3px;background:var(--lift);border-radius:2px;overflow:hidden;margin-bottom:12px">           <div style="height:100%;width:${Math.min(ratio,100)}%;background:${ratio>100?'var(--red)':ratio>80?'var(--amber)':'var(--green)'};border-radius:2px"></div>         </div>         <div style="font-size:12px;font-weight:600;margin-bottom:6px">Micro aree KPI</div>         <table style="width:100%;border-collapse:collapse;font-size:12px">           <thead><tr>             <th style="text-align:left;padding:4px 6px;font-size:10px;color:var(--ink3);border-bottom:1px solid var(--lift);text-transform:uppercase;letter-spacing:.04em">Nome</th>             <th style="padding:4px 6px;font-size:10px;color:var(--ink3);border-bottom:1px solid var(--lift);text-align:right">Target</th>             <th style="padding:4px 6px;font-size:10px;color:var(--ink3);border-bottom:1px solid var(--lift);text-align:right">Effettivo</th>             <th style="padding:4px 6px;font-size:10px;color:var(--ink3);border-bottom:1px solid var(--lift);text-align:right">%</th>             <th></th>           </tr></thead>           <tbody>${a.micro.map((m,mi)=>{const km=kpiM(m);             return`<tr>
+    sec.innerHTML=`       <div style="display:flex;align-items:center;gap:10px;padding:12px 15px;cursor:pointer;user-select:none" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'':'none'">         <span class="badge ${a.tipo==='RIC'?'b-ok':'b-nd'}">${a.tipo}</span>         <span style="font-size:13px;font-weight:600">${a.nome}</span>         ${a.parentId?`<span style="font-size:10px;color:var(--ink3)">↳ sotto ${S.aree.find(x=>x.id===a.parentId)?.nome||a.parentId}</span>`:''}         <span style="font-size:11px;color:var(--ink3)">${nPers} risorse</span>         <span class="mono" style="margin-left:auto;font-size:13px">${fmt(bud)}</span>         <span class="badge ${ratio>100?'b-crit':ratio>80?'b-warn':'b-ok'}">${ratio>100?'OVER':'OK'}</span>       </div>       <div style="padding:12px 15px;border-top:1px solid var(--lift)">         ${rollHtml}         ${fvHtml}         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center">           <div class="field" style="margin:0;flex:1;min-width:120px">             <label>Nome</label>             <input value="${a.nome}" class="inp" onblur="S.aree[${ai}].nome=this.value;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">           </div>           <div class="field" style="margin:0">             <label>Tipo</label>             <select class="inp" onblur="S.aree[${ai}].tipo=this.value;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">               <option value="SUP" ${a.tipo==='SUP'?'selected':''}>SUP</option>               <option value="RIC" ${a.tipo==='RIC'?'selected':''}>RIC</option>             </select>           </div>           <div class="field" style="margin:0">             <label>Incidenza %</label>             <input type="number" value="${+a.incPct.toFixed(4)}" step="0.01" class="inp n" style="width:80px" onblur="S.aree[${ai}].incPct=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">           </div>           <div style="display:flex;align-items:flex-end;gap:6px">             <span style="font-size:11px;padding:3px 8px;background:var(--sheet);border-radius:var(--r)">Budget: <strong class="mono">${fmt(bud)}</strong></span>             <span style="font-size:11px;padding:3px 8px;background:${ratio>100?'var(--red-bg)':'var(--sheet)'};border-radius:var(--r)">Costo: <strong class="mono" style="color:${ratio>100?'var(--red)':'inherit'}">${fmt(cost)}</strong></span>           </div>         </div>         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center;padding:8px 10px;background:var(--sheet);border-radius:var(--r)">           <div class="field" style="margin:0">             <label>Natura</label>             <select class="inp" onblur="S.aree[${ai}].natura=this.value;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">               ${['produttiva','costo','staff','supporto'].map(n=>`<option value="${n}" ${a.natura===n?'selected':''}>${n}</option>`).join('')}             </select>           </div>           <div class="field" style="margin:0">             <label>Sotto-area di</label>             <select class="inp" onblur="S.aree[${ai}].parentId=this.value||null;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">               <option value="">— nessuna (macro area) —</option>               ${S.aree.filter(x=>x.id!==a.id).map(x=>`<option value="${x.id}" ${a.parentId===x.id?'selected':''}>${x.nome}</option>`).join('')}             </select>           </div>           <div class="field" style="margin:0">             <label>Priorità (coperta)</label>             <select class="inp" style="width:60px" onblur="S.aree[${ai}].priorita=parseInt(this.value)||2;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">               ${[1,2,3].map(n=>`<option value="${n}" ${(a.priorita||2)===n?'selected':''}>${n}</option>`).join('')}             </select>           </div>           <div class="field" style="margin:0">             <label>Budget fisso €/mese</label>             <input type="number" value="${(a.budget&&a.budget.fisso)||0}" class="inp n" style="width:90px" onblur="S.aree[${ai}].budget=S.aree[${ai}].budget||{};S.aree[${ai}].budget.fisso=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">           </div>           <div class="field" style="margin:0">             <label>Budget variabile %</label>             <input type="number" value="${(a.budget&&a.budget.variabilePct)||0}" step="0.01" class="inp n" style="width:80px" onblur="S.aree[${ai}].budget=S.aree[${ai}].budget||{};S.aree[${ai}].budget.variabilePct=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">           </div>           ${a.natura==='produttiva'?`<div class="field" style="margin:0">             <label>Fornitore fisso €/mese</label>             <input type="number" value="${a.fornitoreFisso||0}" class="inp n" style="width:90px" onblur="S.aree[${ai}].fornitoreFisso=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">           </div>`:''}           <div class="field" style="margin:0;display:flex;align-items:center;gap:4px">             <label style="margin:0">Chiusa</label>             <input type="checkbox" ${a.chiusa?'checked':''} onchange="S.aree[${ai}].chiusa=this.checked;renderAll()">           </div>         </div>         <div style="height:3px;background:var(--lift);border-radius:2px;overflow:hidden;margin-bottom:12px">           <div style="height:100%;width:${Math.min(ratio,100)}%;background:${ratio>100?'var(--red)':ratio>80?'var(--amber)':'var(--green)'};border-radius:2px"></div>         </div>         <div style="font-size:12px;font-weight:600;margin-bottom:6px">Micro aree KPI</div>         <table style="width:100%;border-collapse:collapse;font-size:12px">           <thead><tr>             <th style="text-align:left;padding:4px 6px;font-size:10px;color:var(--ink3);border-bottom:1px solid var(--lift);text-transform:uppercase;letter-spacing:.04em">Nome</th>             <th style="padding:4px 6px;font-size:10px;color:var(--ink3);border-bottom:1px solid var(--lift);text-align:right">Target</th>             <th style="padding:4px 6px;font-size:10px;color:var(--ink3);border-bottom:1px solid var(--lift);text-align:right">Effettivo</th>             <th style="padding:4px 6px;font-size:10px;color:var(--ink3);border-bottom:1px solid var(--lift);text-align:right">%</th>             <th></th>           </tr></thead>           <tbody>${a.micro.map((m,mi)=>{const km=kpiM(m);             return`<tr>
               <td style="padding:5px 6px;border-bottom:1px solid rgba(0,0,0,.04)"><div style="display:flex;align-items:center;gap:3px"><input value="${m.nome}" style="border:none;background:transparent;flex:1;font-size:12px;outline:none;font-family:'DM Sans',sans-serif" onblur="S.aree[${ai}].micro[${mi}].nome=this.value;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">${m.note?`<span class='tip-icon' style='cursor:help'>i<span class='tip-text left'>${m.note}</span></span>`:''}</div></td>
               <td style="padding:5px 6px;border-bottom:1px solid rgba(0,0,0,.04);text-align:right"><input type="number" value="${m.kt}" class="ki" onblur="S.aree[${ai}].micro[${mi}].kt=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()"></td>
               <td style="padding:5px 6px;border-bottom:1px solid rgba(0,0,0,.04);text-align:right"><input type="number" value="${m.ke}" class="ki" onblur="S.aree[${ai}].micro[${mi}].ke=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()"></td>
@@ -4323,6 +4626,7 @@ function renderStorico(){
   const f=flow();
   const sc=document.getElementById('storico-current');
   if(sc)sc.innerHTML=`<div class="snap-vals">     <div class="sv"><span>Incassato</span><strong>${fmt(f.inc)}</strong></div>     <div class="sv"><span>Sistema</span><strong style="color:var(--red)">${fmt(f.sistema)}</strong></div>     <div class="sv"><span>Personale</span><strong style="color:var(--amber)">${fmt(f.pers)}</strong></div>     <div class="sv"><span>Tasse</span><strong style="color:var(--amber)">${fmt(f.tasse)}</strong></div>     <div class="sv"><span>Premi (P3 eff.)</span><strong style="color:var(--amber)">${fmt(f.poolP3Eff)}</strong></div>     <div class="sv"><span>Utili</span><strong style="color:${f.utili<0?'var(--red)':'var(--green)'}">${fmt(f.utili)}</strong></div>   </div>`;
+  renderRealeChart();
   const sl=document.getElementById('snap-list');if(!sl)return;
   const visibili=snapsVisibiliDedup();
   if(!visibili.length){
@@ -4343,6 +4647,21 @@ function renderStorico(){
     ]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
       scales:{x:{ticks:{maxRotation:30,font:{size:10}}},y:{ticks:{callback:v=>'€'+Math.round(v/1000)+'k',font:{size:10}}}}}
+  });
+}
+// Andamento reale 2026 — dato da Controllo di gestione, indipendente dagli
+// snapshot del modello (§C, Fase 6).
+function renderRealeChart(){
+  const c=document.getElementById('reale-chart');if(!c)return;
+  const sr=S.storicoReale||[];if(!sr.length)return;
+  if(realeChartInst)realeChartInst.destroy();
+  realeChartInst=new Chart(c,{type:'bar',
+    data:{labels:sr.map(r=>r.mese),datasets:[
+      {label:'Fatturato',data:sr.map(r=>r.fatturato),backgroundColor:'#4A38B0'},
+      {label:'Costi esterni',data:sr.map(r=>r.costiEsterni),backgroundColor:'#A32020'}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:10}}}},
+      scales:{x:{ticks:{font:{size:10}}},y:{ticks:{callback:v=>'€'+Math.round(v/1000)+'k',font:{size:10}}}}}
   });
 }
 
@@ -4633,23 +4952,63 @@ function renderCentriCostoPage(){
       ⚠️ ${warn.length} incoerenza/e nella ripartizione ore tecnici:<br>${warn.map(w=>'• '+w).join('<br>')}
     </div>`;
   }
-  html+=`<div style="max-height:600px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
+  const pctCheck=checkRicavoPct();
+  if(pctCheck.centri.length){
+    html+=`<div style="background:var(--sheet);border:1px solid var(--lift);border-radius:var(--rl);padding:8px 14px;margin-bottom:14px;font-size:11px;color:var(--ink3)">
+      Centri in modo "percentuale": somma ${pctCheck.sum.toFixed(1)}% dell'incassato ${Math.abs(pctCheck.sum-100)>0.5?'<strong style="color:var(--amber)">(non fa 100%, ok se altri centri usano un altro modo)</strong>':''}
+    </div>`;
+  }
+  html+=`<div style="max-height:700px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
     <thead><tr style="text-align:left;color:var(--ink3);font-size:10px;text-transform:uppercase">
-      <th style="padding:5px 8px">Centro</th><th style="padding:5px 8px" class="mono">Valore €</th><th style="padding:5px 8px">Fornitore fisso €</th><th style="padding:5px 8px" class="mono">Costo var €</th><th style="padding:5px 8px" class="mono">Margine €</th><th style="padding:5px 8px" class="mono">Margine %</th>
+      <th style="padding:5px 8px">Centro</th><th style="padding:5px 8px">Ricavo — modo</th><th style="padding:5px 8px" class="mono">Valore €</th><th style="padding:5px 8px">Fornitore fisso €</th><th style="padding:5px 8px" class="mono">Costo var €</th><th style="padding:5px 8px" class="mono">Margine €</th><th style="padding:5px 8px" class="mono">Margine %</th>
     </tr></thead>
     <tbody>
-    ${centri.map((c,i)=>{
+    ${centri.map((c)=>{
       const ci=S.aree.indexOf(c);
       const v=centroValore(c),cf=centroCostoFisso(c),cv=centroCostoVar(c),m=centroMargine(c),mp=centroMarginePct(c);
+      const hasTecnico=!!CENTRO_TECNICO_FIELD[c.id];
+      const modo=c.ricavoModo||(hasTecnico?'tecnico':'manuale');
+      const modoSelect=`<select class="inp" style="width:auto;display:inline-block;font-size:11px"
+          onchange="S.aree[${ci}].ricavoModo=this.value;renderAll()">
+          ${hasTecnico?`<option value="tecnico" ${modo==='tecnico'?'selected':''}>tecnico</option>`:''}
+          <option value="manuale" ${modo==='manuale'?'selected':''}>manuale</option>
+          <option value="percentuale" ${modo==='percentuale'?'selected':''}>% incassato</option>
+        </select>`;
+      const modoInput=modo==='manuale'
+        ?`<input type="number" value="${c.ricavoManuale||0}" class="inp n" style="width:80px;margin-left:4px"
+            onblur="S.aree[${ci}].ricavoManuale=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13)this.blur()">`
+        :modo==='percentuale'
+        ?`<input type="number" value="${c.ricavoPct||0}" step="0.1" class="inp n" style="width:60px;margin-left:4px"
+            onblur="S.aree[${ci}].ricavoPct=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13)this.blur()">%`
+        :'';
+      const fornitori=c.fornitori||[];
+      const fiDetail=fornitori.length
+        ?`<tr style="border-top:none">
+            <td colspan="7" style="padding:0 8px 8px 8px">
+              <details><summary style="font-size:10px;color:var(--ink3);cursor:pointer">${fornitori.length} fornitori — dettaglio</summary>
+                <table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:4px">
+                  ${fornitori.map((fo,fi)=>`<tr>
+                    <td style="padding:2px 6px"><input value="${fo.nome}" style="border:none;background:transparent;font-size:11px;width:100%"
+                      onblur="S.aree[${ci}].fornitori[${fi}].nome=this.value;renderAll()" onkeydown="if(event.keyCode===13)this.blur()"></td>
+                    <td style="padding:2px 6px;text-align:right;width:110px"><input type="number" value="${fo.valMensile}" class="inp n" style="width:90px"
+                      onblur="S.aree[${ci}].fornitori[${fi}].valMensile=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13)this.blur()"></td>
+                    <td style="padding:2px 6px;width:24px"><button class="btn xs danger" onclick="S.aree[${ci}].fornitori.splice(${fi},1);renderAll()">✕</button></td>
+                  </tr>`).join('')}
+                </table>
+                <button class="btn xs" style="margin-top:4px" onclick="S.aree[${ci}].fornitori=S.aree[${ci}].fornitori||[];S.aree[${ci}].fornitori.push({nome:'Nuovo fornitore',valMensile:0});renderAll()">+ Fornitore</button>
+              </details>
+            </td>
+          </tr>`
+        :`<tr><td colspan="7" style="padding:0 8px 8px 8px"><button class="btn xs" onclick="S.aree[${ci}].fornitori=S.aree[${ci}].fornitori||[];S.aree[${ci}].fornitori.push({nome:'Nuovo fornitore',valMensile:0});renderAll()">+ Fornitore</button></td></tr>`;
       return`<tr style="border-top:1px solid var(--lift)">
         <td style="padding:5px 8px;font-weight:600">${c.nome}</td>
+        <td style="padding:5px 8px;white-space:nowrap">${modoSelect}${modoInput}</td>
         <td style="padding:5px 8px" class="mono">${fmt(v)}</td>
-        <td style="padding:5px 8px"><input type="number" value="${c.fornitoreFisso||0}" class="inp n" style="width:90px"
-          onblur="S.aree[${ci}].fornitoreFisso=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13)this.blur()"></td>
+        <td style="padding:5px 8px" class="mono">${fmt(cf)}</td>
         <td style="padding:5px 8px" class="mono">${fmt(cv)}</td>
         <td style="padding:5px 8px;color:${m>=0?'var(--green)':'var(--red)'}" class="mono">${fmt(m)}</td>
         <td style="padding:5px 8px" class="mono">${mp!==null?mp.toFixed(1)+'%':'—'}</td>
-      </tr>`;
+      </tr>${fiDetail}`;
     }).join('')}
     </tbody>
   </table></div>`;
@@ -4675,6 +5034,42 @@ function renderProdSezioniExtra(){
   }
 
   wrap.innerHTML='';
+
+  // ── RICAVO PER CENTRO (manuale / % — SPEC-v10 §D, Fase 6) ───────────────
+  // Il fatturato nei file sorgente non è mai spezzato per servizio: oltre al
+  // valore "tecnico" (da generato_tecnico, dove esiste un campo collegato) si
+  // può scegliere per ogni centro un valore manuale preciso o una % del
+  // fatturato del mese — stessa logica di CRUD già usata per fornitori/KPI.
+  mkCollapsible('ricavo','💹','Ricavo per centro (manuale / %)','#0F4499',body=>{
+    const centri=S.aree.filter(a=>CENTRI_IDS.includes(a.id));
+    const pctCheck=checkRicavoPct();
+    body.innerHTML=`<div style="font-size:11px;color:var(--ink3);margin-bottom:10px">Alternativa al calcolo da produzione tecnici: valore manuale preciso, oppure % del fatturato del mese (${fmt(S.incassato)}) — editabile per centro, switchabile in ogni momento senza perdere i dati dell'altro modo.</div>
+      ${pctCheck.centri.length?`<div style="font-size:11px;color:var(--ink3);margin-bottom:8px">Centri in % oggi: somma ${pctCheck.sum.toFixed(1)}%</div>`:''}
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="background:var(--ink);color:#fff"><th style="padding:7px 10px;text-align:left">Centro</th><th style="padding:7px 6px;text-align:left">Modo</th><th style="padding:7px 6px;text-align:right">Valore</th><th style="padding:7px 6px;text-align:right">Ricavo calcolato €</th></tr></thead>
+        <tbody>${centri.map((c)=>{
+          const ci=S.aree.indexOf(c);
+          const hasTecnico=!!CENTRO_TECNICO_FIELD[c.id];
+          const modo=c.ricavoModo||(hasTecnico?'tecnico':'manuale');
+          return`<tr>
+            <td style="padding:6px 10px;border-bottom:1px solid var(--lift);font-weight:500">${c.nome}</td>
+            <td style="padding:4px 6px;border-bottom:1px solid var(--lift)">
+              <select class="inp" style="width:auto" onchange="S.aree[${ci}].ricavoModo=this.value;renderAll()">
+                ${hasTecnico?`<option value="tecnico" ${modo==='tecnico'?'selected':''}>tecnico</option>`:''}
+                <option value="manuale" ${modo==='manuale'?'selected':''}>manuale</option>
+                <option value="percentuale" ${modo==='percentuale'?'selected':''}>% fatturato</option>
+              </select>
+            </td>
+            <td style="padding:4px 6px;border-bottom:1px solid var(--lift);text-align:right">
+              ${modo==='manuale'?`<input type="number" value="${c.ricavoManuale||0}" class="inp n" style="width:90px" onblur="S.aree[${ci}].ricavoManuale=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13)this.blur()">`
+                :modo==='percentuale'?`<input type="number" value="${c.ricavoPct||0}" step="0.1" class="inp n" style="width:70px" onblur="S.aree[${ci}].ricavoPct=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13)this.blur()">%`
+                :'<span style="color:var(--ink3)">da produzione tecnici</span>'}
+            </td>
+            <td style="padding:6px 10px;border-bottom:1px solid var(--lift);text-align:right" class="mono">${fmt(centroValore(c))}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>`;
+  });
 
   // ── FORMAZIONE ─────────────────────────────────────────────────────────
   mkCollapsible('form','📚','Formazione','#4A38B0',body=>{
@@ -4970,6 +5365,47 @@ function thStyle(){ return 'padding:7px 8px;text-align:right;font-size:10px;font
 function tdStyle(extra){ return `padding:4px 5px;border-bottom:1px solid var(--lift);${extra||''}`; }
 function sectionHdr(title, color){
   return `<div style="font-size:12px;font-weight:600;color:${color||'var(--ink)'};     margin:14px 0 8px;padding-bottom:5px;border-bottom:2px solid ${color||'var(--lift)'}">     ${title}</div>`;
+}
+// Alias DOM-node di sectionHdr() — chiamato con el.appendChild(mkSectionHdr(...))
+// in renderAreaAmm/Mkt/SorvSan/Seg ma mai definito (bug preesistente, non
+// introdotto in questa sessione: causava un ReferenceError che rompeva il
+// render di 4 pagine area). sectionHdr() esisteva già e ritorna una stringa,
+// qui basta avvolgerla in un nodo reale per l'uso con appendChild.
+function mkSectionHdr(title,color){
+  const d=document.createElement('div');
+  d.innerHTML=sectionHdr(title,color);
+  return d.firstElementChild;
+}
+// Stesso bug preesistente di mkSectionHdr: mkGrid(cols) chiamato in
+// renderAreaAmm/Mkt/SorvSan/Seg ma mai definito — griglia a colonne uguale
+// al pattern già usato altrove (es. renderAreaForm).
+function mkGrid(cols){
+  const g=document.createElement('div');
+  g.style.cssText='display:grid;grid-template-columns:repeat('+(cols||3)+',1fr);gap:8px;margin-bottom:14px';
+  return g;
+}
+// mkCard/mkInput: stesso bug preesistente — usati in renderAreaAmm/Mkt/Seg
+// (e già presenti come closure locale solo dentro la sezione Sorveglianza di
+// renderProdSezioniExtra) ma mai definiti a livello globale.
+function mkCard(lbl,inputHtml){
+  const c=document.createElement('div');
+  c.style.cssText='background:var(--sheet);border:1px solid var(--lift);border-radius:var(--r);padding:10px 12px';
+  if(typeof inputHtml==='string')c.innerHTML='<div style="font-size:10px;color:var(--ink3);margin-bottom:5px">'+lbl+'</div>'+inputHtml;
+  else{
+    const l=document.createElement('div');
+    l.style.cssText='font-size:10px;color:var(--ink3);margin-bottom:5px';l.textContent=lbl;
+    c.appendChild(l);
+    if(inputHtml)c.appendChild(inputHtml);
+  }
+  return c;
+}
+function mkInput(type,value,unit,onblurExpr){
+  const inp=document.createElement('input');
+  inp.type=type;inp.value=value;
+  inp.style.cssText='width:100%;padding:5px 7px;border:1px solid var(--lift);border-radius:var(--r);font-size:12px;text-align:right;background:var(--card);font-family:"DM Mono",monospace';
+  inp.setAttribute('onblur',onblurExpr+';renderAll()');
+  inp.setAttribute('onkeydown','if(event.keyCode===13)this.blur()');
+  return inp;
 }
 
 // Active area page
@@ -6248,6 +6684,9 @@ function renderSemaforo(f){
       <div class="ms" style="color:${sopra?'var(--green)':'var(--red)'}">${sopra?'+':''}${fmt(delta)} ${sopra?'sopra':'sotto'}</div>
     </div>`;
   };
+  const mp=margineModelloPct(f);
+  const bench=margineRealeBenchmark();
+  const divergeMolto=mp!==null&&Math.abs(mp-bench.pct)>5;
   el.innerHTML=`
     <div class="mc ${cur.cls}" style="grid-column:1/-1;background:${cur.bg};border-color:${cur.bd}">
       <div class="ml">Semaforo sostenibilità — incassato ${fmt(f.inc)}</div>
@@ -6256,6 +6695,11 @@ function renderSemaforo(f){
     ${row('Z — Prioritari + Garantito',s.Z,s.deltaZ)}
     ${row('Y — Z + Budget fisso aree',s.Y,s.deltaY)}
     ${row('X — Y + Budget variabile + Accantonamenti',s.X,s.deltaX)}
+    <div class="mc ${divergeMolto?'err':'ok'}" style="grid-column:1/-1">
+      <div class="ml">Margine modello (utili/incassato) vs reale — benchmark Controllo di gestione (§C)</div>
+      <div class="mv">Modello: <strong class="mono">${mp!==null?mp.toFixed(1)+'%':'—'}</strong> · Reale (${bench.label}): <strong class="mono">${bench.pct.toFixed(1)}%</strong></div>
+      ${divergeMolto?`<div class="ms" style="color:var(--red)">⚠ Divergenza &gt;5 punti — segnale che il modello va rivisto</div>`:''}
+    </div>
   `;
 }
 function renderDash(f){
