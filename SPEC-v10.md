@@ -264,3 +264,10 @@ Confronta `incassato` con X/Y/Z e mostra il colore + di quanto sei sopra/sotto c
   Roberto conferma quali sono "priorità 1" alla prima compilazione.
 - Formula esatta del **pool premi proposto** (in % del margine area? del variabile maturato?) — parti da
   "quota personale × gate KPI area" già presente in v9 e affina con Roberto.
+- **Aperto lato DB (Fase 5):** le policy RLS di `compensi_snapshots` non consentono la `DELETE` con la chiave
+  anon usata dal client (l'app non fa mai un login Supabase reale, solo `currentUser` locale) — PostgREST
+  risponde 200 con 0 righe cancellate invece di un errore, quindi va verificato lato Postgres/dashboard, non
+  risolvibile da `index.html`. L'app ora rileva l'esito (verifica `count` sulla delete) e mostra un errore
+  esplicito invece di far credere che la cancellazione sia riuscita, ma gli snapshot restano di fatto
+  non cancellabili dall'app finché la policy non viene aggiornata (serve permettere DELETE al ruolo usato,
+  o autenticare l'app con un ruolo con quel permesso).

@@ -4266,12 +4266,21 @@ async function saveSnap(){
       const {data,error}=await db.from('compensi_snapshots')
         .insert({mese, data_json:{...snap, state:JSON.parse(JSON.stringify(S))}, note:''})
         .select('id').single();
-      if(!error&&data){ snap._supaId=data.id; }
-      notify(error ? 'Snapshot locale ⚠️' : 'Snapshot salvato ☁️');
-      if(error) console.error('Supabase insert error:',error);
-    } catch(e){ notify('Snapshot salvato'); console.warn(e); }
+      if(error||!data){
+        // Non far credere che sia andato tutto bene: esito esplicito, e lo
+        // snapshot resta comunque salvato in locale (S.snaps/localStorage).
+        notify('Salvataggio cloud non riuscito: '+(error?error.message:'nessuna riga restituita')+' — tenuto solo in locale');
+        console.error('Supabase insert error:',error);
+      } else {
+        snap._supaId=data.id;
+        notify('Snapshot salvato ☁️');
+      }
+    } catch(e){
+      notify('Salvataggio cloud non riuscito: errore di rete — tenuto solo in locale');
+      console.warn(e);
+    }
   } else {
-    notify('Snapshot salvato');
+    notify('Snapshot salvato in locale (Supabase non disponibile)');
   }
 }
 function renderStorico(){
@@ -4338,11 +4347,30 @@ async function loadSupaSnaps(){
 async function deleteSnap(i){
   const snap=S.snaps[i];
   if(snap?._supaId&&db){
-    try{ await db.from('compensi_snapshots').delete().eq('id',snap._supaId); }
-    catch(e){ console.warn(e); }
+    // Le RLS di compensi_snapshots possono bloccare la DELETE con la chiave
+    // anon senza restituire un errore (PostgREST tratta "0 righe cancellate"
+    // come esito valido) — verifica esplicitamente `count` prima di far
+    // sparire la riga anche solo in locale, altrimenti l'utente crede che
+    // sia stata cancellata mentre in cloud resta (SPEC-v10 §14, aperto lato DB).
+    try{
+      const {error,count}=await db.from('compensi_snapshots').delete({count:'exact'}).eq('id',snap._supaId);
+      if(error){
+        notify('Cancellazione non riuscita: '+error.message);
+        return;
+      }
+      if(!count){
+        notify('Cancellazione non riuscita: permessi insufficienti sul database (RLS)');
+        return;
+      }
+    }catch(e){
+      notify('Cancellazione non riuscita: errore di rete');
+      console.warn(e);
+      return;
+    }
   }
   S.snaps.splice(i,1);
   renderStorico();
+  notify('Snapshot cancellato');
 }
 
 // ── ADDPERSONA ────────────────────────────
