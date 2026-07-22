@@ -647,6 +647,9 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
   <button class="nav-item" onclick="goPage('dash',this)">
     <span class="ni">📊</span> Dashboard CDA
   </button>
+  <button class="nav-item" onclick="goPage('premi',this)">
+    <span class="ni">💰</span> Premi &amp; direttori
+  </button>
   <button class="nav-item" onclick="goPage('storico',this)">
     <span class="ni">📅</span> Storico
   </button>
@@ -1193,6 +1196,15 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
       <button class="btn sm" onclick="const r=applicaMatchDipendenti();renderAll();notify(r.matched+'/'+(r.matched+r.unmatched.length)+' agganciati'+(r.unmatched.length?' — non trovati: '+r.unmatched.join(', '):''))">↺ Riesegui match dipendenti</button>
     </div>
     <div id="import-preview"></div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- PAGE: PREMI & DIRETTORI (SPEC-v10 §9, Fase 5) -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div id="page-premi" class="page">
+    <h2 style="font-size:15px;font-weight:600;margin-bottom:2px">💰 Premi &amp; pannello direttore</h2>
+    <p style="font-size:12px;color:var(--ink3);margin-bottom:14px">Proposta automatica per area, slider di regolazione, distribuzione tra le persone e maturazione mese/trimestre</p>
+    <div id="premi-cont"></div>
   </div>
 
   <!-- ═══════════════════════════════════════════ -->
@@ -2064,9 +2076,9 @@ const DEF={
   // cascata invece di un termine fisso a parte (scelta esplicita Fase 3).
   prioritaSistema:1,
   prioritaTasse:1,
-  // Premi: voce residuale semplice (priorità 3 di default) — il motore KPI/slider/
-  // soglia sostenibilità è SPEC-v10 §9/§11, Fase 5, non ancora implementato.
-  premi:{val:0,priorita:3},
+  // Premi: motore KPI/slider/maturazione — SPEC-v10 §9, Fase 5.
+  // aree[areaId]: {pctMargine, slider, modo, distribuzione:{personaleId:€}, maturato, liquidato, storico:[{mese,ts,proposto,erogato,maturato,liquidato}]}
+  premi:{priorita:3, aree:{}},
 
   // Costi fissi/variabili "Sistema" — dati reali da "PF SI - 2026.xlsx" (foglio
   // "2026 PF"), non prioritari e non già rappresentati in S.personale (righe di
@@ -3093,6 +3105,61 @@ function kpiA(a){
 }
 function bonusOk(k){return k!==null&&k>=S.soglia;}
 
+// ══════════════════════════════════════════════════
+// MOTORE PREMI / POOL PREMI PER AREA — SPEC-v10 §9, Fase 5
+// ══════════════════════════════════════════════════
+// Base di calcolo del pool premi proposto per un'area: margine (se l'area è
+// un centro di costo o una macro con rollup di sotto-aree "chiuse", §5.1),
+// altrimenti quota personale prodotta nell'area (parte variabile degli slot
+// di chi vi lavora) — SPEC-v10 §9.1 "quota personale prodotta".
+function areaMarginBase(a){
+  if(CENTRI_IDS.includes(a.id))return Math.max(0,centroMargine(a));
+  const roll=areaRollup(a);
+  if(roll)return Math.max(0,roll.margine);
+  return S.personale.reduce((s,p)=>s+(p.slots||[]).filter(sl=>sl.area===a.id).reduce((ss,sl)=>ss+calcSlot(p,sl).variabile,0),0);
+}
+// Cancello KPI area (§9.1): riusa ESATTAMENTE bonusOk/kpiA/S.soglia (101%) già
+// usati per il bonus_kpi individuale — non reinventa la soglia bonus.
+function areaKpiOk(a){return !!(a.micro&&a.micro.length>0&&bonusOk(kpiA(a)));}
+function premiAreaEntry(areaId){
+  S.premi=S.premi||{priorita:3,aree:{}};
+  S.premi.aree=S.premi.aree||{};
+  if(!S.premi.aree[areaId])S.premi.aree[areaId]={pctMargine:10,slider:null,modo:'mese',distribuzione:{},maturato:0,liquidato:0,storico:[]};
+  return S.premi.aree[areaId];
+}
+function premioProposto(a){
+  if(!areaKpiOk(a))return 0;
+  const entry=premiAreaEntry(a.id);
+  return Math.round(areaMarginBase(a)*(entry.pctMargine||0)/100);
+}
+function premioEffettivoArea(a){
+  const entry=premiAreaEntry(a.id);
+  const v=entry.slider!=null?entry.slider:premioProposto(a);
+  return Math.max(0,v||0);
+}
+// Aree "direzionabili" da un pannello direttore (§9.2): qualunque area con
+// un proprio KPI tracciato (micro non vuoto) e non "chiusa" — le sotto-aree
+// chiuse (i centri di costo, §5.1/§6) restano rollupate nel margine della
+// macro e non hanno un pool/slider proprio, ma Formazione/Sorveglianza
+// Sanitaria/Marketing (sotto-aree NON chiuse, con KPI e direttore propri,
+// §3) hanno ciascuna il proprio pool indipendente dalla macro.
+function areeConPremio(){return S.aree.filter(a=>!a.chiusa&&a.micro&&a.micro.length>0);}
+function premiTotaleRichiesto(){return areeConPremio().reduce((s,a)=>s+premioEffettivoArea(a),0);}
+// Accantonamenti (§11): riserva — esclusa dai prioritari "duri" di Z/Y e
+// riportata solo alla soglia X (letture di sostenibilità indipendenti dalla
+// priorità 1/2/3 usata per la compressione della cascata, §8).
+function totAccantonamenti(){return(S.prioritari||[]).filter(v=>v.tipo==='accantonamento').reduce((s,v)=>s+(v.val||0),0);}
+function totPrioritariDuri(){return(S.prioritari||[]).filter(v=>v.tipo!=='accantonamento').reduce((s,v)=>s+(v.val||0),0)+totSistema()+totTasse();}
+// Soglia di sostenibilità (§11) — confronta l'incassato con Z/Y/X.
+function sostenibilita(f){
+  const Z=f.grfm+totPrioritariDuri()+f.garantito;
+  const Y=Z+f.budgetAreeFisso;
+  const X=Y+f.budgetAreeVar+totAccantonamenti();
+  const inc=f.inc;
+  const color=inc<Z?'rosso':inc<Y?'giallo':'verde';
+  return{Z,Y,X,color,deltaZ:inc-Z,deltaY:inc-Y,deltaX:inc-X};
+}
+
 // FLOW — cascata completa
 function flow(){
   const inc=S.incassato;
@@ -3140,7 +3207,7 @@ function flow(){
     ...S.aree.map(a=>({nome:a.nome,
       val:((a.budget&&a.budget.fisso)||0)+(((a.budget&&a.budget.variabilePct)||0)/100)*inc,
       priorita:a.priorita||2})),
-    {nome:'Premi',val:(S.premi&&S.premi.val)||0,priorita:(S.premi&&S.premi.priorita)||3},
+    {nome:'Premi',val:premiTotaleRichiesto(),priorita:(S.premi&&S.premi.priorita)||3},
   ];
   const poolP1=pool2e3.filter(v=>v.priorita===1).reduce((s,v)=>s+v.val,0); // "protetta" dentro il pool
   const poolP2Rich=pool2e3.filter(v=>v.priorita===2).reduce((s,v)=>s+v.val,0);
@@ -3157,7 +3224,7 @@ function flow(){
          garantito,garantitoPersonale,prioritariP1,liquidita,
          budgetAreeFisso:S.aree.reduce((s,a)=>s+((a.budget&&a.budget.fisso)||0),0),
          budgetAreeVar:S.aree.reduce((s,a)=>s+(((a.budget&&a.budget.variabilePct)||0)/100)*inc,0),
-         premi:(S.premi&&S.premi.val)||0,poolP2Rich,poolP3Rich,poolP2Eff,poolP3Eff,poolP1};
+         premi:premiTotaleRichiesto(),poolP2Rich,poolP3Rich,poolP2Eff,poolP3Eff,poolP1};
 }
 
 
@@ -3233,6 +3300,7 @@ function renderAll(){
   if(activePage?.id==='page-struttura')renderStruttura();
   if(activePage?.id==='page-sistema')renderSistemaPage();
   if(activePage?.id==='page-dash')renderDash(f);
+  if(activePage?.id==='page-premi')renderPremiPage();
   if(activePage?.id==='page-storico')renderStorico();
   if(['page-comm_page','page-form_page','page-amm_page','page-mkt_page','page-sorvsan_page','page-seg_page'].includes(activePage?.id)) renderAreaPage();
   if(activePage?.id==='page-produzione')renderProduzionePage();
@@ -3558,14 +3626,10 @@ function renderStep7(){
   const items=[
     {l:'Incassato',v:f.inc,cls:'fl-eur',seg:'+'},
     {l:`GRFM ${P(S.voci[0].pct)}`,v:f.grfm,cls:'fl-neg',seg:'−'},
-    {l:`Sistema (${(S.sistemaFissi||[]).length} voci)`,v:f.sistema,cls:'fl-neg',seg:'−'},
-    {l:`Costi fissi ${P(S.voci[1].pct)}`,v:f.costiFissi,cls:'fl-neg',seg:'−'},
-    {l:`Costi variabili ${P(S.voci[2].pct)}`,v:f.costiVar,cls:'fl-neg',seg:'−'},
-    {l:`Accantonamenti ${P(S.voci[3].pct)}`,v:f.acc,cls:'fl-neg',seg:'−'},
-    {l:'Tasse & oneri',v:f.tasse,cls:'fl-neg',seg:'−'},
-    {l:`Costo personale (${S.personale.length} risorse)`,v:f.pers,cls:'fl-neg',seg:'−'},
-    {l:'CDA',v:f.cda,cls:'fl-neg',seg:'−'},
-    {l:`Budget aree (${S.aree.length} aree)`,v:f.areD,cls:'fl-neg',seg:'−'},
+    {l:'Prioritari (leasing/F24/IVA/Sistema/Tasse... priorità 1)',v:f.prioritariP1,cls:'fl-neg',seg:'−'},
+    {l:`Garantito (${S.personale.length} risorse + CDA)`,v:f.garantito,cls:'fl-neg',seg:'−'},
+    {l:`Budget aree (${S.aree.length} aree, effettivo P2)`,v:f.poolP2Eff,cls:'fl-neg',seg:'−'},
+    {l:'Premi (effettivo P3)',v:f.poolP3Eff,cls:'fl-neg',seg:'−'},
   ];
   el.innerHTML=items.map(r=>`<div class="flow-line ${r.cls}">     <span class="fl-label" style="font-size:11px;color:var(--ink3);min-width:12px">${r.seg}</span>     <span class="fl-label">${r.l}</span>     <span class="fl-val mono">${fmt(r.v)}</span>     <span class="fl-pct">${P((r.v/Math.max(1,f.inc))*100)}</span>   </div>`).join('')+
   `<div class="flow-line fl-tot" style="background:${neg?'var(--red)':'var(--ink)'}">     <span class="fl-label">= Utili proprietà</span>     <span class="fl-val mono">${fmt(f.utili)}</span>     <span class="fl-pct">${P((f.utili/Math.max(1,f.inc))*100)}</span>   </div>   <div style="margin-top:10px;padding:8px 10px;background:${neg?'var(--red-bg)':'var(--green-bg)'};border:1px solid ${neg?'var(--red-bd)':'var(--green-bd)'};border-radius:var(--r);font-size:12px;color:${neg?'var(--red)':'var(--green)'}">     ${neg?'⚠️ Utili negativi — rivedi i costi o l\'incassato':'✅ Mese positivo — pronto per lo snapshot'}   </div>`;
@@ -3977,10 +4041,10 @@ function openOrgPopCDA(){
   openPopover();
 }
 function openOrgPopFlow(f){
-  document.getElementById('pop-title').textContent='Cascata — analisi utili';
+  document.getElementById('pop-title').textContent='Cascata a priorità — analisi utili (SPEC-v10 §5)';
   document.getElementById('pop-act').style.display='none';
   const neg=f.utili<0;
-  document.getElementById('pop-body').innerHTML=`     <div style="font-size:12px;color:${neg?'var(--red)':'var(--green)'};font-weight:500;margin-bottom:10px;padding:7px 9px;background:${neg?'var(--red-bg)':'var(--green-bg)'};border-radius:var(--r)">       ${neg?'⚠ Utili negativi: '+fmt(f.utili):'✓ Positivi: '+fmt(f.utili)}     </div>     ${[       {l:'Incassato',v:f.inc,c:'var(--green)'},       {l:'− GRFM',v:f.grfm,c:'var(--purple)'},       {l:'− Sistema',v:f.sistema,c:'var(--red)'},       {l:'− Costi fissi',v:f.costiFissi,c:'var(--red)'},       {l:'− Costi variabili',v:f.costiVar,c:'var(--red)'},       {l:'− Accantonamenti',v:f.acc,c:'var(--amber)'},       {l:'− Tasse',v:f.tasse,c:'var(--amber)'},       {l:'− Costo personale',v:f.pers,c:'var(--red)'},       {l:'− CDA',v:f.cda,c:'var(--blue)'},       {l:'− Budget aree',v:f.areD,c:'var(--ink3)'},     ].map(r=>`<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--lift);font-size:12px">
+  document.getElementById('pop-body').innerHTML=`     <div style="font-size:12px;color:${neg?'var(--red)':'var(--green)'};font-weight:500;margin-bottom:10px;padding:7px 9px;background:${neg?'var(--red-bg)':'var(--green-bg)'};border-radius:var(--r)">       ${neg?'⚠ Utili negativi: '+fmt(f.utili):'✓ Positivi: '+fmt(f.utili)}     </div>     ${[       {l:'Incassato',v:f.inc,c:'var(--green)'},       {l:'− GRFM',v:f.grfm,c:'var(--purple)'},       {l:'− Prioritari (P1)',v:f.prioritariP1,c:'var(--red)'},       {l:'− Garantito (dipendenti+soci+CDA)',v:f.garantito,c:'var(--red)'},       {l:'− Budget aree (P2, effettivo)',v:f.poolP2Eff,c:'var(--amber)'},       {l:'− Premi (P3, effettivo)',v:f.poolP3Eff,c:'var(--amber)'},     ].map(r=>`<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--lift);font-size:12px">
       <span style="flex:1;color:${r.c}">${r.l}</span>
       <span class="mono" style="color:${r.c}">${fmt(r.v)}</span>
       <span style="font-size:10px;color:var(--ink3);min-width:38px;text-align:right">${P((r.v/Math.max(1,f.inc))*100)}</span>
@@ -4071,7 +4135,7 @@ function renderSistemaPage(){
   const totPrio=prioritari.reduce((s,v)=>s+(v.val||0),0);
   const tipiPrio=['leasing','f24','iva','rateizzo','tfr','accantonamento','custom'];
   const prioSelect=(cur,onChange)=>`<select style="padding:3px 6px;border:1px solid var(--lift);border-radius:var(--r);font-size:11px;background:var(--sheet)" onblur="${onChange}" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">${[1,2,3].map(n=>`<option value="${n}" ${(cur||1)===n?'selected':''}>prio ${n}</option>`).join('')}</select>`;
-  html+=`<div style="margin-top:20px;margin-bottom:10px;background:var(--card);border:1px solid var(--lift);border-radius:var(--rl);padding:14px">     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">       <div style="font-size:13px;font-weight:600">Voci prioritarie (${prioritari.length})</div>       <div style="font-family:'DM Mono',monospace;font-size:16px;font-weight:300">${fmt(totPrio)} <span style="font-size:11px;color:var(--ink3)">/mese</span></div>     </div>     <div style="font-size:11px;color:var(--ink3);margin-bottom:10px">Leasing, F24, IVA, rateizzi, TFR, accantonamenti — priorità modificabile (§8): grado 1 mai compresso, 2/3 compressi se la liquidità disponibile non basta (Fase 3).</div>     ${prioritari.map((v,i)=>`       <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(0,0,0,.03)">         <input type="text" value="${v.nome}" style="flex:1;border:none;background:transparent;font-size:12px;outline:none;font-family:'DM Sans',sans-serif;color:var(--ink)"           onblur="S.prioritari[${i}].nome=this.value;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">         <select style="padding:3px 6px;border:1px solid var(--lift);border-radius:var(--r);font-size:11px;background:var(--sheet)"           onblur="S.prioritari[${i}].tipo=this.value;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">           ${tipiPrio.map(t=>`<option value="${t}" ${v.tipo===t?'selected':''}>${t}</option>`).join('')}         </select>         ${prioSelect(v.priorita,`S.prioritari[${i}].priorita=parseInt(this.value)||1;renderAll()`)}         <input type="number" value="${v.val||0}" style="width:90px;padding:3px 6px;border:1px solid var(--lift);border-radius:var(--r);font-size:12px;font-family:'DM Mono',monospace;text-align:right;background:${(v.val||0)>0?'var(--blue-bg)':'var(--card)'}"           onblur="S.prioritari[${i}].val=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">         <span style="font-size:10px;color:var(--ink3);min-width:30px">/mese</span>         <button class="btn xs" style="padding:2px 6px;color:var(--red);border-color:var(--red)"           onclick="if(confirm('Eliminare voce prioritaria?')){S.prioritari.splice(${i},1);renderAll()}">✕</button>       </div>`).join('')}     <button class="btn sm prim" style="margin-top:8px" onclick="addPrioritario()">+ Voce prioritaria</button>     <div class="pop-div"></div>     <div style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:12px">       <span style="flex:1">Sistema (overhead, ${fmt(totSis)}/mese) — priorità</span>       ${prioSelect(S.prioritaSistema,`S.prioritaSistema=parseInt(this.value)||1;renderAll()`)}     </div>     <div style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:12px">       <span style="flex:1">Tasse (${fmt(totTasse())}/mese) — priorità</span>       ${prioSelect(S.prioritaTasse,`S.prioritaTasse=parseInt(this.value)||1;renderAll()`)}     </div>     <div class="pop-div"></div>     <div style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:12px">       <span style="flex:1">Premi (voce residuale semplice — motore KPI in Fase 5) €/mese</span>       <input type="number" value="${(S.premi&&S.premi.val)||0}" style="width:90px;padding:3px 6px;border:1px solid var(--lift);border-radius:var(--r);font-size:12px;font-family:'DM Mono',monospace;text-align:right"         onblur="S.premi=S.premi||{};S.premi.val=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">       ${prioSelect(S.premi&&S.premi.priorita,`S.premi=S.premi||{};S.premi.priorita=parseInt(this.value)||3;renderAll()`)}     </div>   </div>   <div id="stima-tasse-wrap" style="margin-top:16px"></div>`;
+  html+=`<div style="margin-top:20px;margin-bottom:10px;background:var(--card);border:1px solid var(--lift);border-radius:var(--rl);padding:14px">     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">       <div style="font-size:13px;font-weight:600">Voci prioritarie (${prioritari.length})</div>       <div style="font-family:'DM Mono',monospace;font-size:16px;font-weight:300">${fmt(totPrio)} <span style="font-size:11px;color:var(--ink3)">/mese</span></div>     </div>     <div style="font-size:11px;color:var(--ink3);margin-bottom:10px">Leasing, F24, IVA, rateizzi, TFR, accantonamenti — priorità modificabile (§8): grado 1 mai compresso, 2/3 compressi se la liquidità disponibile non basta (Fase 3).</div>     ${prioritari.map((v,i)=>`       <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(0,0,0,.03)">         <input type="text" value="${v.nome}" style="flex:1;border:none;background:transparent;font-size:12px;outline:none;font-family:'DM Sans',sans-serif;color:var(--ink)"           onblur="S.prioritari[${i}].nome=this.value;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">         <select style="padding:3px 6px;border:1px solid var(--lift);border-radius:var(--r);font-size:11px;background:var(--sheet)"           onblur="S.prioritari[${i}].tipo=this.value;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">           ${tipiPrio.map(t=>`<option value="${t}" ${v.tipo===t?'selected':''}>${t}</option>`).join('')}         </select>         ${prioSelect(v.priorita,`S.prioritari[${i}].priorita=parseInt(this.value)||1;renderAll()`)}         <input type="number" value="${v.val||0}" style="width:90px;padding:3px 6px;border:1px solid var(--lift);border-radius:var(--r);font-size:12px;font-family:'DM Mono',monospace;text-align:right;background:${(v.val||0)>0?'var(--blue-bg)':'var(--card)'}"           onblur="S.prioritari[${i}].val=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">         <span style="font-size:10px;color:var(--ink3);min-width:30px">/mese</span>         <button class="btn xs" style="padding:2px 6px;color:var(--red);border-color:var(--red)"           onclick="if(confirm('Eliminare voce prioritaria?')){S.prioritari.splice(${i},1);renderAll()}">✕</button>       </div>`).join('')}     <button class="btn sm prim" style="margin-top:8px" onclick="addPrioritario()">+ Voce prioritaria</button>     <div class="pop-div"></div>     <div style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:12px">       <span style="flex:1">Sistema (overhead, ${fmt(totSis)}/mese) — priorità</span>       ${prioSelect(S.prioritaSistema,`S.prioritaSistema=parseInt(this.value)||1;renderAll()`)}     </div>     <div style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:12px">       <span style="flex:1">Tasse (${fmt(totTasse())}/mese) — priorità</span>       ${prioSelect(S.prioritaTasse,`S.prioritaTasse=parseInt(this.value)||1;renderAll()`)}     </div>     <div class="pop-div"></div>     <div style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:12px">       <span style="flex:1">Premi (pool calcolato per area da KPI/margine — ${fmt(premiTotaleRichiesto())}/mese richiesti, vedi pagina <a href="#" onclick="goPage('premi');return false">Premi &amp; direttori</a>) — priorità</span>       ${prioSelect(S.premi&&S.premi.priorita,`S.premi=S.premi||{priorita:3,aree:{}};S.premi.priorita=parseInt(this.value)||3;renderAll()`)}     </div>   </div>   <div id="stima-tasse-wrap" style="margin-top:16px"></div>`;
 
   el.innerHTML=html;
   renderStimeTasse();
@@ -4144,11 +4208,50 @@ function renderSistema(){renderStep2();renderSistemaPage();}
 // ── DASHBOARD ─────────────────────────────
 
 // ── STORICO ──────────────────────────────
+// Maturazione premi (§9.3): a ogni chiusura mese, ogni area matura la sua
+// quota effettiva (compressa proporzionalmente se la cascata ha dovuto
+// comprimere il pool P3, §8); se modo='mese' liquida subito tutto il
+// maturato, se modo='trimestre' liquida solo a fine trimestre (mar/giu/set/dic)
+// e nel frattempo il residuo si accumula. Distribuisce anche per persona
+// secondo la distribuzione impostata dal direttore.
+function maturaPremi(f,now){
+  const mese=now.toLocaleDateString('it-IT',{month:'long',year:'numeric'});
+  const ratio=f.poolP3Rich>0?f.poolP3Eff/f.poolP3Rich:1;
+  const fineTrimestre=(now.getMonth()%3)===2;
+  let liquidatoTot=0,maturatoTot=0;
+  areeConPremio().forEach(a=>{
+    const entry=premiAreaEntry(a.id);
+    const richiesto=premioEffettivoArea(a);
+    const erogato=Math.round(richiesto*ratio);
+    entry.maturato=(entry.maturato||0)+erogato;
+    const trimestrale=entry.modo==='trimestre';
+    const liquidato=(!trimestrale||fineTrimestre)?entry.maturato:0;
+    if(liquidato>0)entry.maturato=0;
+    entry.liquidato=liquidato;
+    entry.storico=entry.storico||[];
+    entry.storico.unshift({mese,ts:now.toISOString(),proposto:premioProposto(a),erogato,maturato:entry.maturato,liquidato});
+    liquidatoTot+=liquidato;maturatoTot+=entry.maturato;
+    const distrib=entry.distribuzione||{};
+    const distribTot=Object.values(distrib).reduce((s,v)=>s+(v||0),0);
+    Object.keys(distrib).forEach(pid=>{
+      if(!(distrib[pid]>0))return;
+      const p=S.personale.find(x=>x.id===pid);if(!p)return;
+      const quota=distribTot>0?distrib[pid]/distribTot:0;
+      p.premiVar=p.premiVar||{maturato:0,liquidato:0,storico:[]};
+      p.premiVar.storico=p.premiVar.storico||[];
+      p.premiVar.storico.unshift({mese,ts:now.toISOString(),area:a.nome,maturato:Math.round(erogato*quota),liquidato:Math.round(liquidato*quota)});
+      p.premiVar.liquidato=Math.round(liquidato*quota);
+      p.premiVar.maturato=trimestrale?(liquidato>0?0:(p.premiVar.maturato||0)+Math.round(erogato*quota)):0;
+    });
+  });
+  return{liquidatoTot,maturatoTot};
+}
 async function saveSnap(){
   const f=flow();const now=new Date();
   const mese=now.toLocaleDateString('it-IT',{month:'long',year:'numeric'});
+  const premiSnap=maturaPremi(f,now);
   const snap={data:mese,ts:now.toISOString(),inc:f.inc,pool:f.pool,
-    sistema:f.sistema,tasse:f.tasse,pers:f.pers,utili:f.utili};
+    sistema:f.sistema,tasse:f.tasse,pers:f.pers,utili:f.utili,premi:premiSnap};
   S.snaps.unshift(snap);
   renderStorico();
   if(db){
@@ -4167,14 +4270,14 @@ async function saveSnap(){
 function renderStorico(){
   const f=flow();
   const sc=document.getElementById('storico-current');
-  if(sc)sc.innerHTML=`<div class="snap-vals">     <div class="sv"><span>Incassato</span><strong>${fmt(f.inc)}</strong></div>     <div class="sv"><span>Sistema</span><strong style="color:var(--red)">${fmt(f.sistema)}</strong></div>     <div class="sv"><span>Personale</span><strong style="color:var(--amber)">${fmt(f.pers)}</strong></div>     <div class="sv"><span>Tasse</span><strong style="color:var(--amber)">${fmt(f.tasse)}</strong></div>     <div class="sv"><span>Utili</span><strong style="color:${f.utili<0?'var(--red)':'var(--green)'}">${fmt(f.utili)}</strong></div>   </div>`;
+  if(sc)sc.innerHTML=`<div class="snap-vals">     <div class="sv"><span>Incassato</span><strong>${fmt(f.inc)}</strong></div>     <div class="sv"><span>Sistema</span><strong style="color:var(--red)">${fmt(f.sistema)}</strong></div>     <div class="sv"><span>Personale</span><strong style="color:var(--amber)">${fmt(f.pers)}</strong></div>     <div class="sv"><span>Tasse</span><strong style="color:var(--amber)">${fmt(f.tasse)}</strong></div>     <div class="sv"><span>Premi (P3 eff.)</span><strong style="color:var(--amber)">${fmt(f.poolP3Eff)}</strong></div>     <div class="sv"><span>Utili</span><strong style="color:${f.utili<0?'var(--red)':'var(--green)'}">${fmt(f.utili)}</strong></div>   </div>`;
   const sl=document.getElementById('snap-list');if(!sl)return;
   if(!S.snaps.length){
     sl.innerHTML='<div class="empty">Nessuno snapshot. Usa "Salva mese corrente" al passo 7.</div>';
     if(db&&!_supaSnapsFetched) loadSupaSnaps();
     return;
   }
-  sl.innerHTML=S.snaps.map((s,i)=>`<div class="snap">     <div class="snap-m">${s.data}${s._cloud?'<span style="font-size:9px;color:var(--ink3);margin-left:5px">☁️</span>':''} <button class="btn xs danger" style="margin-left:6px" onclick="deleteSnap(${i})">✕</button></div>     <div class="snap-vals">       <div class="sv"><span>Incassato</span><strong>${fmt(s.inc)}</strong></div>       <div class="sv"><span>Personale</span><strong style="color:var(--amber)">${fmt(s.pers||0)}</strong></div>       <div class="sv"><span>Tasse</span><strong style="color:var(--amber)">${fmt(s.tasse||0)}</strong></div>       <div class="sv"><span>Utili</span><strong style="color:${s.utili<0?'var(--red)':'var(--green)'}">${fmt(s.utili)}</strong></div>     </div>   </div>`).join('');
+  sl.innerHTML=S.snaps.map((s,i)=>`<div class="snap">     <div class="snap-m">${s.data}${s._cloud?'<span style="font-size:9px;color:var(--ink3);margin-left:5px">☁️</span>':''} <button class="btn xs danger" style="margin-left:6px" onclick="deleteSnap(${i})">✕</button></div>     <div class="snap-vals">       <div class="sv"><span>Incassato</span><strong>${fmt(s.inc)}</strong></div>       <div class="sv"><span>Personale</span><strong style="color:var(--amber)">${fmt(s.pers||0)}</strong></div>       <div class="sv"><span>Tasse</span><strong style="color:var(--amber)">${fmt(s.tasse||0)}</strong></div>       <div class="sv"><span>Premi liquidati</span><strong style="color:var(--amber)">${fmt((s.premi&&s.premi.liquidatoTot)||0)}</strong></div>       <div class="sv"><span>Utili</span><strong style="color:${s.utili<0?'var(--red)':'var(--green)'}">${fmt(s.utili)}</strong></div>     </div>   </div>`).join('');
   if(db&&!_supaSnapsFetched) loadSupaSnaps();
   const cw=document.getElementById('snap-chart-wrap');if(cw)cw.style.display='';
   const c=document.getElementById('storico-chart');if(!c)return;
@@ -4214,7 +4317,7 @@ async function loadSupaSnaps(){
       S.snaps.push({
         data:row.mese||'—', ts:row.created_at,
         inc:dj.inc||0, pool:dj.pool||0, sistema:dj.sistema||0,
-        tasse:dj.tasse||0, pers:dj.pers||0, utili:dj.utili||0,
+        tasse:dj.tasse||0, pers:dj.pers||0, utili:dj.utili||0, premi:dj.premi||null,
         _cloud:true, _supaId:row.id
       });
       added++;
@@ -5827,11 +5930,10 @@ function renderSimWaterfall(f){
   const items = [
     { l: 'Incassato', v: f.inc, color: '#1A6B3C', bar: 100 },
     { l: 'GRFM / Holding', v: f.grfm, color: '#4A38B0', bar: (f.grfm/f.inc)*100 },
-    { l: 'Sistema fissi', v: f.sistema, color: '#A32020', bar: (f.sistema/f.inc)*100 },
-    { l: 'Costi strutturali', v: f.costiFissi+f.costiVar+f.acc, color: '#c25a00', bar: ((f.costiFissi+f.costiVar+f.acc)/f.inc)*100 },
-    { l: 'Tasse & oneri', v: f.tasse, color: '#7A4A08', bar: (f.tasse/f.inc)*100 },
-    { l: 'Costo personale', v: f.pers, color: '#0F4499', bar: (f.pers/f.inc)*100 },
-    { l: 'CDA', v: f.cda, color: '#5A5850', bar: (f.cda/f.inc)*100 },
+    { l: 'Prioritari (P1)', v: f.prioritariP1, color: '#A32020', bar: (f.prioritariP1/f.inc)*100 },
+    { l: 'Garantito', v: f.garantito, color: '#c25a00', bar: (f.garantito/f.inc)*100 },
+    { l: 'Budget aree (P2)', v: f.poolP2Eff, color: '#7A4A08', bar: (f.poolP2Eff/f.inc)*100 },
+    { l: 'Premi (P3)', v: f.poolP3Eff, color: '#0F4499', bar: (f.poolP3Eff/f.inc)*100 },
     { l: '= Utili', v: f.utili, color: f.utili>=0?'#1A6B3C':'#A32020', bar: Math.abs((f.utili/f.inc)*100) },
   ];
   el.innerHTML = items.map(r => `<div class="wf-row">     <span class="wf-label">${r.l}</span>     <div class="wf-bar-wrap">       <div class="wf-bar" style="width:${Math.min(Math.abs(r.bar),100).toFixed(1)}%;background:${r.color};opacity:${r.l==='= Utili'?1:.75}"></div>     </div>     <span class="wf-val">${fmt(r.v)}</span>     <span class="wf-pct">${P((r.v/Math.max(1,f.inc))*100)}</span>   </div>`).join('');
@@ -5917,9 +6019,9 @@ function renderSimScenarioDetail(idx){
   S.incassato = origInc;
   const el = document.getElementById('sim-scenario-detail'); if(!el) return;
   const rows = [
-    ['Incassato', f.inc, ''], ['GRFM', f.grfm, ''], ['Sistema', f.sistema, ''],
-    ['Costi strutturali', f.costiFissi+f.costiVar+f.acc, ''],
-    ['Tasse', f.tasse, ''], ['Personale', f.pers, ''], ['CDA', f.cda, ''],
+    ['Incassato', f.inc, ''], ['GRFM', f.grfm, ''], ['Prioritari (P1)', f.prioritariP1, ''],
+    ['Garantito', f.garantito, ''],
+    ['Budget aree (P2)', f.poolP2Eff, ''], ['Premi (P3)', f.poolP3Eff, ''],
     ['Utili', f.utili, f.utili >= 0 ? 'pos' : 'neg'],
   ];
   el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:10px">     ${rows.map(([l,v,cls]) => `<div class="sim-card ${cls}">
@@ -5945,9 +6047,9 @@ function renderDashCharts(f){
   destroyChart('waterfall');
   const wCtx = document.getElementById('chart-waterfall');
   if(wCtx){
-    const labels = ['Incassato','GRFM','Sistema','Strutturali','Tasse','Personale','CDA','Utili'];
-    const vals = [f.inc, f.grfm, f.sistema, f.costiFissi+f.costiVar+f.acc, f.tasse, f.pers, f.cda, f.utili];
-    const colors = vals.map((v,i) => i===0?'#1A6B3C': i===7?(v>=0?'#1A6B3C':'#A32020'): '#0F4499');
+    const labels = ['Incassato','GRFM','Prioritari (P1)','Garantito','Budget aree (P2)','Premi (P3)','Utili'];
+    const vals = [f.inc, f.grfm, f.prioritariP1, f.garantito, f.poolP2Eff, f.poolP3Eff, f.utili];
+    const colors = vals.map((v,i) => i===0?'#1A6B3C': i===6?(v>=0?'#1A6B3C':'#A32020'): '#0F4499');
     chartInstances['waterfall'] = new Chart(wCtx, {
       type: 'bar',
       data: { labels, datasets: [{ data: vals, backgroundColor: colors, borderRadius: 3, borderSkipped: false }] },
@@ -5961,9 +6063,9 @@ function renderDashCharts(f){
   destroyChart('torta');
   const tCtx = document.getElementById('chart-torta');
   if(tCtx){
-    const labels2 = ['GRFM','Sistema','Strutturali','Tasse','Personale','CDA','Utili'];
-    const vals2 = [f.grfm, f.sistema, f.costiFissi+f.costiVar+f.acc, f.tasse, f.pers, f.cda, Math.max(0,f.utili)];
-    const colors2 = ['#4A38B0','#A32020','#c25a00','#7A4A08','#0F4499','#5A5850','#1A6B3C'];
+    const labels2 = ['GRFM','Prioritari (P1)','Garantito','Budget aree (P2)','Premi (P3)','Utili'];
+    const vals2 = [f.grfm, f.prioritariP1, f.garantito, f.poolP2Eff, f.poolP3Eff, Math.max(0,f.utili)];
+    const colors2 = ['#4A38B0','#A32020','#c25a00','#0F4499','#7A4A08','#1A6B3C'];
     chartInstances['torta'] = new Chart(tCtx, {
       type: 'doughnut',
       data: { labels: labels2, datasets: [{ data: vals2, backgroundColor: colors2, borderWidth: 2, borderColor:'#fff' }] },
@@ -6042,6 +6144,113 @@ function renderCascataPriorita(f){
     </div>`;
 }
 
+// ── SEMAFORO SOSTENIBILITÀ — SPEC-v10 §11, Fase 5 ─────────────────────────
+function renderSemaforo(f){
+  const el=document.getElementById('sem-grid');
+  if(!el)return;
+  const s=sostenibilita(f);
+  const colorMap={rosso:{c:'var(--red)',bg:'var(--red-bg)',bd:'var(--red-bd)',cls:'err',label:'🔴 ROSSO — a rischio i garantiti'},
+                  giallo:{c:'var(--amber)',bg:'var(--amber-bg)',bd:'var(--amber-bd)',cls:'warn',label:'🟡 GIALLO — niente variabili'},
+                  verde:{c:'var(--green)',bg:'var(--green-bg)',bd:'var(--green-bd)',cls:'ok',label:'🟢 VERDE — sostenibile'}};
+  const cur=colorMap[s.color];
+  const row=(nome,soglia,delta,cls)=>{
+    const sopra=delta>=0;
+    return `<div class="mc ${sopra?'ok':'err'}">
+      <div class="ml">${nome}</div>
+      <div class="mv">${fmt(soglia)}</div>
+      <div class="ms" style="color:${sopra?'var(--green)':'var(--red)'}">${sopra?'+':''}${fmt(delta)} ${sopra?'sopra':'sotto'}</div>
+    </div>`;
+  };
+  el.innerHTML=`
+    <div class="mc ${cur.cls}" style="grid-column:1/-1;background:${cur.bg};border-color:${cur.bd}">
+      <div class="ml">Semaforo sostenibilità — incassato ${fmt(f.inc)}</div>
+      <div class="mv" style="color:${cur.c}">${cur.label}</div>
+    </div>
+    ${row('Z — Prioritari + Garantito',s.Z,s.deltaZ)}
+    ${row('Y — Z + Budget fisso aree',s.Y,s.deltaY)}
+    ${row('X — Y + Budget variabile + Accantonamenti',s.X,s.deltaX)}
+  `;
+}
+function renderDash(f){
+  if(!f)f=flow();
+  renderSemaforo(f);
+}
+
+// ── PREMI & PANNELLO DIRETTORE — SPEC-v10 §9, Fase 5 ──────────────────────
+function renderPremiPage(){
+  const cont=document.getElementById('premi-cont');if(!cont)return;
+  const f=flow();
+  const aree=areeConPremio();
+  const richiesto=f.poolP3Rich,effettivo=f.poolP3Eff;
+  const over=effettivo<richiesto-0.5;
+  const capBanner=`<div class="mc ${over?'err':'ok'}" style="margin-bottom:14px">
+    <div class="ml">Capienza premi (P3) — dopo prioritari, garantito e budget aree</div>
+    <div class="mv">${fmt(effettivo)} <span style="font-size:12px;color:var(--ink3);font-weight:400">disponibili di ${fmt(richiesto)} richiesti da tutte le aree</span></div>
+    ${over?`<div class="ms" style="color:var(--red)">⚠ Sforamento di ${fmt(richiesto-effettivo)} — la cascata a priorità comprime proporzionalmente (§8), vedi Dashboard CDA</div>`:''}
+  </div>`;
+  cont.innerHTML=capBanner+aree.map(a=>premiAreaCard(a,f)).join('');
+}
+function premiAreaCard(a,f){
+  const entry=premiAreaEntry(a.id);
+  const ka=kpiA(a);
+  const ok=areaKpiOk(a);
+  const base=areaMarginBase(a);
+  const proposto=premioProposto(a);
+  const effettivo=premioEffettivoArea(a);
+  const sliderVal=entry.slider!=null?entry.slider:proposto;
+  const sliderMax=Math.max(proposto*2,sliderVal,1000);
+  const personeIds=new Set(S.personale.filter(p=>p.area===a.id||p.areaResp===a.id||(p.slots||[]).some(sl=>sl.area===a.id)).map(p=>p.id));
+  const persone=[...personeIds].map(id=>S.personale.find(p=>p.id===id)).filter(Boolean);
+  const distrib=entry.distribuzione||{};
+  const distribTot=persone.reduce((s,p)=>s+(distrib[p.id]||0),0);
+  const trattenuto=Math.max(0,effettivo-distribTot);
+  return`<div style="background:var(--card);border:1px solid var(--lift);border-radius:var(--rl);padding:14px;margin-bottom:12px">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+      <div><span style="font-size:13px;font-weight:600">${a.nome}</span><span style="font-size:11px;color:var(--ink3);margin-left:6px">dir. ${a.resp||'—'}</span></div>
+      <span class="badge ${ok?'b-ok':'b-crit'}">${ka!==null?ka+'%':'KPI n/d'} ${ok?'✓ sbloccato':'✕ sotto soglia '+S.soglia+'%'}</span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:10px">
+      <div><div style="font-size:9px;color:var(--ink3);text-transform:uppercase">Base (margine/quota)</div><div class="mono" style="font-size:13px">${fmt(base)}</div></div>
+      <div><div style="font-size:9px;color:var(--ink3);text-transform:uppercase">% pool su base</div>
+        <input type="number" value="${entry.pctMargine}" class="inp n" style="width:60px" onblur="premiAreaEntry('${a.id}').pctMargine=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13)this.blur()"></div>
+      <div><div style="font-size:9px;color:var(--ink3);text-transform:uppercase">Proposto (auto)</div><div class="mono" style="font-size:13px">${fmt(proposto)}</div></div>
+      <div><div style="font-size:9px;color:var(--ink3);text-transform:uppercase">Effettivo (slider)</div><div class="mono" style="font-size:13px;font-weight:600;color:var(--green)">${fmt(effettivo)}</div></div>
+    </div>
+    <div class="sim-slider-row" style="margin-bottom:10px">
+      <label>Slider pool</label>
+      <input type="range" min="0" max="${Math.round(sliderMax)}" step="10" value="${Math.round(sliderVal)}"
+        oninput="document.getElementById('premi-val-${a.id}').textContent=fmt(parseFloat(this.value)||0)"
+        onchange="premiAreaEntry('${a.id}').slider=parseFloat(this.value)||0;renderAll()">
+      <span id="premi-val-${a.id}" class="mono">${fmt(sliderVal)}</span>
+      <button class="btn xs" onclick="premiAreaEntry('${a.id}').slider=null;renderAll()">↺ usa proposta</button>
+    </div>
+    ${!ok?`<div style="font-size:11px;color:var(--red);margin-bottom:10px">KPI area sotto soglia — pool premio a zero (cancello §9.1), a prescindere dallo slider.</div>`:''}
+    <div style="font-size:11px;font-weight:600;margin-bottom:6px">Distribuzione tra le persone (o trattenuto dal direttore)</div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:6px">
+      ${persone.map(p=>`<tr><td style="padding:3px 6px">${p.nome}</td><td style="padding:3px 6px;text-align:right;width:90px">
+          <input type="number" value="${distrib[p.id]||0}" class="inp n" style="width:80px"
+            onblur="const e=premiAreaEntry('${a.id}');e.distribuzione=e.distribuzione||{};e.distribuzione['${p.id}']=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13)this.blur()"></td></tr>`).join('')}
+      <tr style="font-weight:600;border-top:1px solid var(--lift)"><td style="padding:3px 6px">Trattenuto dal direttore</td><td style="padding:3px 6px;text-align:right" class="mono">${fmt(trattenuto)}</td></tr>
+    </table>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;font-size:11px;color:var(--ink3);padding-top:8px;border-top:1px solid var(--lift)">
+      <div>Maturazione:
+        <select class="inp" style="width:auto;display:inline-block" onchange="premiAreaEntry('${a.id}').modo=this.value">
+          <option value="mese" ${entry.modo!=='trimestre'?'selected':''}>mese</option>
+          <option value="trimestre" ${entry.modo==='trimestre'?'selected':''}>trimestre</option>
+        </select>
+      </div>
+      <div>Maturato accumulato: <strong class="mono">${fmt(entry.maturato||0)}</strong></div>
+      <div>Liquidato ultimo mese: <strong class="mono">${fmt(entry.liquidato||0)}</strong></div>
+    </div>
+    ${entry.storico&&entry.storico.length?`<details style="margin-top:8px"><summary style="font-size:11px;cursor:pointer;color:var(--ink3)">Storico (${entry.storico.length})</summary>
+      <table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:4px">
+        <thead><tr style="color:var(--ink3)"><th style="text-align:left">Mese</th><th style="text-align:right">Maturato</th><th style="text-align:right">Liquidato</th></tr></thead>
+        <tbody>${entry.storico.slice(0,12).map(h=>`<tr><td>${h.mese}</td><td style="text-align:right" class="mono">${fmt(h.maturato)}</td><td style="text-align:right" class="mono">${fmt(h.liquidato)}</td></tr>`).join('')}</tbody>
+      </table>
+    </details>`:''}
+  </div>`;
+}
+
 // ── OVERRIDE renderDash per aggiungere grafici ────
 
 
@@ -6068,6 +6277,7 @@ function goPage(id, btn){
     sorvsan_page:['Sorveglianza Sanitaria','Visite, nuovi MC, KPI area'],
     seg_page:['Segreteria','Chiamate, scadenze, richieste soci'],
     dash:['Dashboard CDA','Semafori e grafici mese corrente'],
+    premi:['Premi & direttori','Proposta automatica, slider, distribuzione e maturazione (§9)'],
     storico:['Storico mensile','Tutti gli snapshot salvati'],
     guida:['Guida operativa','Come compilare l app ogni mese — passo per passo'],
     import:['Import dati','Carica i file Excel e verifica la mappatura prima di applicare']
@@ -6090,7 +6300,8 @@ function goPage(id, btn){
     updateSim(S.incassato);
     renderSimScenarios();
   }
-  if(id==='dash') setTimeout(()=>renderDashCharts(flow()),50);
+  if(id==='dash'){renderDash(flow());setTimeout(()=>renderDashCharts(flow()),50);}
+  if(id==='premi') setTimeout(()=>renderPremiPage(),30);
   if(id==='org') setTimeout(()=>renderOrg(),30);
   if(id==='sistema') setTimeout(()=>renderSistemaPage(),30);
   if(id==='struttura') setTimeout(()=>renderStruttura(),30);
