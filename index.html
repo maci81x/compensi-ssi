@@ -4237,11 +4237,18 @@ function maturaPremi(f,now){
       if(!(distrib[pid]>0))return;
       const p=S.personale.find(x=>x.id===pid);if(!p)return;
       const quota=distribTot>0?distrib[pid]/distribTot:0;
+      const pErogato=Math.round(erogato*quota);
       p.premiVar=p.premiVar||{maturato:0,liquidato:0,storico:[]};
       p.premiVar.storico=p.premiVar.storico||[];
-      p.premiVar.storico.unshift({mese,ts:now.toISOString(),area:a.nome,maturato:Math.round(erogato*quota),liquidato:Math.round(liquidato*quota)});
-      p.premiVar.liquidato=Math.round(liquidato*quota);
-      p.premiVar.maturato=trimestrale?(liquidato>0?0:(p.premiVar.maturato||0)+Math.round(erogato*quota)):0;
+      // Stessa logica accumula-poi-liquida dell'area: "maturato" nello storico
+      // è il residuo dopo la liquidazione di questo periodo (come per l'area),
+      // non il lordo maturato nel mese — altrimenti i due livelli userebbero lo
+      // stesso nome campo con due significati diversi.
+      p.premiVar.maturato=(p.premiVar.maturato||0)+pErogato;
+      const pLiquidato=(!trimestrale||fineTrimestre)?p.premiVar.maturato:0;
+      if(pLiquidato>0)p.premiVar.maturato=0;
+      p.premiVar.liquidato=pLiquidato;
+      p.premiVar.storico.unshift({mese,ts:now.toISOString(),area:a.nome,maturato:p.premiVar.maturato,liquidato:pLiquidato});
     });
   });
   return{liquidatoTot,maturatoTot};
