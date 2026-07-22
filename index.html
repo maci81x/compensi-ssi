@@ -1505,7 +1505,7 @@ async function loadState(){
     const {data,error}=await db.from('compensi_stato').select('data_json,updated_by,updated_at').eq('id','current').single();
     if(error||!data||!data.data_json||Object.keys(data.data_json).length===0){setSyncIndicator('ok');return;}
     _receivingRemote=true;
-    Object.assign(S,data.data_json);
+    applyIncomingState(data.data_json,'cloud');
     _receivingRemote=false;
     setSyncIndicator('ok');
   } catch(e){ console.warn('loadState error',e); setSyncIndicator('ok'); }
@@ -2015,10 +2015,9 @@ function setupRealtime(){
         if(!payload.new?.data_json)return;
         if(payload.new.updated_by===currentUser?.nome)return; // nostra modifica, skip
         _receivingRemote=true;
-        Object.assign(S,payload.new.data_json);
+        const applied=applyIncomingState(payload.new.data_json,'realtime ('+payload.new.updated_by+')');
         _receivingRemote=false;
-        renderAll();
-        notify('🔄 Aggiornato da '+payload.new.updated_by);
+        if(applied){renderAll();notify('🔄 Aggiornato da '+payload.new.updated_by);}
       })
     .subscribe();
 }
@@ -2047,7 +2046,15 @@ let realeChartInst=null;
 
 const CAT_ICONS={affitto:'🏢',utenze:'⚡',software:'💻',assicurazione:'🛡️',consulenza:'📋',altro:'📦'};
 
+// Versione schema stato (SPEC-v10 Fase 6, §2): incrementata ogni volta che la
+// struttura di S cambia in modo non banale (nuove aree/campi che un vecchio
+// stato non ha). Vedi SCHEMA_MIGRATIONS più sotto per la logica di
+// migrazione — root cause del problema "una scheda vecchia sovrascrive dati
+// più recenti", non un cerotto sul sintomo.
+const CURRENT_SCHEMA_VERSION=6;
+
 const DEF={
+  schemaVersion:CURRENT_SCHEMA_VERSION,
   incassato:130000,
   periodicita:'mensile',
   incassatoSettimanale:0,
@@ -2069,6 +2076,20 @@ const DEF={
   ],
   margineRealeYTD:23.41,
   meseRealeSelezionato:null, // es. 'Marzo 2026' — impostato quando si preseleziona un mese reale
+
+  // Incassi settimanali reali 2026 (foglio "Incassi Settimanali", colonna C).
+  // La settima riga del foglio (312.816,91, senza numero settimana) è il
+  // totale delle 6 righe sotto, non una settimana in più — esclusa di
+  // proposito (verificato: 19.810,08+31.067,10+37.011,83+45.694,31+
+  // 106.774,81+72.458,78 = 312.816,91, torna esatto).
+  incassiSettimanali2026:[
+    {settimana:23,dal:'2026-06-01',al:'2026-06-07',incassato:19810.08},
+    {settimana:24,dal:'2026-06-08',al:'2026-06-14',incassato:31067.10},
+    {settimana:25,dal:'2026-06-15',al:'2026-06-21',incassato:37011.83},
+    {settimana:26,dal:'2026-06-22',al:'2026-06-28',incassato:45694.31},
+    {settimana:27,dal:'2026-06-29',al:'2026-07-05',incassato:106774.81},
+    {settimana:28,dal:'2026-07-06',al:'2026-07-12',incassato:72458.78},
+  ],
 
   voci:[
     {nome:'GRFM',             pct:5.0,  desc:'Quota trattenuta dalla holding — non distribuita'},
@@ -2791,6 +2812,10 @@ function restoreLocal(){
     const raw=localStorage.getItem(LS_KEY);
     if(!raw)return false;
     const parsed=JSON.parse(raw);
+    // Stesso dispositivo/scheda che continua la propria sessione: nessun
+    // rischio di scavalcare il lavoro di un altro tab, quindi migra e basta
+    // (nessuna conferma richiesta, a differenza dello stato da cloud/realtime).
+    migrateSchema(parsed);
     Object.assign(S,parsed);
     return true;
   }catch(e){console.warn('restoreLocal error',e);return false;}
@@ -3071,6 +3096,68 @@ const CENTRI_IDS=['c_antincendio','c_ambiente','c_cantieri','c_rspp','c_verifich
 // Analisi assorbita in Ambiente, Estintori assorbito in Antincendio — i campi
 // di generato_tecnico non cambiano nome, solo il centro che li possiede.
 const CENTRO_TECNICO_FIELD={c_ambiente:'analisi',c_antincendio:'estintori',c_cantieri:'cantieri',c_rspp:'rspp',c_documenti:'documenti'};
+
+// ══════════════════════════════════════════════════
+// MIGRAZIONE SCHEMA — SPEC-v10 Fase 6, §2 (root cause, non un cerotto)
+// ══════════════════════════════════════════════════
+// Ogni step aggiunge SOLO ciò che manca rispetto al DEF corrente — non
+// sovrascrive mai un valore già presente nello stato in arrivo — così una
+// scheda vecchia che risincronizza aggiorna la struttura (centri, natura,
+// priorità, budget, dati reali, motore premi) senza perdere lavoro reale già
+// inserito. Aggiungere qui un nuovo step ad ogni bump di CURRENT_SCHEMA_VERSION.
+const SCHEMA_MIGRATIONS=[
+  {to:6,migrate(s){
+    s.aree=s.aree||[];
+    const haveIds=new Set(s.aree.map(a=>a.id));
+    DEF.aree.filter(a=>CENTRI_IDS.includes(a.id)&&!haveIds.has(a.id)).forEach(a=>{
+      s.aree.push(JSON.parse(JSON.stringify(a)));
+    });
+    s.aree.forEach(a=>{
+      const def=DEF.aree.find(d=>d.id===a.id);
+      if(!def)return;
+      if(a.fornitori===undefined&&def.fornitori)a.fornitori=JSON.parse(JSON.stringify(def.fornitori));
+      if(a.fornitoreFisso===undefined&&def.fornitoreFisso!==undefined)a.fornitoreFisso=def.fornitoreFisso;
+      if(a.ricavoModo===undefined&&def.ricavoModo!==undefined)a.ricavoModo=def.ricavoModo;
+      if(a.ricavoManuale===undefined&&def.ricavoManuale!==undefined)a.ricavoManuale=def.ricavoManuale;
+      if(a.ricavoPct===undefined&&def.ricavoPct!==undefined)a.ricavoPct=def.ricavoPct;
+      if(a.natura===undefined)a.natura=def.natura;
+      if(a.priorita===undefined)a.priorita=def.priorita;
+      if(!a.budget)a.budget=JSON.parse(JSON.stringify(def.budget));
+    });
+    if(!s.storicoReale)s.storicoReale=JSON.parse(JSON.stringify(DEF.storicoReale));
+    if(!s.incassiSettimanali2026)s.incassiSettimanali2026=JSON.parse(JSON.stringify(DEF.incassiSettimanali2026));
+    if(s.margineRealeYTD===undefined)s.margineRealeYTD=DEF.margineRealeYTD;
+    if(s.meseRealeSelezionato===undefined)s.meseRealeSelezionato=null;
+    if(!s.premi||typeof s.premi!=='object')s.premi={priorita:3,aree:{}};
+    if(!s.premi.aree)s.premi.aree={};
+    if(s.premi.priorita===undefined)s.premi.priorita=3;
+  }},
+];
+function migrateSchema(s){
+  let v=s.schemaVersion||0;
+  SCHEMA_MIGRATIONS.filter(m=>m.to>v).sort((a,b)=>a.to-b.to).forEach(m=>{m.migrate(s);v=m.to;});
+  s.schemaVersion=Math.max(v,CURRENT_SCHEMA_VERSION);
+  return s;
+}
+// Applica uno stato in arrivo (cloud, realtime) con controllo di versione: se
+// più vecchio di quello corrente, lo migra e chiede conferma prima di
+// sovrascrivere — una scheda dimenticata aperta non deve più poter
+// distruggere lavoro più recente.
+function applyIncomingState(incoming,sourceLabel){
+  if(!incoming||typeof incoming!=='object'||!Object.keys(incoming).length)return false;
+  const incomingVersion=incoming.schemaVersion||0;
+  if(incomingVersion<CURRENT_SCHEMA_VERSION){
+    migrateSchema(incoming);
+    const ok=confirm(
+      'Lo stato da '+sourceLabel+' è di una versione precedente (v'+incomingVersion+' su v'+CURRENT_SCHEMA_VERSION+' attuale).\n\n'+
+      'È già stato aggiornato alla struttura corrente, ma applicarlo potrebbe sovrascrivere lavoro più recente fatto da un altro dispositivo o scheda.\n\n'+
+      'Applicarlo comunque?'
+    );
+    if(!ok){notify('⚠ Stato da '+sourceLabel+' NON applicato (versione precedente, annullato)');return false;}
+  }
+  Object.assign(S,incoming);
+  return true;
+}
 const GENERATO_TEC_TERM={
   documenti:g=>(g.documenti||0)*(g.pct_doc||0.22),
   analisi:g=>(g.analisi||0)*(g.pct_analisi||0.20),
@@ -3306,6 +3393,14 @@ function applicaMeseReale(mese,anno){
   S.meseRealeSelezionato=mese+' '+anno;
   renderAll();
   notify('Incassato precompilato da '+mese+' '+anno+' (dato reale Controllo di gestione): '+fmt(m.fatturato));
+}
+function applicaSettimanaReale(settimana){
+  const w=(S.incassiSettimanali2026||[]).find(r=>r.settimana===settimana);
+  if(!w)return;
+  S.incassatoSettimanale=w.incassato;
+  if(S.periodicita==='settimanale'&&S.incassatoMode!=='diretto')S.incassato=Math.round(w.incassato*4.33);
+  renderAll();
+  notify('incassatoSettimanale precompilato dalla sett. '+settimana+' ('+w.dal+'→'+w.al+'): '+fmt(w.incassato));
 }
 
 // FLOW — cascata completa
@@ -3558,6 +3653,25 @@ function renderStep1(){
         <button class="btn xs prim" onclick="const v=document.getElementById('s1-reale-sel').value.split('|');applicaMeseReale(v[0],parseInt(v[1]))">Applica</button>
         <span style="margin-left:auto">Margine modello: <strong class="mono">${mp!==null?mp.toFixed(1)+'%':'—'}</strong> · Margine reale (${bench.label}): <strong class="mono">${bench.pct.toFixed(1)}%</strong>
         ${divergeMolto?'<strong style="color:var(--red)"> ⚠ divergono molto — rivedi il modello</strong>':''}</span>
+      </div>`;
+
+    // Incassi settimanali reali 2026 (foglio "Incassi Settimanali", col. C) —
+    // alimentano S.incassatoSettimanale già previsto (§C, Fase 6).
+    let settPicker=document.getElementById('s1-sett-picker');
+    if(!settPicker){
+      settPicker=document.createElement('div');
+      settPicker.id='s1-sett-picker';
+      settPicker.style.cssText='margin-top:6px';
+      realePicker.insertAdjacentElement('afterend',settPicker);
+    }
+    const sw=S.incassiSettimanali2026||[];
+    settPicker.innerHTML=`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 10px;background:var(--sheet);border-radius:var(--r);font-size:11px">
+        <span style="color:var(--ink3)">Incassi settimanali reali 2026:</span>
+        <select id="s1-sett-sel" class="inp" style="width:auto;display:inline-block">
+          ${sw.map(w=>`<option value="${w.settimana}">Sett.${w.settimana} (${w.dal}→${w.al}) — ${fmt(w.incassato)}</option>`).join('')}
+        </select>
+        <button class="btn xs prim" onclick="applicaSettimanaReale(parseInt(document.getElementById('s1-sett-sel').value))">Applica a incassatoSettimanale</button>
+        <span style="color:var(--ink3)">Somma 6 settimane: <strong class="mono">${fmt(sw.reduce((s,w)=>s+w.incassato,0))}</strong></span>
       </div>`;
   }
 
