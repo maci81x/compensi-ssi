@@ -665,7 +665,7 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
     <span class="ni">📄</span> Esporta PDF
   </button>
   <button class="nav-item" onclick="resetAll()">
-    <span class="ni">↺</span> Reset
+    <span class="ni">↺</span> Ripristina dati di default
   </button>
 
   <div style="padding:6px 14px 4px;border-top:1px solid var(--lift);margin-top:4px">
@@ -1447,6 +1447,7 @@ function doLogin(){
   document.getElementById('btn-logout').style.display='';
   document.getElementById('nav-user-badge').textContent='SSI · Direzione';
   applyRoleUI();
+  restoreLocal(); // ripristino locale immediato — Supabase (se raggiungibile) sovrascrive dopo
   loadState().then(()=>{ setupRealtime(); renderAll(); });
 }
 
@@ -1551,29 +1552,50 @@ function parsePFSheet(wb){
   const sheet=wb.Sheets['2026 PF'];
   if(!sheet)return null;
   const rows=XLSX.utils.sheet_to_json(sheet,{header:1,raw:true,defval:''});
+  // Colonne del file reale: A=area macro (Sistema/Commerciale/Produzione/…),
+  // B=categoria, C=voce/fornitore, D=totale annuo, E=%. (Bug fix: prima si
+  // leggeva un colonna troppo a sinistra — C invece di D come annuo — quindi
+  // "annuo" era quasi sempre testo e la riga veniva scartata: da qui i
+  // "46 voci/15.266€" molto sotto il reale.)
   // La riga che apre "COSTI VARIABILI" divide fisso/variabile — rilevata dinamicamente
-  // (nel file reale è ~riga 149, non un numero fisso: non hardcodare la posizione).
+  // (nel file reale è ~riga 151, non un numero fisso: non hardcodare la posizione).
   let marker=-1;
   for(let i=0;i<rows.length;i++){
-    const a=String(rows[i][0]||'').trim().toUpperCase();
-    const b=String(rows[i][1]||'').trim().toUpperCase();
-    if(a==='COSTI VARIABILI'&&b.includes('TOTAL')){marker=i;break;}
+    const cat=String(rows[i][1]||'').trim().toUpperCase();
+    const voce=String(rows[i][2]||'').trim().toUpperCase();
+    if(cat==='COSTI VARIABILI'&&voce.includes('TOTAL')){marker=i;break;}
   }
   const voci=[];
   let inRecap=false; // dal marcatore "MACROAREE..." in poi il file ripete un riepilogo
                       // per macro-categoria che duplica i totali già contati sopra riga per riga
+  // Blocco "Servizi" (soci/personale per nome, tra il subtotale COSTO SOCI e il
+  // successivo subtotale con TOTAL nel nome, es. "COSTI FISSI TOTALI"): già
+  // rappresentato da S.personale (soci fissoMensile, dipendenti costoAziendaAnnuo
+  // dal file dedicato) — le righe non-prioritarie al suo interno vengono
+  // marcate come "già in struttura" ed escluse di default per non duplicarle,
+  // ma restano selezionabili in anteprima. Le righe F24/TFR/Enasarco al suo
+  // interno restano invece prioritarie (obbligo aziendale, non individuale).
+  let inServiziPersonale=false;
+  let lastArea='';
   for(let i=2;i<rows.length;i++){
     const r=rows[i];
-    const areaPF=String(r[0]||'').trim();
-    const voce=String(r[1]||'').trim();
-    const annuo=r[2];
-    const pct=r[3];
-    if(/MACROAREE/i.test(areaPF))inRecap=true;
-    if(!areaPF&&!voce)continue;
+    let areaPF=String(r[0]||'').trim();
+    const cat=String(r[1]||'').trim();
+    const voce=String(r[2]||'').trim();
+    const annuo=r[3];
+    const pct=r[4];
+    if(/MACROAREE/i.test(areaPF)||/MACROAREE/i.test(cat))inRecap=true;
+    if(!cat&&!voce)continue;
     if(typeof annuo!=='number')continue;
+    if(areaPF)lastArea=areaPF; else areaPF=lastArea; // celle unite: eredita l'area della riga precedente
     const natura=(marker>=0&&i>=marker)?'variabile':'fisso';
-    const isSubtotal=inRecap||PF_SUBTOTAL_KEYWORDS.some(k=>areaPF.toUpperCase()===k)||/TOTAL/i.test(voce)||/TOTAL/i.test(areaPF);
-    voci.push({row:i+1,areaPF,voce,annuo,pct:typeof pct==='number'?pct:null,natura,isSubtotal,escludi:isSubtotal});
+    const isSubtotal=inRecap||PF_SUBTOTAL_KEYWORDS.includes(cat.toUpperCase())||/TOTAL/i.test(voce)||/TOTAL/i.test(cat);
+    if(cat.toUpperCase()==='COSTO SOCI')inServiziPersonale=true;
+    const isPersonaleDetail=inServiziPersonale&&!isSubtotal;
+    if(isSubtotal&&inServiziPersonale&&/TOTAL/i.test(cat))inServiziPersonale=false; // fine blocco: subtotale successivo (es. "COSTI FISSI TOTALI")
+    const cls=classifyPFRow({areaPF,cat,voce});
+    const escludiDefault=isSubtotal||(isPersonaleDetail&&cls.dest!=='prioritari');
+    voci.push({row:i+1,areaPF,cat,voce,annuo,pct:typeof pct==='number'?pct:null,natura,isSubtotal,isPersonaleDetail,escludi:escludiDefault});
   }
   return voci;
 }
@@ -1697,7 +1719,7 @@ function renderImportPreview(){
     const totVar=summary.reduce((s,r)=>s+r.variabile,0);
     html+=`<div style="background:var(--card);border:1px solid var(--lift);border-radius:var(--rl);padding:14px;margin-bottom:14px">
       <div style="font-size:12px;font-weight:600;margin-bottom:4px">Riepilogo per area — foglio "2026 PF"</div>
-      <div style="font-size:11px;color:var(--ink3);margin-bottom:8px">Raggruppato per il valore grezzo di col.A del file: nel PF questa colonna mescola nomi di aree (es. "Commerciale", "Formazione") e nomi di categorie di costo (es. "Auto Aziendali", "Software"). È la vista per confrontare i numeri contro PF/Previsionale — la tassonomia finale ad aree (§3) arriva in Fase 2.</div>
+      <div style="font-size:11px;color:var(--ink3);margin-bottom:8px">Raggruppato per l'area macro di col.A del file (es. "Sistema", "Commerciale", "Produzione", "IVA"). È la vista per confrontare i numeri contro PF/Previsionale — la tassonomia finale ad aree (§3) arriva in Fase 2.</div>
       <table style="width:100%;border-collapse:collapse;font-size:12px">
         <thead><tr style="text-align:left;color:var(--ink3);font-size:10px;text-transform:uppercase">
           <th style="padding:4px 6px">Area (col A)</th><th style="padding:4px 6px" class="mono">Fisso €</th><th style="padding:4px 6px" class="mono">Variabile €</th><th style="padding:4px 6px" class="mono">Totale €</th><th style="padding:4px 6px" class="mono">% su incassato</th>
@@ -1721,11 +1743,11 @@ function renderImportPreview(){
     </div>`;
 
     html+=`<div style="background:var(--card);border:1px solid var(--lift);border-radius:var(--rl);padding:14px;margin-bottom:14px">
-      <div style="font-size:12px;font-weight:600;margin-bottom:8px">Dettaglio righe "2026 PF" (${pendingImport.pf.length}) — deseleziona per escludere dal totale (subtotali/righe annidate già pre-escluse)</div>
+      <div style="font-size:12px;font-weight:600;margin-bottom:8px">Dettaglio righe "2026 PF" (${pendingImport.pf.length}) — deseleziona per escludere dal totale (subtotali/righe annidate/dettaglio soci-personale già pre-escluse)</div>
       <div style="max-height:360px;overflow:auto">
       <table style="width:100%;border-collapse:collapse;font-size:11px">
         <thead><tr style="text-align:left;color:var(--ink3);font-size:10px;text-transform:uppercase;position:sticky;top:0;background:var(--card)">
-          <th style="padding:3px 6px"></th><th style="padding:3px 6px">Riga</th><th style="padding:3px 6px">Area</th><th style="padding:3px 6px">Voce</th><th style="padding:3px 6px">Natura</th><th style="padding:3px 6px" class="mono">Annuo €</th><th style="padding:3px 6px">Destinazione</th><th style="padding:3px 6px">Doppione?</th>
+          <th style="padding:3px 6px"></th><th style="padding:3px 6px">Riga</th><th style="padding:3px 6px">Area</th><th style="padding:3px 6px">Categoria</th><th style="padding:3px 6px">Voce</th><th style="padding:3px 6px">Natura</th><th style="padding:3px 6px" class="mono">Annuo €</th><th style="padding:3px 6px">Destinazione</th><th style="padding:3px 6px">Doppione?</th>
         </tr></thead>
         <tbody>
         ${pendingImport.pf.map((v,i)=>{
@@ -1735,7 +1757,8 @@ function renderImportPreview(){
           return `<tr style="border-top:1px solid var(--lift);opacity:${v.escludi?0.4:1}">
           <td style="padding:3px 6px"><input type="checkbox" ${v.escludi?'':'checked'} onchange="toggleImportRow('pf',${i})"></td>
           <td style="padding:3px 6px" class="mono">${v.row}</td>
-          <td style="padding:3px 6px">${v.areaPF}${v.isSubtotal?' <span class="badge" style="background:#fff3cd;color:#8a6d00">subtotale</span>':''}</td>
+          <td style="padding:3px 6px">${v.areaPF}${v.isSubtotal?' <span class="badge" style="background:#fff3cd;color:#8a6d00">subtotale</span>':''}${v.isPersonaleDetail?' <span class="badge" style="background:#e2edfc;color:#0F4499">già in Struttura personale</span>':''}</td>
+          <td style="padding:3px 6px">${v.cat||''}</td>
           <td style="padding:3px 6px">${v.voce}</td>
           <td style="padding:3px 6px">${v.natura}</td>
           <td style="padding:3px 6px" class="mono">${fmt(v.annuo)}</td>
@@ -1827,10 +1850,14 @@ function condivideToken(a,b){
   return ta.some(t=>tb.has(t));
 }
 function classifyPFRow(v){
-  const s=(v.areaPF+' '+v.voce).toLowerCase();
+  const s=(v.areaPF+' '+(v.cat||'')+' '+v.voce).toLowerCase();
+  // "P.IVA"/"Partita IVA" (collaboratore a fattura) non è la voce fiscale
+  // "IVA" (F24/acconto) — va ripulita prima del test, altrimenti ogni riga
+  // di un collaboratore P.IVA finiva erroneamente tra i prioritari.
+  const sIva=s.replace(/\bp\.?\s*iva\b/g,'').replace(/partita\s+iva/g,'');
   if(/leasing/.test(s))return{dest:'prioritari',tipo:'leasing'};
   if(/\bf24\b|irpef|inail|enasarco/.test(s))return{dest:'prioritari',tipo:'f24'};
-  if(/\biva\b/.test(s))return{dest:'prioritari',tipo:'iva'};
+  if(/\biva\b/.test(sIva))return{dest:'prioritari',tipo:'iva'};
   if(/\btfr\b/.test(s))return{dest:'prioritari',tipo:'tfr'};
   if(/rateizz/.test(s))return{dest:'prioritari',tipo:'rateizzo'};
   if(/accantona/.test(s))return{dest:'prioritari',tipo:'accantonamento'};
@@ -1872,13 +1899,13 @@ function applyImport(){
       const cls=classifyPFRow(v);
       if(cls.dest==='prioritari'){
         S.prioritari.push({id:'pr_'+Math.random().toString(36).slice(2,9),
-          nome:v.voce||v.areaPF,val:Math.round((v.annuo/12)*100)/100,tipo:cls.tipo,priorita:1});
+          nome:v.voce||v.cat||v.areaPF,val:Math.round((v.annuo/12)*100)/100,tipo:cls.tipo,priorita:1});
         nPrio++;
       }else{
         S.sistemaFissi.push({
           id:'pf_'+Math.random().toString(36).slice(2,9),
-          nome:v.voce||v.areaPF,
-          cat:v.areaPF,
+          nome:v.voce||v.cat||v.areaPF,
+          cat:v.cat||v.areaPF,
           areaPF:v.areaPF,
           natura:v.natura,
           areaId:cls.areaId,
@@ -1939,9 +1966,10 @@ function riclassificaImport(){
 }
 
 function resetAll(){
-  if(!confirm('Sei sicuro? Tutti i dati torneranno ai valori di default.'))return;
+  if(!confirm('Sei sicuro? Tutti i dati torneranno ai valori di default (i 13 dipendenti reali, Sistema e Prioritari da PF, budget aree da previsionale).'))return;
+  localStorage.removeItem(LS_KEY);
   S=JSON.parse(JSON.stringify(DEF));
-  renderAll();
+  renderAll(); // renderAll() richiama saveLocal(): il default torna subito in localStorage
   scheduleSync();
   notify('↺ Dati resettati ai default');
 }
@@ -2001,10 +2029,23 @@ const DEF={
     {nome:'Accantonamenti',   pct:10.65,desc:'TFR, fondo rischi, riserva liquidità (target 3 mesi costi fissi)'},
   ],
 
-  // Voci prioritarie (default priorità 1 — leasing/F24/IVA/rateizzi/TFR/accantonamenti,
-  // SPEC-v10 §4). Popolate dall'import PF (classificazione automatica) o a mano.
-  // Sommate in flow() per priorità corrente — SPEC-v10 §5/§8, Fase 3.
-  prioritari:[],
+  // Voci prioritarie (priorità 1 — leasing/F24/IVA/rateizzi/TFR/accantonamenti,
+  // SPEC-v10 §4). Dati reali da "PF SI - 2026.xlsx" (foglio "2026 PF", righe
+  // fisso, classificazione automatica classifyPFRow) — importati una volta come
+  // dato di partenza (vedi §10: la pagina Import resta per aggiornamenti futuri).
+  prioritari:[
+    {id:'pr_p6oeesw',nome:'F24 DMRP: rimborso note di rettifica a credito',val:202.09,tipo:'f24',priorita:1},
+    {id:'pr_9l06ajk',nome:'F24 INAIL',val:383.31,tipo:'f24',priorita:1},
+    {id:'pr_54qgwzt',nome:'ALLEATAPREVIDENZA+SELLA+ARCA',val:507.03,tipo:'tfr',priorita:1},
+    {id:'pr_ei8oa2x',nome:'Enasarco',val:767.82,tipo:'f24',priorita:1},
+    {id:'pr_wmed065',nome:'Volkswagen Leasing GMBH',val:153.52,tipo:'leasing',priorita:1},
+    {id:'pr_s3z23q3',nome:'Leasing Immobile Poggibonsi',val:961.15,tipo:'leasing',priorita:1},
+    {id:'pr_c98f3lb',nome:'F24 IVA',val:383.89,tipo:'f24',priorita:1},
+    {id:'pr_9hf727i',nome:'F24 IMU+REGIONI+7085+2001',val:188.08,tipo:'f24',priorita:1},
+    {id:'pr_gbw58w1',nome:'OSM',val:2541.67,tipo:'iva',priorita:1},
+    {id:'pr_x0la9tt',nome:'Accantonamento fondo',val:0,tipo:'accantonamento',priorita:1},
+    {id:'pr_fczjq7i',nome:'anni precedenti',val:0,tipo:'rateizzo',priorita:1},
+  ],
   // Priorità di Sistema (overhead) e Tasse, ora voci "prioritarie" aggregate nella
   // cascata invece di un termine fisso a parte (scelta esplicita Fase 3).
   prioritaSistema:1,
@@ -2013,65 +2054,216 @@ const DEF={
   // soglia sostenibilità è SPEC-v10 §9/§11, Fase 5, non ancora implementato.
   premi:{val:0,priorita:3},
 
+  // Costi fissi/variabili "Sistema" — dati reali da "PF SI - 2026.xlsx" (foglio
+  // "2026 PF"), non prioritari e non già rappresentati in S.personale (righe di
+  // dettaglio soci/dipendenti per nome escluse per non duplicare — vedi
+  // parsePFSheet). areaId valorizzato dove la riga è tracciabile a un'area
+  // riconosciuta (Marketing/Formazione/Sorveglianza Sanitaria/Produzione/
+  // Commerciale); altrimenti resta overhead generico ("Sistema").
   sistemaFissi:[
-    // ── AUTO AZIENDALI ────────────────────────────────────────────────────
-    {id:'sf_nog1',  nome:'Noleggi auto aziendali',          cat:'Auto aziendali',  val:1705},
-    {id:'sf_nog2',  nome:'Noleggio furgone',                cat:'Auto aziendali',  val:394},
-    {id:'sf_telepass',nome:'Telepass',                      cat:'Auto aziendali',  val:200},
-    {id:'sf_carb',  nome:'Carburante (DKV/UTA/ENI)',        cat:'Auto aziendali',  val:500},
-    {id:'sf_manu_auto',nome:'Manutenzione auto',            cat:'Auto aziendali',  val:100},
-    // ── LEASING / FINANZIAMENTI ───────────────────────────────────────────
-    {id:'sf_bnp',   nome:'BNP Paribas Lease (leasing)',     cat:'Leasing',         val:961},
-    {id:'sf_apple_grenke',nome:'Apple Grenke leasing',      cat:'Leasing',         val:641},
-    {id:'sf_apple_ifis',nome:'Apple Banca IFIS',            cat:'Leasing',         val:1021},
-    // ── AFFITTI E UTENZE ─────────────────────────────────────────────────
-    {id:'sf_affitti',nome:'Affitti uffici',                 cat:'Affitti e utenze', val:0},
-    {id:'sf_utenze', nome:'Utenze (luce/gas/acqua)',        cat:'Affitti e utenze', val:0},
-    {id:'sf_cond',   nome:'Condominio',                     cat:'Affitti e utenze', val:0},
-    // ── TELEFONIA E CONNETTIVITÀ ─────────────────────────────────────────
-    {id:'sf_tel1',  nome:'Smartel Srl (telefonia)',         cat:'Telefonia',       val:0},
-    {id:'sf_tel2',  nome:'TIM Grosseto',                    cat:'Telefonia',       val:0},
-    // ── HARDWARE E ATTREZZATURE ───────────────────────────────────────────
-    {id:'sf_copyworld',nome:'Copyworld (fotocopiatrice)',   cat:'Hardware',        val:220},
-    {id:'sf_infotek',nome:'Infotek (hardware/IT)',          cat:'Hardware',        val:200},
-    {id:'sf_pc',    nome:'PC e apparecchiature varie',      cat:'Hardware',        val:0},
-    // ── SOFTWARE E LICENZE ───────────────────────────────────────────────
-    {id:'sf_promarsis',nome:'Promarsis (gestionale)',       cat:'Software',        val:1220},
-    {id:'sf_odoo',  nome:'ODOO (CRM/ERP)',                  cat:'Software',        val:3000},
-    {id:'sf_google',nome:'Google Cloud Italy (mail/drive)', cat:'Software',        val:180},
-    {id:'sf_mailchimp',nome:'Mailchimp',                    cat:'Software',        val:44},
-    {id:'sf_certifico',nome:'Certifico Srl',               cat:'Software',        val:0},
-    {id:'sf_microsoft',nome:'Microsoft licenze',           cat:'Software',        val:0},
-    {id:'sf_apple_soft',nome:'Apple subscriptions',        cat:'Software',        val:1965},
-    {id:'sf_cad',   nome:'Tecnobit (CAD)',                  cat:'Software',        val:0},
-    {id:'sf_canva', nome:'Canva',                           cat:'Software',        val:0},
-    {id:'sf_keliweb',nome:'Keliweb (hosting)',              cat:'Software',        val:0},
-    {id:'sf_infocert',nome:'Infocert (firme digitali)',     cat:'Software',        val:178},
-    {id:'sf_jotform',nome:'Jotform',                       cat:'Software',        val:0},
-    {id:'sf_selfplan',nome:'Self Planning',                 cat:'Software',        val:477},
-    // ── RISORSE UMANE (PIATTAFORME) ──────────────────────────────────────
-    {id:'sf_indeed',nome:'Indeed',                          cat:'Recruiting',      val:200},
-    {id:'sf_linkedin',nome:'LinkedIn Jobs',                 cat:'Recruiting',      val:0},
-    // ── CONSULENTI ESTERNI ───────────────────────────────────────────────
-    {id:'sf_comm',  nome:'SA Servizi (commercialista)',     cat:'Consulenti',      val:700},
-    {id:'sf_comm2', nome:'Evoluzione Fiscale',              cat:'Consulenti',      val:0},
-    {id:'sf_avv',   nome:'Avvocato Pelosi Eugenio',         cat:'Consulenti',      val:0},
-    {id:'sf_paghe', nome:'Rita Biotti (paghe)',             cat:'Consulenti',      val:500},
-    // ── ASSICURAZIONI ────────────────────────────────────────────────────
-    {id:'sf_ass1',  nome:'Assicurazione infortuni',         cat:'Assicurazioni',   val:460},
-    {id:'sf_ass2',  nome:'TFM Alleanza',                    cat:'Assicurazioni',   val:400},
-    // ── DPI E SICUREZZA ──────────────────────────────────────────────────
-    {id:'sf_dpi',   nome:'DPI — FPV Srl',                  cat:'DPI e sicurezza', val:0},
-    {id:'sf_svan',  nome:'Svantek (strumentazione)',        cat:'DPI e sicurezza', val:0},
-    // ── MANUTENZIONI VARIE ───────────────────────────────────────────────
-    {id:'sf_manu1', nome:'Skyfer',                          cat:'Manutenzioni',    val:0},
-    {id:'sf_manu2', nome:'Tecnoproject',                    cat:'Manutenzioni',    val:0},
-    {id:'sf_manu3', nome:'Pollino Srl',                     cat:'Manutenzioni',    val:0},
-    // ── ALTRO ────────────────────────────────────────────────────────────
-    {id:'sf_cancell',nome:'Cancelleria e materiale ufficio',cat:'Altro',           val:0},
-    {id:'sf_banche', nome:'Spese bancarie',                 cat:'Altro',           val:0},
-    {id:'sf_trasferte',nome:'Trasferte e rimborsi km',      cat:'Altro',           val:0},
-    {id:'sf_congr',  nome:'Congressi e formazione interna', cat:'Altro',           val:0},
+    {id:'pf_x5qow5v',nome:'Noleggio auto Leaseplan+ALD',cat:'Auto Aziendali (no soci)',areaPF:'Sistema',natura:'fisso',areaId:null,val:748.82},
+    {id:'pf_3j2fgc6',nome:'LEASYS ITALIA SPA',cat:'Auto aziendali (no soci)',areaPF:'Sistema',natura:'fisso',areaId:null,val:201.96},
+    {id:'pf_8um20gf',nome:'COPYWORLD',cat:'Noleggio Hardware',areaPF:'Sistema',natura:'fisso',areaId:null,val:0},
+    {id:'pf_2xvrbo8',nome:'BNP PARIBAS LEASE GROUP',cat:'Noleggio Hardware',areaPF:'Sistema',natura:'fisso',areaId:null,val:160.17},
+    {id:'pf_jelfm4l',nome:'Apple',cat:'Noleggio Hardware',areaPF:'Sistema',natura:'fisso',areaId:null,val:0},
+    {id:'pf_ogv1q37',nome:'Apple Grenke',cat:'Noleggio Hardware',areaPF:'Sistema',natura:'fisso',areaId:null,val:226.74},
+    {id:'pf_nyjwvvd',nome:'Apple BANCA IFIS',cat:'Noleggio Hardware',areaPF:'Sistema',natura:'fisso',areaId:null,val:343.64},
+    {id:'pf_zxujghv',nome:'Promarsis',cat:'Gestionale software',areaPF:'Sistema',natura:'fisso',areaId:null,val:227.08},
+    {id:'pf_s87iqcl',nome:'Odoo',cat:'Abbonamento',areaPF:'Sistema',natura:'fisso',areaId:null,val:134.8},
+    {id:'pf_cva5nze',nome:'Dueesseti Srl',cat:'Gestionale software',areaPF:'Sistema',natura:'fisso',areaId:null,val:305},
+    {id:'pf_lhqx7p4',nome:'Google Cloud Italy',cat:'Abbonamento',areaPF:'Sistema',natura:'fisso',areaId:null,val:125.7},
+    {id:'pf_a0pn3so',nome:'Legalmail PEC',cat:'Abbonamento',areaPF:'Sistema',natura:'fisso',areaId:null,val:20.28},
+    {id:'pf_m2vrhnw',nome:'Infocert (SPID Aziendale)',cat:'Abbonamento',areaPF:'Sistema',natura:'fisso',areaId:null,val:0},
+    {id:'pf_1epvzvs',nome:'Mailchimp',cat:'Abbonamento',areaPF:'Sistema',natura:'fisso',areaId:null,val:25.81},
+    {id:'pf_3k9dc9v',nome:'Certifico S.r.l.',cat:'Abbonamento',areaPF:'Sistema',natura:'fisso',areaId:null,val:36.6},
+    {id:'pf_g3050mv',nome:'Microsoft',cat:'Abbonamento',areaPF:'Sistema',natura:'fisso',areaId:null,val:0},
+    {id:'pf_uj9bpuv',nome:'PDF Smart',cat:'Abbonamento',areaPF:'Sistema',natura:'fisso',areaId:null,val:0},
+    {id:'pf_1kvcgop',nome:'Tecnobit Bassano Delrm (cad)',cat:'Abbonamento',areaPF:'Sistema',natura:'fisso',areaId:null,val:24.91},
+    {id:'pf_fo8cie3',nome:'Canva.Com',cat:'Abbonamento',areaPF:'Sistema',natura:'fisso',areaId:null,val:0},
+    {id:'pf_vfzj5rv',nome:'Openai Chatgpt',cat:'Abbonamento',areaPF:'Sistema',natura:'fisso',areaId:null,val:47.54},
+    {id:'pf_jv37e4c',nome:'keliweb',cat:'Abbonamento',areaPF:'Sistema',natura:'fisso',areaId:null,val:0},
+    {id:'pf_7qt29d5',nome:'Infocert',cat:'Abbonamento',areaPF:'Sistema',natura:'fisso',areaId:null,val:7.51},
+    {id:'pf_nge8vlw',nome:'Jotform LTD',cat:'Abbonamento',areaPF:'Sistema',natura:'fisso',areaId:null,val:39},
+    {id:'pf_jkefraw',nome:'K VENTURE CORPORATE FINASRL (Self Planning)',cat:'Abbonamento',areaPF:'Sistema',natura:'fisso',areaId:null,val:19.27},
+    {id:'pf_f09tu17',nome:'INDEED',cat:'Abbonamento',areaPF:'Sistema',natura:'fisso',areaId:null,val:99.46},
+    {id:'pf_tx70k53',nome:'LINKEDIN JOB',cat:'Abbonamento',areaPF:'Sistema',natura:'fisso',areaId:null,val:102.83},
+    {id:'pf_nlourh8',nome:'SA Servizi',cat:'Consulenti',areaPF:'Sistema',natura:'fisso',areaId:null,val:500.79},
+    {id:'pf_kkp1ujy',nome:'Evoluzione Fiscale',cat:'Consulenti',areaPF:'Sistema',natura:'fisso',areaId:null,val:0},
+    {id:'pf_ov1thkk',nome:'Pelosi Eugenio',cat:'Consulenti',areaPF:'Sistema',natura:'fisso',areaId:null,val:204.85},
+    {id:'pf_o0to04q',nome:'Rita. Biotti',cat:'Consulenti',areaPF:'Sistema',natura:'fisso',areaId:null,val:214.63},
+    {id:'pf_o5zotvk',nome:'NIGI SIMONE AG. ITALIANA ASSICURAZIONI',cat:'Assicurazione',areaPF:'Sistema',natura:'fisso',areaId:null,val:271.76},
+    {id:'pf_6tqbfg3',nome:'ALLIANZ S.P.A.',cat:'Assicurazione',areaPF:'Sistema',natura:'fisso',areaId:null,val:115.11},
+    {id:'pf_qlbwm3u',nome:'AMMI NISTRAND&O PLUS NR. 0000003450',cat:'Assicurazione',areaPF:'Sistema',natura:'fisso',areaId:null,val:0},
+    {id:'pf_gvjg2xt',nome:'Avvocato Pelosi',cat:'Ufficio',areaPF:'Sistema',natura:'fisso',areaId:null,val:256.07},
+    {id:'pf_uryv4gp',nome:'Spese Condominio',cat:'Ufficio',areaPF:'Sistema',natura:'fisso',areaId:null,val:304.06},
+    {id:'pf_08c1azi',nome:'Termoidraulica Pegaso',cat:'Ufficio',areaPF:'Sistema',natura:'fisso',areaId:null,val:7.5},
+    {id:'pf_biwcqwt',nome:'TARI',cat:'Ufficio',areaPF:'Sistema',natura:'fisso',areaId:null,val:0},
+    {id:'pf_0yb18r0',nome:'Arcadia Security SRL',cat:'Ufficio',areaPF:'Sistema',natura:'fisso',areaId:null,val:1233.42},
+    {id:'pf_031fso3',nome:'Culligan Italy Srl',cat:'Ufficio',areaPF:'Sistema',natura:'fisso',areaId:null,val:96.54},
+    {id:'pf_1wkct4y',nome:'Burresi e Fossati',cat:'Ufficio',areaPF:'Sistema',natura:'fisso',areaId:null,val:147.99},
+    {id:'pf_fz7y3jr',nome:'OSM',cat:'OSM',areaPF:'Sistema',natura:'fisso',areaId:null,val:0},
+    {id:'pf_jm01vjw',nome:'Guru Jobs',cat:'OSM',areaPF:'Sistema',natura:'fisso',areaId:null,val:0},
+    {id:'pf_kkwyb2a',nome:'S4 ENERGIA S.R.L.',cat:'Utenze',areaPF:'Sistema',natura:'fisso',areaId:null,val:0},
+    {id:'pf_p1pj3ad',nome:'ILLUMIA',cat:'Utenze',areaPF:'Sistema',natura:'fisso',areaId:null,val:59.62},
+    {id:'pf_ehpe0pq',nome:'Acqua',cat:'Utenze',areaPF:'Sistema',natura:'fisso',areaId:null,val:0},
+    {id:'pf_tqbabwl',nome:'CLK Telefonia',cat:'Utenze',areaPF:'Sistema',natura:'fisso',areaId:null,val:142.07},
+    {id:'pf_8cb9xrr',nome:'TELECOM',cat:'Utenze',areaPF:'Sistema',natura:'fisso',areaId:null,val:243.13},
+    {id:'pf_djuypbm',nome:'Google ADS',cat:'Marketing',areaPF:'Marketing',natura:'fisso',areaId:'mkt',val:131.63},
+    {id:'pf_7pnpu6m',nome:'Facebook ADS',cat:'Marketing',areaPF:'Marketing',natura:'fisso',areaId:'mkt',val:217.15},
+    {id:'pf_2m7xz7u',nome:'Sponsor',cat:'Marketing',areaPF:'Marketing',natura:'fisso',areaId:'mkt',val:141.48},
+    {id:'pf_ckgzopb',nome:'MICHELANGELO SRL',cat:'Marketing',areaPF:'Marketing',natura:'fisso',areaId:'mkt',val:924.33},
+    {id:'pf_eda1jpf',nome:'GRUPPO CORRIERE SRL',cat:'Marketing',areaPF:'Marketing',natura:'fisso',areaId:'mkt',val:0},
+    {id:'pf_s0rs46k',nome:'CUBO GRAFICA',cat:'Marketing',areaPF:'Marketing',natura:'fisso',areaId:'mkt',val:0},
+    {id:'pf_cvb71hl',nome:'ALEMAR WEB SRL',cat:'Marketing',areaPF:'Marketing',natura:'fisso',areaId:'mkt',val:0},
+    {id:'pf_gvkzeeo',nome:'56k MEDIA SRL',cat:'Marketing',areaPF:'Marketing',natura:'fisso',areaId:'mkt',val:762.5},
+    {id:'pf_76472dv',nome:'Francesca Pecchioli',cat:'Marketing',areaPF:'Marketing',natura:'fisso',areaId:'mkt',val:75},
+    {id:'pf_xtww37d',nome:'Michela Ciancetta',cat:'Marketing',areaPF:'Marketing',natura:'fisso',areaId:'mkt',val:312.5},
+    {id:'pf_3edhl07',nome:'Salesmind Srl',cat:'Marketing',areaPF:'Marketing',natura:'fisso',areaId:'mkt',val:325.33},
+    {id:'pf_z80f8yi',nome:'Nobile Contrada dell\'Oca',cat:'Marketing',areaPF:'Marketing',natura:'fisso',areaId:'mkt',val:0},
+    {id:'pf_ahu0tky',nome:'Photosmart di R.Esposito & C. sas',cat:'Marketing',areaPF:'Marketing',natura:'fisso',areaId:'mkt',val:0},
+    {id:'pf_wf8ovrk',nome:'FPV srl',cat:'Marketing',areaPF:'Marketing',natura:'fisso',areaId:'mkt',val:0},
+    {id:'pf_gigciuu',nome:'IN LIRE S.P.A.',cat:'Marketing',areaPF:'Marketing',natura:'fisso',areaId:'mkt',val:113.87},
+    {id:'pf_mln2qm3',nome:'Gestione finanziaria',cat:'Gestione Finanziaria',areaPF:'Marketing',natura:'fisso',areaId:'mkt',val:4544.37},
+    {id:'pf_dr6uagv',nome:'Oneri Bancari MPS',cat:'Sistema',areaPF:'Sistema',natura:'fisso',areaId:null,val:125.51},
+    {id:'pf_ee31ihg',nome:'Oneri Bancari BNP',cat:'Sistema',areaPF:'Sistema',natura:'fisso',areaId:null,val:0},
+    {id:'pf_zcary3q',nome:'Oneri Bancari CRV',cat:'Sistema',areaPF:'Sistema',natura:'fisso',areaId:null,val:302.27},
+    {id:'pf_rf02hmm',nome:'Spese',cat:'NEXI POS MPS',areaPF:'Sistema',natura:'fisso',areaId:null,val:16.88},
+    {id:'pf_s3izdm0',nome:'Spese',cat:'NEXI CARTE DI CREDITO CRV',areaPF:'Sistema',natura:'fisso',areaId:null,val:22.58},
+    {id:'pf_fd43kzo',nome:'Proventi Finanziari Banche',cat:'Sistema',areaPF:'Sistema',natura:'fisso',areaId:null,val:0},
+    {id:'pf_qtyic70',nome:'Prestiti bancari',cat:'CRV',areaPF:'Sistema',natura:'fisso',areaId:null,val:1756.64},
+    {id:'pf_m7bimms',nome:'Assicurazione Mutuo',cat:'CRV',areaPF:'Sistema',natura:'fisso',areaId:null,val:0},
+    {id:'pf_mr8fy1r',nome:'MUTUO Poggibonsi',cat:'CRV',areaPF:'Sistema',natura:'fisso',areaId:null,val:1070.49},
+    {id:'pf_o22jogt',nome:'Spese Bancomat',cat:'Sistema',areaPF:'Sistema',natura:'fisso',areaId:null,val:0},
+    {id:'pf_vbavgvu',nome:'RUSSI PIA MICHELA',cat:'RUSSI PIA MICHELA',areaPF:'Sistema',natura:'fisso',areaId:null,val:1250},
+    {id:'pf_phcxs71',nome:'Infocamere',cat:'Oneri',areaPF:'Sistema',natura:'variabile',areaId:null,val:7.04},
+    {id:'pf_490ljde',nome:'Anticipo oneri clienti',cat:'Oneri',areaPF:'Sistema',natura:'variabile',areaId:null,val:1055.62},
+    {id:'pf_hv9hioq',nome:'Marche da Bollo',cat:'Oneri',areaPF:'Sistema',natura:'variabile',areaId:null,val:0},
+    {id:'pf_ssznpph',nome:'Telepass',cat:'Auto aziendali (no soci)',areaPF:'Sistema',natura:'variabile',areaId:null,val:85.89},
+    {id:'pf_p4esh4d',nome:'Manutenzioni Auto',cat:'Auto aziendali (no soci)',areaPF:'Sistema',natura:'variabile',areaId:null,val:9.18},
+    {id:'pf_ts05rnx',nome:'DKV',cat:'Carburante',areaPF:'Sistema',natura:'variabile',areaId:null,val:0.25},
+    {id:'pf_7iz14fj',nome:'UTA',cat:'Carburante',areaPF:'Sistema',natura:'variabile',areaId:null,val:362.82},
+    {id:'pf_ota9vnd',nome:'ENI',cat:'Carburante',areaPF:'Sistema',natura:'variabile',areaId:null,val:0},
+    {id:'pf_qs25uhb',nome:'TAMOIL',cat:'Carburante',areaPF:'Sistema',natura:'variabile',areaId:null,val:0},
+    {id:'pf_6kmuo1i',nome:'Traghetto',cat:'Trasporti',areaPF:'Sistema',natura:'variabile',areaId:null,val:0},
+    {id:'pf_gtto2h7',nome:'Infotek',cat:'Software + Hardware',areaPF:'Sistema',natura:'variabile',areaId:null,val:307.04},
+    {id:'pf_59u9qgx',nome:'Rete Imprese Gate 4.0',cat:'Finanza Agevolata',areaPF:'Sistema',natura:'variabile',areaId:null,val:45.75},
+    {id:'pf_3l6khl4',nome:'RED ELEPHANT SRL',cat:'Formazione',areaPF:'Formazione',natura:'variabile',areaId:'form',val:0},
+    {id:'pf_bvrv7oh',nome:'marchiaturificio delle crete',cat:'Formazione',areaPF:'Formazione',natura:'variabile',areaId:'form',val:622.24},
+    {id:'pf_kg36ffq',nome:'ALBERTO BAESSATO',cat:'Formazione',areaPF:'Formazione',natura:'variabile',areaId:'form',val:191.53},
+    {id:'pf_q7uojxn',nome:'Imparaora srl',cat:'Formazione',areaPF:'Formazione',natura:'variabile',areaId:'form',val:0},
+    {id:'pf_it6qsb7',nome:'Vega Formazione',cat:'Formazione',areaPF:'Formazione',natura:'variabile',areaId:'form',val:183.39},
+    {id:'pf_4gntb7q',nome:'BRUNELLO DARIO',cat:'Formazione',areaPF:'Formazione',natura:'variabile',areaId:'form',val:0},
+    {id:'pf_ylqtf2t',nome:'FELICI ANDREA',cat:'Formazione',areaPF:'Formazione',natura:'variabile',areaId:'form',val:79.22},
+    {id:'pf_to6h6w4',nome:'Filippo Cecconi',cat:'Formazione',areaPF:'Formazione',natura:'variabile',areaId:'form',val:0},
+    {id:'pf_9l6jozd',nome:'Salute sicurezza lavoro srl',cat:'Formazione',areaPF:'Formazione',natura:'variabile',areaId:'form',val:0},
+    {id:'pf_rwwy5km',nome:'Landini Camilla',cat:'Formazione',areaPF:'Formazione',natura:'variabile',areaId:'form',val:0},
+    {id:'pf_906y8b8',nome:'Università',cat:'Formazione Interna',areaPF:'Sistema',natura:'variabile',areaId:null,val:43},
+    {id:'pf_mnxaq9p',nome:'ASSFORM ASSOCIAZIONE+FOA+BF SERVICE+Operas',cat:'Formazione interna',areaPF:'Sistema',natura:'variabile',areaId:null,val:0},
+    {id:'pf_ogodjnb',nome:'IFOA',cat:'Formazione interna',areaPF:'Sistema',natura:'variabile',areaId:null,val:83.33},
+    {id:'pf_a4ilvme',nome:'Aiweek',cat:'Formazione interna',areaPF:'Sistema',natura:'variabile',areaId:null,val:32.93},
+    {id:'pf_z8ox7hp',nome:'Gumpab Srl (Unicorn)',cat:'Formazione interna',areaPF:'Sistema',natura:'variabile',areaId:null,val:45.33},
+    {id:'pf_17pit2w',nome:'BORRANI CATERINA',cat:'Formazione',areaPF:'Formazione',natura:'variabile',areaId:'form',val:11.83},
+    {id:'pf_2sz5e8g',nome:'LUCA PAGNI',cat:'Formazione',areaPF:'Formazione',natura:'variabile',areaId:'form',val:259.63},
+    {id:'pf_bvhfqf5',nome:'SI FORMA SRL IMPRESA SOCIALE',cat:'Formazione',areaPF:'Formazione',natura:'variabile',areaId:'form',val:0},
+    {id:'pf_s0pqa9i',nome:'Marco Melani',cat:'Formazione',areaPF:'Formazione',natura:'variabile',areaId:'form',val:21.25},
+    {id:'pf_scr2bhh',nome:'Eleonora De Angelis',cat:'Formazione',areaPF:'Formazione',natura:'variabile',areaId:'form',val:95.5},
+    {id:'pf_rfqg8yo',nome:'LASA IDEA SRL',cat:'Formazione',areaPF:'Formazione',natura:'variabile',areaId:'form',val:0},
+    {id:'pf_e67sign',nome:'ASSOSERVIZI SRL',cat:'Formazione',areaPF:'Formazione',natura:'variabile',areaId:'form',val:28.47},
+    {id:'pf_9d3vhh7',nome:'Masserelli Edoardo',cat:'Formazione',areaPF:'Formazione',natura:'variabile',areaId:'form',val:16.83},
+    {id:'pf_96k10eo',nome:'Morelli Massimo',cat:'Formazione',areaPF:'Formazione',natura:'variabile',areaId:'form',val:106.32},
+    {id:'pf_5ve9vei',nome:'Bacchini Federico',cat:'Formazione',areaPF:'Formazione',natura:'variabile',areaId:'form',val:0},
+    {id:'pf_hjck6kr',nome:'Filippo Lascialfari',cat:'Formazione',areaPF:'Formazione',natura:'variabile',areaId:'form',val:40.3},
+    {id:'pf_91bk5hj',nome:'Benedetta Greco',cat:'Formazione',areaPF:'Formazione',natura:'variabile',areaId:'form',val:29.33},
+    {id:'pf_czj9e1p',nome:'AZ SAFE SRL',cat:'Formazione',areaPF:'Formazione',natura:'variabile',areaId:'form',val:0},
+    {id:'pf_rkwg3i8',nome:'ALCIDE SRL',cat:'Formazione',areaPF:'Formazione',natura:'variabile',areaId:'form',val:0},
+    {id:'pf_yvgqkfa',nome:'UNIONE SPORTIVA VIRTUS ASD',cat:'Formazione',areaPF:'Formazione',natura:'variabile',areaId:'form',val:0},
+    {id:'pf_2rhxwxk',nome:'CENTRO ANALISI CLINICHE ALBA SRL',cat:'Sorveglianza Sanitaria',areaPF:'Sorveglianza Sanitaria',natura:'variabile',areaId:'sorvsan',val:744.07},
+    {id:'pf_t1p4m8x',nome:'STUDI MEDICI TOSCANA SRL',cat:'Sorveglianza Sanitaria',areaPF:'Sorveglianza Sanitaria',natura:'variabile',areaId:'sorvsan',val:695.79},
+    {id:'pf_i3xxpi0',nome:'LABORATORIO G.A.M.M.A. Srl',cat:'Sorveglianza Sanitaria',areaPF:'Sorveglianza Sanitaria',natura:'variabile',areaId:'sorvsan',val:3.25},
+    {id:'pf_weuyzjj',nome:'SYNLAB MED SRL',cat:'Sorveglianza Sanitaria',areaPF:'Sorveglianza Sanitaria',natura:'variabile',areaId:'sorvsan',val:5},
+    {id:'pf_w07jpw4',nome:'Biscioni Emanuela',cat:'Sorveglianza Sanitaria',areaPF:'Sorveglianza Sanitaria',natura:'variabile',areaId:'sorvsan',val:722.85},
+    {id:'pf_pj3mndo',nome:'Medici Paola D\'altilia',cat:'Sorveglianza Sanitaria',areaPF:'Sorveglianza Sanitaria',natura:'variabile',areaId:'sorvsan',val:0},
+    {id:'pf_0j5mzoa',nome:'Dott. Chezzi Massimo',cat:'Sorveglianza Sanitaria',areaPF:'Sorveglianza Sanitaria',natura:'variabile',areaId:'sorvsan',val:69.67},
+    {id:'pf_jszt5m9',nome:'GALASSI LUIGI',cat:'Sorveglianza Sanitaria',areaPF:'Sorveglianza Sanitaria',natura:'variabile',areaId:'sorvsan',val:8.5},
+    {id:'pf_n56dnfn',nome:'STEMAR SRL',cat:'Sorveglianza Sanitaria',areaPF:'Sorveglianza Sanitaria',natura:'variabile',areaId:'sorvsan',val:3489.3},
+    {id:'pf_qqnxhbk',nome:'Brogelli + Nuti',cat:'Sorveglianza Sanitaria',areaPF:'Sorveglianza Sanitaria',natura:'variabile',areaId:'sorvsan',val:0},
+    {id:'pf_16ff1xi',nome:'Sisinni Antonietta',cat:'Sorveglianza Sanitaria',areaPF:'Sorveglianza Sanitaria',natura:'variabile',areaId:'sorvsan',val:0},
+    {id:'pf_afgxu37',nome:'SIENAMEDICAL DI STEFANO RICCUCCI SRL',cat:'Sorveglianza Sanitaria',areaPF:'Sorveglianza Sanitaria',natura:'variabile',areaId:'sorvsan',val:0},
+    {id:'pf_n1ay8s7',nome:'SecureLabsrl',cat:'Sorveglianza Sanitaria',areaPF:'Sorveglianza Sanitaria',natura:'variabile',areaId:'sorvsan',val:32.67},
+    {id:'pf_60d14g6',nome:'JOB & SAFETY Srl',cat:'Sorveglianza Sanitaria',areaPF:'Sorveglianza Sanitaria',natura:'variabile',areaId:'sorvsan',val:1430.67},
+    {id:'pf_tuphagb',nome:'SELME SRL',cat:'Sorveglianza Sanitaria',areaPF:'Sorveglianza Sanitaria',natura:'variabile',areaId:'sorvsan',val:0},
+    {id:'pf_197gays',nome:'GRAZIANI MARIA PAOLA',cat:'Privacy',areaPF:'Produzione',natura:'variabile',areaId:'prod',val:0},
+    {id:'pf_yvx0272',nome:'ECOGAM srl',cat:'Ambiente',areaPF:'Produzione',natura:'variabile',areaId:'prod',val:3662.75},
+    {id:'pf_2adi6mz',nome:'GRACCI LABORATORI SRL',cat:'Ambiente',areaPF:'Produzione',natura:'variabile',areaId:'prod',val:209.43},
+    {id:'pf_im1jhic',nome:'VWR INTERNATIONAL',cat:'Ambiente',areaPF:'Produzione',natura:'variabile',areaId:'prod',val:0},
+    {id:'pf_docc2vt',nome:'Securlab srl',cat:'Ambiente',areaPF:'Produzione',natura:'variabile',areaId:'prod',val:98.27},
+    {id:'pf_h3fewy7',nome:'Galli Veronica',cat:'Ambiente',areaPF:'Produzione',natura:'variabile',areaId:'prod',val:0},
+    {id:'pf_ncixim7',nome:'Stomeo Luca',cat:'Formazione',areaPF:'Formazione',natura:'variabile',areaId:'form',val:17.68},
+    {id:'pf_4qt1o35',nome:'EMME ANTINCENDIO',cat:'Antincendio',areaPF:'Produzione',natura:'variabile',areaId:'prod',val:0},
+    {id:'pf_25qd3v0',nome:'Manganelli STP srl',cat:'Antincendio',areaPF:'Produzione',natura:'variabile',areaId:'prod',val:234.22},
+    {id:'pf_g24qrvm',nome:'Simone Barbagli',cat:'Antincendio',areaPF:'Produzione',natura:'variabile',areaId:'prod',val:1484.78},
+    {id:'pf_0we6vkf',nome:'Tavanti Project',cat:'Antincendio',areaPF:'Produzione',natura:'variabile',areaId:'prod',val:567.3},
+    {id:'pf_c4oar27',nome:'CHELI STELLA',cat:'Antincendio',areaPF:'Produzione',natura:'variabile',areaId:'prod',val:0},
+    {id:'pf_196hp72',nome:'E.S.M.A. Estintori Srl',cat:'Antincendio',areaPF:'Produzione',natura:'variabile',areaId:'prod',val:761.38},
+    {id:'pf_lpnfxxr',nome:'GTA ESTINTORI DI MEONI A., DI IOIA F. E BALDI D. SNC',cat:'Antincendio',areaPF:'Produzione',natura:'variabile',areaId:'prod',val:411.34},
+    {id:'pf_ddro0ck',nome:'GPA GAS SRL',cat:'Antincendio',areaPF:'Produzione',natura:'variabile',areaId:'prod',val:6.66},
+    {id:'pf_dbylsw7',nome:'DINUSOVA Andrea',cat:'Antincendio',areaPF:'Produzione',natura:'variabile',areaId:'prod',val:0},
+    {id:'pf_prmyrto',nome:'HT Srl',cat:'Verifiche Terra',areaPF:'Produzione',natura:'variabile',areaId:'prod',val:264.33},
+    {id:'pf_r9pz3ra',nome:'MGA Consulting SRLS',cat:'Verifiche Terra',areaPF:'Produzione',natura:'variabile',areaId:'prod',val:20.83},
+    {id:'pf_k5wr6gf',nome:'SVANTEK',cat:'Manutenzione Strumenti',areaPF:'Sistema',natura:'variabile',areaId:null,val:316.18},
+    {id:'pf_j7kawq4',nome:'Manuel Spina',cat:'Commerciali',areaPF:'Commerciale',natura:'variabile',areaId:'comm',val:9.75},
+    {id:'pf_gdz435z',nome:'Alessandro Raia',cat:'Commerciali',areaPF:'Commerciale',natura:'variabile',areaId:'comm',val:1372.5},
+    {id:'pf_m5t2mcx',nome:'Massimo Giusti',cat:'Commerciali',areaPF:'Commerciale',natura:'variabile',areaId:'comm',val:467},
+    {id:'pf_8gvr1lo',nome:'Mario Rufolo (Artigea)',cat:'Commerciali',areaPF:'Commerciale',natura:'variabile',areaId:'comm',val:831.03},
+    {id:'pf_8xw83qe',nome:'Mancini Alberto',cat:'Commerciali',areaPF:'Commerciale',natura:'variabile',areaId:'comm',val:582.91},
+    {id:'pf_snuvjfj',nome:'Davide Gaziano',cat:'Commerciali',areaPF:'Commerciale',natura:'variabile',areaId:'comm',val:466.66},
+    {id:'pf_n8q6p5d',nome:'Skyfer',cat:'Manutenzioni varie',areaPF:'Sistema',natura:'variabile',areaId:null,val:3.92},
+    {id:'pf_bd8da2l',nome:'TECNOPROJECT SRLS',cat:'Manutenzioni varie',areaPF:'Sistema',natura:'variabile',areaId:null,val:0},
+    {id:'pf_1qux5oy',nome:'Pollino Srl',cat:'Manutenzioni varie',areaPF:'Sistema',natura:'variabile',areaId:null,val:0},
+    {id:'pf_cmgekfc',nome:'Electroelsa Impianti Srl',cat:'Manutenzioni varie',areaPF:'Sistema',natura:'variabile',areaId:null,val:119.17},
+    {id:'pf_6akopri',nome:'Costruzioni Generali Green Srl',cat:'Manutenzioni varie',areaPF:'Sistema',natura:'variabile',areaId:null,val:30.5},
+    {id:'pf_sqegzox',nome:'FORNO MODERNO SRL',cat:'Regali',areaPF:'Sistema',natura:'variabile',areaId:null,val:38.65},
+    {id:'pf_bu4vkmi',nome:'Bar Osteria il Bargello srl fat n 10',cat:'Regali',areaPF:'Sistema',natura:'variabile',areaId:null,val:54.17},
+    {id:'pf_svxmjzo',nome:'Elzi Pasticceria',cat:'Regali',areaPF:'Sistema',natura:'variabile',areaId:null,val:146.67},
+    {id:'pf_7m2wkwr',nome:'Gedshop',cat:'Regali',areaPF:'Sistema',natura:'variabile',areaId:null,val:147.92},
+    {id:'pf_tgff9uc',nome:'F.LLI BROGIONI SNC',cat:'Manutenzioni varie',areaPF:'Sistema',natura:'variabile',areaId:null,val:90.48},
+    {id:'pf_q7eam4g',nome:'Color Vision SRL',cat:'Manutenzioni varie',areaPF:'Sistema',natura:'variabile',areaId:null,val:2.92},
+    {id:'pf_b5961j8',nome:'MARCHI SERVICE SRL',cat:'Manutenzioni varie',areaPF:'Sistema',natura:'variabile',areaId:null,val:42.81},
+    {id:'pf_no37k1c',nome:'Hotel Rosa Bianca Rimini',cat:'Hotel',areaPF:'Sistema',natura:'variabile',areaId:null,val:27.65},
+    {id:'pf_r9fcb48',nome:'Fratelli Pasqui srl',cat:'Ufficio',areaPF:'Sistema',natura:'variabile',areaId:null,val:24.55},
+    {id:'pf_r9uiyog',nome:'Printing Brothers SNC',cat:'Ufficio',areaPF:'Sistema',natura:'variabile',areaId:null,val:160.87},
+    {id:'pf_q05md4b',nome:'LASA IDEA SRL',cat:'Ufficio',areaPF:'Sistema',natura:'variabile',areaId:null,val:764.53},
+    {id:'pf_m59ay73',nome:'Pixartprinting',cat:'Ufficio',areaPF:'Sistema',natura:'variabile',areaId:null,val:5.9},
+    {id:'pf_pmflc4j',nome:'MYO Spa',cat:'Ufficio',areaPF:'Sistema',natura:'variabile',areaId:null,val:9.73},
+    {id:'pf_6pyccpb',nome:'Ikea Srl',cat:'Ufficio',areaPF:'Sistema',natura:'variabile',areaId:null,val:15.86},
+    {id:'pf_77rc92w',nome:'MI.MA Infissi in alluminio Snc',cat:'Ufficio',areaPF:'Sistema',natura:'variabile',areaId:null,val:77.27},
+    {id:'pf_fo5pois',nome:'Cancelleria (Vari Fornitori)',cat:'Ufficio',areaPF:'Sistema',natura:'variabile',areaId:null,val:6.74},
+    {id:'pf_g5k8jkx',nome:'Amazon',cat:'Ufficio',areaPF:'Sistema',natura:'variabile',areaId:null,val:141.1},
+    {id:'pf_1iy7b8x',nome:'Valenti Marisa (caffè)',cat:'Ufficio',areaPF:'Sistema',natura:'variabile',areaId:null,val:104.11},
+    {id:'pf_y1ozoz6',nome:'varie',cat:'Ristorante',areaPF:'Sistema',natura:'variabile',areaId:null,val:323.54},
+    {id:'pf_von9iti',nome:'Varie',cat:'Varie',areaPF:'Sistema',natura:'variabile',areaId:null,val:33.3},
+    {id:'pf_a105vdw',nome:'KingKendze',cat:'Varie',areaPF:'Sistema',natura:'variabile',areaId:null,val:83.94},
+    {id:'pf_9o0kxg4',nome:'Marinangeli Claudio',cat:'Acustica',areaPF:'Sistema',natura:'variabile',areaId:null,val:0},
+  ],
+
+  // Dettaglio dipendenti reali da "26_Dettaglio costi dipendenti.xlsx" (foglio
+  // "2026") — base per il match automatico bipartiteMatchDipendenti() contro
+  // S.personale (natura='dipendente'); i valori sono già scritti anche su
+  // ciascuna persona (costoAziendaAnnuo/Mensile) più sotto, in S.personale.
+  importDipendenti:[
+    {nome:'CIPRIANI SILVIA',costoAziendaAnnuo:31066.41,costoAziendaMensile:2588.87},
+    {nome:'GAMBINI SIMONE',costoAziendaAnnuo:21761.69,costoAziendaMensile:1813.47},
+    {nome:'GOLINI NICCOLO\'',costoAziendaAnnuo:30945.57,costoAziendaMensile:2578.8},
+    {nome:'BIOTTI ALESSANDRO',costoAziendaAnnuo:24277.95,costoAziendaMensile:2023.16},
+    {nome:'PELLICCIA FRANCESCO',costoAziendaAnnuo:9707.44,costoAziendaMensile:808.95},
+    {nome:'CORTI SAMUELE',costoAziendaAnnuo:26470.24,costoAziendaMensile:2205.85},
+    {nome:'CRISTOFORI CESARE',costoAziendaAnnuo:7225.21,costoAziendaMensile:602.1},
+    {nome:'CORSI GUCCIO',costoAziendaAnnuo:17508.93,costoAziendaMensile:1459.08},
+    {nome:'ALDINUCCI ELIA',costoAziendaAnnuo:15802,costoAziendaMensile:1316.83},
+    {nome:'MASSIMO NECCI',costoAziendaAnnuo:28800,costoAziendaMensile:2400},
+    {nome:'CASERTA VALENTINA',costoAziendaAnnuo:15751.99,costoAziendaMensile:1312.67},
+    {nome:'GUARDIANI MATTIA',costoAziendaAnnuo:12535.31,costoAziendaMensile:1044.61},
+    {nome:'DEPLANO GAIA',costoAziendaAnnuo:18741.17,costoAziendaMensile:1561.76},
   ],
 
   cda:13600, soglia:101, wizStep:0,
@@ -2323,7 +2515,7 @@ const DEF={
         comp:{fisso:{on:false,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:true,venduto:0,pct:3,prov_azienda:50},incassato:{on:false,pctArea:0},comm_crm:{on:true,val:0},bonus_kpi:{on:false,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:false,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:0},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}
      ]},
 
-    {id:'p06',nome:'Massimo Necci',ruolo_principale:'Capo Area Senese',natura:'dipendente',area:'comm',areaResp:'comm',
+    {id:'p06',nome:'Massimo Necci',ruolo_principale:'Capo Area Senese',natura:'dipendente',costoAziendaAnnuo:28800,costoAziendaMensile:2400,dipendenteMatchNome:'MASSIMO NECCI',area:'comm',areaResp:'comm',
      tipo_contratto:'DIP',tariffaOraria:30,isResp:true,isCapoArea:true,capoAreaDi:'comm',agentiIds:['p_dav','p_gig','p01','p02','p03'],livello:'B',
      note:'Tecnico senior con potenziale CA. Al momento no agenti.',
      slots:[
@@ -2349,34 +2541,34 @@ const DEF={
 
     // ─── PRODUZIONE ───────────────────────────────────────────────────────
 
-    {id:'p07',nome:'Samuele',ruolo_principale:'RTO — Resp. Tecnico Organizzativo',natura:'dipendente',area:'prod',areaResp:'prod',
+    {id:'p07',nome:'Samuele',ruolo_principale:'RTO — Resp. Tecnico Organizzativo',natura:'dipendente',costoAziendaAnnuo:26470.24,costoAziendaMensile:2205.85,dipendenteMatchNome:'CORTI SAMUELE',area:'prod',areaResp:'prod',
      tipo_contratto:'DIP',tariffaOraria:30,isResp:true,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'B',
      note:'RTO. Fisso + docenze + documenti personali + bonus coordinamento gruppo (% su generato gruppo).',
      slots:[
        {id:'s_sam_rto',tipo:'responsabilita',area:'prod',label:'RTO Fisso + docenze',
         comp:{fisso:{on:true,val:2800},ore_form:{on:true,ore:0,tariffa:30},pratiche:{on:true,nr:0,tariffa:12},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:true,val:0},bonus_kpi:{on:true,val:800,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:true,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:true,ore_previste:80,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:false,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:0},generato_rto:{on:true,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}
      ]},
-    {id:'p_sil',nome:'Silvia',ruolo_principale:'Tecnico',natura:'dipendente',area:'prod',areaResp:'prod',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
+    {id:'p_sil',nome:'Silvia',ruolo_principale:'Tecnico',natura:'dipendente',costoAziendaAnnuo:31066.41,costoAziendaMensile:2588.87,dipendenteMatchNome:'CIPRIANI SILVIA',area:'prod',areaResp:'prod',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
      note:'Tecnico produzione. Generato calcolato su 7 voci. Obiettivo attivazione: €7500.',
      slots:[
        {id:'s_p_sil_tec',tipo:'tecnico',area:'prod',label:'Attività produzione',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:true,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:true,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:7500},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}
      ]},
-    {id:'p_eli',nome:'Elia',ruolo_principale:'Tecnico',natura:'dipendente',area:'prod',areaResp:'prod',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
+    {id:'p_eli',nome:'Elia',ruolo_principale:'Tecnico',natura:'dipendente',costoAziendaAnnuo:15802,costoAziendaMensile:1316.83,dipendenteMatchNome:'ALDINUCCI ELIA',area:'prod',areaResp:'prod',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
      note:'Tecnico produzione. Generato calcolato su 7 voci. Obiettivo attivazione: €7500.',
      slots:[
        {id:'s_p_eli_tec',tipo:'tecnico',area:'prod',label:'Attività produzione',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:true,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:true,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:7500},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}
      ]},
-    {id:'p_pel',nome:'Francesco Pelliccia',ruolo_principale:'Tecnico',natura:'dipendente',area:'prod',areaResp:'prod',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
+    {id:'p_pel',nome:'Francesco Pelliccia',ruolo_principale:'Tecnico',natura:'dipendente',costoAziendaAnnuo:9707.44,costoAziendaMensile:808.95,dipendenteMatchNome:'PELLICCIA FRANCESCO',area:'prod',areaResp:'prod',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
      note:'Tecnico produzione. Generato calcolato su 7 voci. Obiettivo attivazione: €5000.',
      slots:[
        {id:'s_p_pel_tec',tipo:'tecnico',area:'prod',label:'Attività produzione',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:true,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:true,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:5000},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}
      ]},
-    {id:'p_sim',nome:'Simone',ruolo_principale:'Tecnico',natura:'dipendente',area:'prod',areaResp:'prod',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
+    {id:'p_sim',nome:'Simone',ruolo_principale:'Tecnico',natura:'dipendente',costoAziendaAnnuo:21761.69,costoAziendaMensile:1813.47,dipendenteMatchNome:'GAMBINI SIMONE',area:'prod',areaResp:'prod',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
      note:'Tecnico produzione. Generato calcolato su 7 voci. Obiettivo attivazione: €7500.',
      slots:[
        {id:'s_p_sim_tec',tipo:'tecnico',area:'prod',label:'Attività produzione',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:true,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:true,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:7500},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}
      ]},
-    {id:'p_guc',nome:'Guccio',ruolo_principale:'Tecnico',natura:'dipendente',area:'prod',areaResp:'prod',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
+    {id:'p_guc',nome:'Guccio',ruolo_principale:'Tecnico',natura:'dipendente',costoAziendaAnnuo:17508.93,costoAziendaMensile:1459.08,dipendenteMatchNome:'CORSI GUCCIO',area:'prod',areaResp:'prod',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
      note:'Tecnico produzione. Generato calcolato su 7 voci. Obiettivo attivazione: €6000.',
      slots:[
        {id:'s_p_guc_tec',tipo:'tecnico',area:'prod',label:'Attività produzione',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:true,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:true,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:6000},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}
@@ -2386,21 +2578,21 @@ const DEF={
      slots:[
        {id:'s_p_ale_tec',tipo:'tecnico',area:'prod',label:'Attività produzione',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:true,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:true,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:7500},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}
      ]},
-    {id:'p_ces',nome:'Cesare',ruolo_principale:'Tecnico',natura:'dipendente',area:'prod',areaResp:'prod',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
+    {id:'p_ces',nome:'Cesare',ruolo_principale:'Tecnico',natura:'dipendente',costoAziendaAnnuo:7225.21,costoAziendaMensile:602.1,dipendenteMatchNome:'CRISTOFORI CESARE',area:'prod',areaResp:'prod',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
      note:'Tecnico produzione. Generato calcolato su 7 voci. Obiettivo attivazione: €6500.',
      slots:[
        {id:'s_p_ces_tec',tipo:'tecnico',area:'prod',label:'Attività produzione',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:true,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:true,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:6500},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}
      ]},
     // ─── FORMAZIONE ───────────────────────────────────────────────────────
 
-    {id:'p11',nome:'Niccolò',ruolo_principale:'Responsabile Formazione',natura:'dipendente',area:'form',areaResp:'form',
+    {id:'p11',nome:'Niccolò',ruolo_principale:'Responsabile Formazione',natura:'dipendente',costoAziendaAnnuo:30945.57,costoAziendaMensile:2578.8,dipendenteMatchNome:'GOLINI NICCOLO\'',area:'form',areaResp:'form',
      tipo_contratto:'DIP',tariffaOraria:30,isResp:true,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'B',
      note:'RF. Fisso in funzione ore ruolo. Bonus KPI.',
      slots:[
        {id:'s_nic_rf',tipo:'responsabilita',area:'form',label:'Resp. Formazione',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:true,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:true,ore_previste:80,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:false,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:0},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}
      ]},
 
-    {id:'p12',nome:'Gaia',ruolo_principale:'Coord. Sorveglianza Sanitaria',natura:'dipendente',area:'prod',areaResp:'prod',
+    {id:'p12',nome:'Gaia',ruolo_principale:'Coord. Sorveglianza Sanitaria',natura:'dipendente',costoAziendaAnnuo:18741.17,costoAziendaMensile:1561.76,dipendenteMatchNome:'DEPLANO GAIA',area:'prod',areaResp:'prod',
      tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
      note:'Coord. Medici Competenti. Bonus: €1/visita oltre 180. €50 per ogni nuovo MC contrattualizzato.',
      slots:[
@@ -2410,7 +2602,7 @@ const DEF={
 
     // ─── AMMINISTRAZIONE / SISTEMA ────────────────────────────────────────
 
-    {id:'p15',nome:'Mattia Guardiani',ruolo_principale:'Amministrazione',natura:'dipendente',area:'amm',areaResp:'amm',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',note:'% su incassato. Fisso.',
+    {id:'p15',nome:'Mattia Guardiani',ruolo_principale:'Amministrazione',natura:'dipendente',costoAziendaAnnuo:12535.31,costoAziendaMensile:1044.61,dipendenteMatchNome:'GUARDIANI MATTIA',area:'amm',areaResp:'amm',tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',note:'% su incassato. Fisso.',
      slots:[{id:'s_mat_amm',tipo:'tecnico',area:'amm',label:'Amministrazione',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:true,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:false,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:false,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:0},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}]},
 
     // Michela — collaboratrice MKT
@@ -2420,14 +2612,14 @@ const DEF={
      slots:[{id:'s_mic_mkt',tipo:'supervisione',area:'mkt',label:'Marketing',comp:{fisso:{on:false,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:false,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:false,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:0},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}]},
 
     // Valentina Caserta — AMM, in maternità
-    {id:'p_val',nome:'Valentina Caserta',ruolo_principale:'Amministrazione',natura:'dipendente',area:'amm',areaResp:'amm',
+    {id:'p_val',nome:'Valentina Caserta',ruolo_principale:'Amministrazione',natura:'dipendente',costoAziendaAnnuo:15751.99,costoAziendaMensile:1312.67,dipendenteMatchNome:'CASERTA VALENTINA',area:'amm',areaResp:'amm',
      tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
      note:'In maternità. Costo mensile lordo ~€2.200. Rientro da definire.',
      inMaternita:true,
      slots:[{id:'s_val_amm',tipo:'supervisione',area:'amm',label:'Amministrazione',comp:{fisso:{on:false,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:false,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:false,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:0},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}]},
 
     // Alessandro Biotti — tecnico
-    {id:'p_bio',nome:'Alessandro Biotti',ruolo_principale:'Tecnico',natura:'dipendente',area:'prod',areaResp:'prod',
+    {id:'p_bio',nome:'Alessandro Biotti',ruolo_principale:'Tecnico',natura:'dipendente',costoAziendaAnnuo:24277.95,costoAziendaMensile:2023.16,dipendenteMatchNome:'BIOTTI ALESSANDRO',area:'prod',areaResp:'prod',
      tipo_contratto:'DIP',tariffaOraria:0,isResp:false,isCapoArea:false,capoAreaDi:'',agentiIds:[],livello:'A',
      note:'Tecnico produzione. Costo lordo ~€2.050/mese.',
      slots:[{id:'s_bio_tec',tipo:'tecnico',area:'prod',label:'Attività produzione',comp:{fisso:{on:true,val:0},ore_form:{on:false,ore:0,tariffa:0},pratiche:{on:false,nr:0,tariffa:0},visite:{on:false,nr:0,tariffa:0},venduto:{on:false,venduto:0,pct:0,prov_azienda:0},incassato:{on:false,pctArea:0},comm_crm:{on:false,val:0},bonus_kpi:{on:true,val:0,soglia:101},bando:{on:false,nr:0,val_per_bando:0},bando_ricavo:{on:false,nr_bandi:0,ricavo_medio:0,pct_ricavo:3},ore_resp:{on:false,ore_previste:0,ore_incluse:160,ore_effettive:0},capo_agenti:{on:false,pctSuAgente:0,vendutoGlobale:0,pctVendutoGlobale:0},generato_tecnico:{on:true,documenti:0,pct_doc:0.22,ore_form_h:0,eur_h:25,analisi:0,pct_analisi:0.20,rspp:0,pct_rspp:0.20,pacchetti:0,pct_pac:0.20,laika_ore:0,eur_laika:150,cantieri:0,pct_cant:0.15,estintori:0,pct_est:0.02,sorveglianza:0,pct_sorv:0.08,obiettivo:6000},generato_rto:{on:false,documenti_gruppo:0,pct_doc:0.03,formazione_gruppo:0,pct_form:0.01,analisi_gruppo:0,pct_analisi:0.03,rspp_gruppo:0,pct_rspp:0.03,pacchetti_gruppo:0,pct_pac:0.03,sorveglianza_gr:0,pct_sorv:0.01,estintori_gr:0,pct_est:0.01,laika_gg:0,eur_laika:200,cantieri_gr:0,pct_cant:0.01},visite_mc:{on:false,visite_effettive:0,soglia_visite:180,eur_per_visita:1,nuovi_mc:0,eur_per_mc:50}}}]},
@@ -2442,6 +2634,26 @@ const DEF={
   ]
 };
 let S=JSON.parse(JSON.stringify(DEF));
+
+// ── PERSISTENZA LOCALE (autosave) ─────────────────────────────────────────
+// Prima di questo fix l'app non salvava mai in locale: un reload perdeva
+// tutto se Supabase non era raggiungibile o la riga remota non esisteva
+// ancora. Salviamo l'intero S su ogni renderAll() (chiamato dopo ogni
+// modifica) e lo ripristiniamo all'avvio, PRIMA di interrogare Supabase —
+// che resta comunque la fonte di verità multi-dispositivo se disponibile.
+const LS_KEY='ssiCompensiState';
+function saveLocal(){
+  try{localStorage.setItem(LS_KEY,JSON.stringify(S));}catch(e){console.warn('saveLocal error',e);}
+}
+function restoreLocal(){
+  try{
+    const raw=localStorage.getItem(LS_KEY);
+    if(!raw)return false;
+    const parsed=JSON.parse(raw);
+    Object.assign(S,parsed);
+    return true;
+  }catch(e){console.warn('restoreLocal error',e);return false;}
+}
 
 // ══════════════════════════════════════════════════
 // SLOT SYSTEM — calcolo compenso per slot
@@ -2870,6 +3082,7 @@ function renderAll(){
   if(activePage?.id==='page-produzione')renderProduzionePage();
   if(activePage?.id==='page-dash'){renderDash(f);}
   if(activePage?.id==='page-sim'){updateSim(simInc);}
+  saveLocal();
   scheduleSync();
 }
 
