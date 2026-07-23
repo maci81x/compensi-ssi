@@ -1,6 +1,6 @@
 # HANDOVER — Compensi SSI
 
-Stato del lavoro al 2026-07-23 — chiusura Fase 10 (DnD org fix + Segreteria layout + CRUD centri in pagina Centri + KPI macro area + dedup import PF).
+Stato del lavoro al 2026-07-23 — chiusura Fase 11 (sync multi-dispositivo timestamp-based, niente più popup di versione, realtime abilitato lato DB).
 
 ## Come ripartire
 
@@ -45,6 +45,8 @@ Riferimento completo: `SPEC-v10.md`.
    no-cache** (Fase 9, 2026-07-23).
 10. **Fix DnD organigramma + Segreteria layout + CRUD centri in pagina +
     KPI macro area + dedup import PF** (Fase 10, 2026-07-23).
+11. **Sync multi-dispositivo timestamp-based + no popup versione +
+    realtime cloud abilitato + session id** (Fase 11, 2026-07-23).
 
 ### Cosa fa la Fase 7 nel dettaglio
 
@@ -215,6 +217,66 @@ Riferimento completo: `SPEC-v10.md`.
   la definizione di `migrateSchema` così anche il fresh boot passa per
   tutti gli step additivi (necessario perché la migrazione v9 aggiunge
   `a.macro` a ogni area).
+
+### Cosa fa la Fase 11 nel dettaglio
+
+- **Rimosso il popup "stato di una versione precedente"** che riappariva
+  a ogni bump di `schemaVersion` (v6→v8, v8→v9, ecc.). Era un messaggio
+  tecnico che gli utenti non potevano valutare e che comparivano anche
+  senza reale conflitto — quando uno dei tanti utenti Direzione loggava
+  con un client aggiornato mentre il cloud era ancora sulla vecchia
+  versione. `applyIncomingState` riscritta con nuova logica basata sul
+  **timestamp reale** dell'ultimo update, non sullo schema:
+  - R1 (cloud stantio, locale pulito) → NON applica incoming, ripusha
+    S locale silenziosamente per allineare il cloud. **Nessun popup.**
+  - R2 (locale con modifiche non salvate + cloud più recente) → **unico**
+    caso in cui appare la conferma, in linguaggio comprensibile ("in
+    questa scheda ci sono modifiche non salvate…"). Se l'utente sceglie
+    "Annulla" (mantieni il locale), il locale ripusha per far vincere
+    sé stesso.
+  - R3 (caso normale) → applica incoming senza domande. Il notify
+    parla di "Sincronizzati dati più recenti", niente numeri di
+    schema.
+  - `migrateSchema` è sempre chiamato sull'incoming (idempotente/
+    additivo — non tocca dati esistenti).
+- **`_lastLocalPushTs`** e **`_hasUnsavedLocalChanges`** aggiunti come
+  stato locale della sessione:
+  - `pushState` aggiorna `_lastLocalPushTs = now` e resetta il flag dirty
+    al successo del PUT verso cloud.
+  - `scheduleSync` marca dirty = true; poi il debounce a 2s pusha e il
+    flag torna a false.
+- **Session id per sessione**: `const _sessionId` (random+timestamp) —
+  ogni push scrive `S.__lastEditorSid = _sessionId` nel data_json.
+  Il filtro realtime `setupRealtime()` distingue "mia modifica" da
+  "altrove" via **session id**, non più via `updated_by` (nome utente).
+  Bug latente scoperto: tutti gli utenti Direzione hanno
+  `currentUser.nome = 'SSI'`, quindi il vecchio filtro bloccava anche
+  le notifiche legittime da altre schede — nessuno vedeva mai le
+  modifiche altrui in tempo reale.
+- **Realtime abilitato lato Supabase** (migrazione DB
+  `enable_realtime_compensi_stato_and_snapshots`): la publication
+  `supabase_realtime` prima includeva solo `categorie/cicli/persone`
+  (di altri progetti sullo stesso progetto), **NON** `compensi_stato`.
+  Ora `ALTER PUBLICATION supabase_realtime ADD TABLE compensi_stato,
+  compensi_snapshots;` — i cambi vengono davvero notificati via
+  WebSocket.
+- **Fix render→scheduleSync spurious dirty**: `renderAll()` chiama
+  sempre `scheduleSync()` in coda; questo settava il flag dirty anche
+  dopo un apply dal cloud/realtime (perché `_receivingRemote` era già
+  stato reset prima di `renderAll`). Ora `_receivingRemote` resta
+  `true` durante `renderAll` post-sync (in `doLogin` e nella callback
+  realtime), così `scheduleSync` è no-op in quel percorso.
+- **Cloud allineato alla v9**: verificato tramite MCP admin che
+  `compensi_stato.data_json.schemaVersion = 9` e tutte le 13 aree
+  hanno `a.macro` — allineamento automatico avvenuto al primo login
+  post-Fase 10 grazie al fresh boot migration fix (Fase 10 §18.6).
+- **Test 2 sessioni simulate** (Playwright, `/tmp/multi-session.mjs`):
+  4 scenari verificati, tutti verdi, zero popup:
+  - Apertura contemporanea → allineamento immediato.
+  - S1 modifica → S2 riceve via realtime in ≤ 5s, senza popup.
+  - Modifiche parallele → vince il timestamp più recente, entrambe le
+    sessioni convergono.
+  - Refresh dopo modifiche → nessun popup.
 
 ---
 

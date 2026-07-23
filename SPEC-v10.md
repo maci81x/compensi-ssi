@@ -263,6 +263,8 @@ Confronta `incassato` con X/Y/Z e mostra il colore + di quanto sei sopra/sotto c
 10. **DnD organigramma + Segreteria layout + CRUD centri in pagina +
     KPI macro area + dedup import PF** (§G-I sotto, Fase 10 chiusa
     2026-07-23).
+11. **Sync multi-dispositivo timestamp-based + realtime cloud abilitato +
+    session id** (§L sotto, Fase 11 chiusa 2026-07-23).
 
 ## 15. Fase 7 — Ricavo per centro % + passata grafica (chiusa 2026-07-23)
 
@@ -594,6 +596,85 @@ Fix:
    l'utente li cambia manualmente.
 6. Log console: `[applyImport] N voci con override utente preservate`
    quando si trigga il branch.
+
+## 19. Fase 11 — Sync multi-dispositivo timestamp-based (chiusa 2026-07-23)
+
+### 19.1 Problema (§L)
+Il popup **"Lo stato da cloud è di una versione precedente (vX su vY)"** si
+ripresentava a ogni rilascio con bump di `schemaVersion` (v6→v8, v8→v9). Era:
+- Un messaggio tecnico su versioni di schema che l'utente non può
+  valutare (schemaVersion è un dettaglio implementativo).
+- Un falso positivo di conflitto: se il cloud è "più vecchio per schema"
+  ma non ci sono modifiche locali non salvate, non c'è nessun conflitto —
+  basta migrare e riscrivere il cloud silenziosamente.
+- Un errore concettuale: la regola giusta per "chi vince" è il **timestamp
+  reale** dell'ultimo update, non lo schemaVersion.
+
+### 19.2 Nuova `applyIncomingState(incoming, sourceLabel, incomingUpdatedAtIso)`
+Contract: la funzione riceve anche `incomingUpdatedAtIso` (dal campo
+`updated_at` della riga cloud). Sequenza:
+
+1. `migrateSchema(incoming)` — sempre, additivo/idempotente.
+2. Confronto `cloudTs vs _lastLocalPushTs` + `_hasUnsavedLocalChanges`:
+   - **R1** cloud stantio (`cloudTs < localTs`) + locale pulito
+     (`!_hasUnsavedLocalChanges`) → **NON** applica incoming. Triggera
+     `scheduleSync()` per allineare il cloud. **Nessun popup.**
+   - **R2** locale dirty + cloud più recente → **unico caso di popup**,
+     in linguaggio umano ("in questa scheda ci sono modifiche non
+     salvate…"). Se l'utente sceglie "Annulla" → ripusha il locale.
+   - **R3** altrimenti → `Object.assign(S, incoming)`, aggiorna
+     `_lastLocalPushTs = cloudTs`, `_hasUnsavedLocalChanges = false`.
+
+### 19.3 Session id
+Prima il filtro realtime in `setupRealtime` era
+`if (payload.new.updated_by === currentUser?.nome) return`. Bug: tutti
+gli utenti di Direzione loggano con lo stesso alias
+`currentUser.nome = 'SSI'`, quindi il filtro bloccava anche le notifiche
+legittime di altre schede → il realtime **non funzionava** per casi
+multi-utente con stesso alias.
+
+Fix: `const _sessionId = 'sess_'+random+timestamp` per istanza di scheda.
+Ogni push scrive `S.__lastEditorSid = _sessionId` nel data_json. Il
+filtro realtime diventa
+`if (payload.new.data_json.__lastEditorSid === _sessionId) return`.
+`updated_by` resta il nome utente (per il notify "Sincronizzati dati più
+recenti da X").
+
+### 19.4 Realtime abilitato lato Supabase
+Diagnosi: verificato via `pg_publication_rel` che la publication
+`supabase_realtime` includeva solo `categorie, cicli, persone` — NON
+`compensi_stato`. I `postgres_changes` non venivano mai propagati per
+lo stato condiviso.
+
+Migrazione DB (`enable_realtime_compensi_stato_and_snapshots`):
+```sql
+ALTER PUBLICATION supabase_realtime ADD TABLE compensi_stato;
+ALTER PUBLICATION supabase_realtime ADD TABLE compensi_snapshots;
+```
+
+### 19.5 Fix render→scheduleSync spurious dirty
+`renderAll()` chiama sempre `scheduleSync()` in coda; questo settava
+`_hasUnsavedLocalChanges = true` anche dopo un apply dal cloud/realtime,
+perché `_receivingRemote` era già stato reset a false prima di `renderAll`.
+
+Fix: mantenere `_receivingRemote = true` DURANTE `renderAll` post-sync:
+```js
+loadState().then(() => {
+  setupRealtime();
+  _receivingRemote = true;
+  try { renderAll(); } finally { _receivingRemote = false; }
+});
+```
+
+Analogo nella callback realtime (spostato `_receivingRemote=false` in
+`finally` dopo `renderAll`).
+
+### 19.6 Test 2 sessioni (Playwright)
+4 scenari verificati, zero popup:
+- **S1**: entrambe le sessioni allineate al login iniziale.
+- **S2**: S1 modifica → S2 vede l'update via realtime senza popup.
+- **S3**: modifiche parallele → vince il timestamp più recente.
+- **S4**: refresh di S1 dopo modifiche → nessun popup.
 
 ### 18.6 Fresh boot migration fix
 Bug scoperto durante il QA della Fase 10: le migrazioni schema si
