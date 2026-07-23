@@ -1721,7 +1721,16 @@ function doLogin(){
   document.getElementById('nav-user-badge').textContent='SSI · Direzione';
   applyRoleUI();
   restoreLocal(); // ripristino locale immediato — Supabase (se raggiungibile) sovrascrive dopo
-  loadState().then(()=>{ setupRealtime(); renderAll(); });
+  // Fase 11 (§L): mantengo _receivingRemote=true DURANTE il primo renderAll
+  // post-login così scheduleSync (chiamato in coda a renderAll) NON marca lo
+  // stato come "dirty" locale — altrimenti, alla prima notifica realtime da
+  // un altro dispositivo, applyIncomingState vedrebbe un finto conflitto (R2)
+  // e mostrerebbe il popup di conferma.
+  loadState().then(()=>{
+    setupRealtime();
+    _receivingRemote=true;
+    try{ renderAll(); } finally { _receivingRemote=false; }
+  });
 }
 
 function logout(){
@@ -1747,29 +1756,55 @@ async function loadState(){
     const {data,error}=await db.from('compensi_stato').select('data_json,updated_by,updated_at').eq('id','current').single();
     if(error||!data||!data.data_json||Object.keys(data.data_json).length===0){setSyncIndicator('ok');return;}
     _receivingRemote=true;
-    applyIncomingState(data.data_json,'cloud');
+    applyIncomingState(data.data_json,'cloud',data.updated_at);
     _receivingRemote=false;
     setSyncIndicator('ok');
   } catch(e){ console.warn('loadState error',e); setSyncIndicator('ok'); }
 }
 
+// Fase 11 (§L): tracking timestamp locale + flag "dirty" per la
+// sincronizzazione. _lastLocalPushTs = timestamp dell'ultimo stato applicato
+// (dal cloud in loadState, o pushato con successo in pushState).
+// _hasUnsavedLocalChanges = true quando l'utente ha modificato lo stato ma
+// non è ancora stato pushato al cloud (usato per R2 in applyIncomingState).
+// _sessionId = id univoco di questa istanza di scheda/browser, serve per
+// riconoscere "il push realtime è la mia stessa modifica" indipendentemente
+// dal nome utente (più utenti possono aver loggato con lo stesso alias
+// "SSI · Direzione" — updated_by da solo non distingue le sessioni).
 let _pushBusy=false;
+let _lastLocalPushTs=0;
+let _hasUnsavedLocalChanges=false;
+const _sessionId='sess_'+Math.random().toString(36).slice(2,10)+'_'+Date.now().toString(36);
 async function pushState(){
   if(!db||!currentUser||_pushBusy)return;
   _pushBusy=true;
   setSyncIndicator('saving');
+  const nowIso=new Date().toISOString();
+  // Marco lo stato con il session id di questa scheda: il filtro realtime
+  // (setupRealtime) usa questo per distinguere "questo push è mio" da "un
+  // altro dispositivo/scheda ha modificato" quando il nome utente coincide.
+  S.__lastEditorSid=_sessionId;
+  S.__lastEditorAt=nowIso;
   try{
     const {error}=await db.from('compensi_stato')
-      .update({data_json:JSON.parse(JSON.stringify(S)),updated_at:new Date().toISOString(),updated_by:currentUser.nome})
+      .update({data_json:JSON.parse(JSON.stringify(S)),updated_at:nowIso,updated_by:currentUser.nome})
       .eq('id','current');
     setSyncIndicator(error?'error':'ok');
-    if(error)console.error('pushState error',error);
+    if(error){
+      console.error('pushState error',error);
+    } else {
+      _lastLocalPushTs=new Date(nowIso).getTime();
+      _hasUnsavedLocalChanges=false;
+    }
   } catch(e){ setSyncIndicator('error'); console.warn(e); }
   _pushBusy=false;
 }
 
 function scheduleSync(){
   if(!currentUser||_receivingRemote)return;
+  // La modifica arriva dall'utente — marca come "dirty locale non ancora
+  // pushata". pushState() resetta il flag quando la scrittura riesce.
+  _hasUnsavedLocalChanges=true;
   setSyncIndicator('pending');
   clearTimeout(_syncTimer);
   _syncTimer=setTimeout(()=>pushState(),2000);
@@ -2356,11 +2391,14 @@ function setupRealtime(){
     .on('postgres_changes',{event:'UPDATE',schema:'public',table:'compensi_stato',filter:'id=eq.current'},
       (payload)=>{
         if(!payload.new?.data_json)return;
-        if(payload.new.updated_by===currentUser?.nome)return; // nostra modifica, skip
+        // Fase 11: filtro per session id (non per nome utente). Più utenti
+        // che loggano con lo stesso alias non si perdono più i cambi.
+        if(payload.new.data_json.__lastEditorSid===_sessionId)return; // nostra modifica, skip
         _receivingRemote=true;
-        const applied=applyIncomingState(payload.new.data_json,'realtime ('+payload.new.updated_by+')');
-        _receivingRemote=false;
-        if(applied){renderAll();notify('🔄 Aggiornato da '+payload.new.updated_by);}
+        try{
+          const applied=applyIncomingState(payload.new.data_json,'realtime ('+payload.new.updated_by+')',payload.new.updated_at);
+          if(applied){renderAll();notify('🔄 Sincronizzati dati più recenti da '+payload.new.updated_by);}
+        } finally { _receivingRemote=false; }
       })
     .subscribe();
 }
@@ -3811,19 +3849,68 @@ function migrateSchema(s){
 // più vecchio di quello corrente, lo migra e chiede conferma prima di
 // sovrascrivere — una scheda dimenticata aperta non deve più poter
 // distruggere lavoro più recente.
-function applyIncomingState(incoming,sourceLabel){
+// Fase 11 (§L): sincronizzazione multi-dispositivo timestamp-based.
+// La regola è "vince il più recente per timestamp reale", non lo schemaVersion:
+// una scheda che ha semplicemente il codice più aggiornato NON è "il più
+// recente" in senso operativo. Il popup appare SOLO in caso di conflitto vero
+// (modifiche locali non salvate ancora + cloud aggiornato altrove). Nessun
+// messaggio all'utente parla di "schemaVersion vX su vY" — è terminologia
+// tecnica di cui l'utente non può giudicare la gravità.
+//
+// Contract:
+//   incoming             — data_json dal cloud/realtime, viene mutato in-place (migrato).
+//   sourceLabel          — libero, solo per log console.
+//   incomingUpdatedAtIso — ISO string di `updated_at` della riga cloud (obbligatorio
+//                          per confronto: se assente, si applica sempre — il chiamante
+//                          storicamente vuole applicare).
+//
+// Regole (in ordine di verifica):
+//   R1. Cloud stantio (cloud.updated_at < ultimo push locale) + locale non dirty
+//       → NON applica incoming (S locale è più recente). Triggera scheduleSync
+//       per allineare il cloud silenziosamente. Nessun popup.
+//   R2. Locale dirty (utente ha modificato in questa scheda senza push riuscito)
+//       + cloud più recente → CONFLITTO REALE. Chiedi conferma in linguaggio
+//       umano; se scarta, ripusha S per far vincere il locale.
+//   R3. Altrimenti applica incoming (caso normale: apertura fresh, o refresh
+//       dopo push riuscito, o realtime da altra scheda). Nessun popup.
+function applyIncomingState(incoming,sourceLabel,incomingUpdatedAtIso){
   if(!incoming||typeof incoming!=='object'||!Object.keys(incoming).length)return false;
-  const incomingVersion=incoming.schemaVersion||0;
-  if(incomingVersion<CURRENT_SCHEMA_VERSION){
-    migrateSchema(incoming);
-    const ok=confirm(
-      'Lo stato da '+sourceLabel+' è di una versione precedente (v'+incomingVersion+' su v'+CURRENT_SCHEMA_VERSION+' attuale).\n\n'+
-      'È già stato aggiornato alla struttura corrente, ma applicarlo potrebbe sovrascrivere lavoro più recente fatto da un altro dispositivo o scheda.\n\n'+
-      'Applicarlo comunque?'
-    );
-    if(!ok){notify('⚠ Stato da '+sourceLabel+' NON applicato (versione precedente, annullato)');return false;}
+  // Migro sempre: la migrazione è additiva/idempotente (aggiunge solo campi
+  // mancanti, non tocca dati esistenti). Non ha effetti visibili all'utente.
+  migrateSchema(incoming);
+
+  const cloudTs=incomingUpdatedAtIso?new Date(incomingUpdatedAtIso).getTime():0;
+  const localTs=_lastLocalPushTs||0;
+  const cloudPiuVecchio=cloudTs>0&&localTs>0&&cloudTs<localTs;
+  const cloudPiuRecente=cloudTs>0&&(!localTs||cloudTs>localTs);
+
+  // R1: cloud stantio + locale pulito → mantieni S locale, riallinea cloud in silenzio
+  if(cloudPiuVecchio&&!_hasUnsavedLocalChanges){
+    console.log('[applyIncomingState] cloud stantio rispetto al locale — riallineo cloud in silenzio (source:'+sourceLabel+')');
+    scheduleSync();
+    return false;
   }
+
+  // R2: conflitto vero — locale dirty + cloud più recente
+  if(_hasUnsavedLocalChanges&&cloudPiuRecente){
+    const ok=confirm(
+      'In questa scheda ci sono modifiche non ancora salvate nel cloud, e nel frattempo un altro dispositivo (o un\'altra scheda) ha salvato nuovi dati più recenti.\n\n'+
+      'Come vuoi procedere?\n\n'+
+      '• OK → Uso i dati più recenti dal cloud (le modifiche non salvate qui vengono scartate).\n'+
+      '• Annulla → Mantengo lo stato di questa scheda e lo salvo io come più recente.'
+    );
+    if(!ok){
+      // Utente sceglie di preservare il locale — ripusha per far vincere lui
+      scheduleSync();
+      return false;
+    }
+    // Fallthrough: applica incoming
+  }
+
+  // R3: applica normalmente
   Object.assign(S,incoming);
+  _hasUnsavedLocalChanges=false;
+  _lastLocalPushTs=cloudTs||Date.now(); // adesso il locale rispecchia il cloud
   return true;
 }
 const GENERATO_TEC_TERM={
