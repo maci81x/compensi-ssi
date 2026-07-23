@@ -1,6 +1,6 @@
 # HANDOVER — Compensi SSI
 
-Stato del lavoro al 2026-07-23 — chiusura Fase 8 (gap costi + guida + minori).
+Stato del lavoro al 2026-07-23 — chiusura Fase 9 (fix doppio conteggio budget aree + pagina Sistema estesa + meta no-cache).
 
 ## Come ripartire
 
@@ -41,6 +41,8 @@ Riferimento completo: `SPEC-v10.md`.
    merge in produzione** (Fase 7, 2026-07-23).
 8. **Chiusura gap costi + guida operativa + correzioni minori** (Fase 8,
    2026-07-23).
+9. **Fix doppio conteggio budget aree + pagina Sistema estesa + meta
+   no-cache** (Fase 9, 2026-07-23).
 
 ### Cosa fa la Fase 7 nel dettaglio
 
@@ -106,6 +108,51 @@ Riferimento completo: `SPEC-v10.md`.
   utili/liquidità/semaforo. Sostituite dalle voci puntuali in Sistema/
   Prioritari/Tasse.
 
+### Cosa fa la Fase 9 nel dettaglio
+
+- **Fix doppio conteggio budget aree vs costi reali** (bug diagnosticato
+  dall'utente): la cascata `flow()` sottraeva `poolP2 = Σ (area.budget.fisso
+  + area.budget.variabilePct × inc) = 99.697/mese` (57,21% dell'incassato
+  con inc=174k) IN AGGIUNTA ai costi già in P1 (voci `sistemaFissi` con
+  `areaId=comm/mkt/form/sorvsan/c_ambiente/c_antincendio/c_verifiche_terra`
+  = 27.905/mese + garantito personale interno 40.916/mese = ~68,8k/mese
+  contati due volte). Utili sempre 0 anche con incassato realistico perché
+  la cascata comprimeva il pool per non andare negativa.
+- **Soluzione applicata**: il budget aree NON entra più nella cascata come
+  costo. Rimane nel modello come **tetto di monitoraggio** (`flow().budgetAreeTeorico`
+  esposto) per confronto budget-vs-consuntivo su Struttura & aree e
+  dashboard. In parallelo `altriCostiOperativi` (Fase 8) è stato spostato
+  in P1 così `flow().utili` diventa coerente con `margineAziendaleStimato`.
+- **Effetto validato**:
+  - Con inc = 130.000 (default): utili −6.599 (segnala perdita — corretto,
+    l'incassato default è sotto la media reale).
+  - Con inc = **174.265** (media reale 5 mesi 2026): utili **35.453**,
+    margine **20,34%** → **Δ 3,07 pt vs reale YTD 23,41%** ✅ entro ±5 pt.
+  - Con inc = 200.000 (cloud): utili ~61.188, margine 30,60% (mese sopra
+    media, coerente).
+- **Pagina Sistema riscritta** (SPEC-v10 §F, richiesta esplicita utente):
+  - Blocchi **COSTI FISSI** / **COSTI VARIABILI** separati con totale in €
+    e % sull'incassato, oltre a un banner `kpi-strip` con totale filtrato.
+  - Filtri: **area** (13 aree + "overhead puro" + tutte), **natura**
+    (fisso/variabile), **ricerca testuale** su nome/categoria/area.
+  - Ogni riga mostra area di provenienza con dropdown per cambiarla e
+    dropdown natura fisso↔variabile, entrambe con save immediato.
+  - CRUD completo: aggiungi voce, aggiungi categoria, elimina voce.
+  - Bottone "Reset filtri" per tornare alla vista completa.
+- **Meta no-cache** aggiunti nell'HTML head (`Cache-Control: no-store` +
+  `Pragma: no-cache` + `Expires: 0`): evita che il browser mostri per ore
+  la vecchia versione dell'app dopo un deploy live (era il caso della
+  "regressione organigramma" segnalata: il codice era corretto, era una
+  cache stantia del browser dell'utente — verificato con screenshot
+  headless sul live, 12/12 card renderizzate).
+- **Debug organigramma "vuoto sul live"** — non era una regressione di
+  codice: la pagina Organigramma sul live renderizza correttamente 12 card
+  (SSI SRL, GRFM, CDA, Utili, Gaia, Commerciale, Marketing, Produzione,
+  Formazione, Sorveglianza Sa…, Amministrazione, Segreteria) con SVG
+  992×620. Screenshot headless salvato come verifica. La causa era cache
+  del browser dell'utente sulla vecchia Fase 6/7 → mitigato con i meta
+  no-cache di cui sopra.
+
 ---
 
 ## Numeri chiave validati (QA finale headless — Playwright)
@@ -122,6 +169,8 @@ Supabase bloccata per non contaminare lo stato condiviso durante i test):
 | Incassi settimanali reali 2026 | 6 settimane, somma € 312.816,91 |
 | Schema version | 8 ✓ |
 | Margine modello a inc 174k (media reale 2026) | 25,34% (Δ 1,93 pt vs reale 23,41%) ✓ |
+| Utili da `flow()` a inc 174k (Fase 9) | 35.453 = 20,34% (Δ 3,07 pt vs reale 23,41%) ✓ |
+| Budget aree teorico (`flow().budgetAreeTeorico`) | 99.697 (esposto per monitoraggio, NON in cascata) |
 | Dedup sistema (voci con areaId centri) | 16.627/mese sottratti ✓ |
 | Personale interno incluso nel margine aziendale | 40.916,15 ✓ |
 | altri costi operativi (STIMA, default v8) | € 15.000/mese |

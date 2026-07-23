@@ -258,6 +258,8 @@ Confronta `incassato` con X/Y/Z e mostra il colore + di quanto sei sopra/sotto c
    sotto, Fase 7 chiusa 2026-07-23).
 8. **Chiusura gap costi aziendali + guida operativa aggiornata + correzioni
    minori** (§E sotto, Fase 8 chiusa 2026-07-23).
+9. **Fix doppio conteggio budget aree + pagina Sistema estesa + meta
+   no-cache** (§F sotto, Fase 9 chiusa 2026-07-23).
 
 ## 15. Fase 7 — Ricavo per centro % + passata grafica (chiusa 2026-07-23)
 
@@ -390,6 +392,101 @@ margine_aziendale = incassato − (
   Tasse puntuali in €). Ora il passo mostra solo GRFM + CDA + Soglia KPI
   con banner esplicativo. Voci legacy restano in `S.voci` per compatibilità
   waterfall/simulatore legacy.
+
+## 17. Fase 9 — Fix doppio conteggio budget aree + Sistema esteso (chiusa 2026-07-23)
+
+### 17.1 Bug diagnosticato (§F)
+Nel `flow()` la cascata sottraeva `poolP2 = Σ (area.budget.fisso +
+area.budget.variabilePct × inc)` come costo di priorità 2 — cioè il tetto
+% del previsionale (Commerciale 17,25% + Produzione 11,31% + Amministrazione
+10,46% + Marketing 5,77% + Formazione 8,5% + Segreteria 3,92% = 57,21%
+dell'incassato = 99.697/mese con inc=174k). Ma i costi reali di queste
+aree sono **già** contati altrove:
+
+- Provvigioni agenti, docenti esterni, medici, spese marketing, fornitori
+  centri → in `sistemaFissi` con `areaId` puntante all'area (sommati in
+  `totSistema()` = 43.994 include 27.905 di queste voci con areaId).
+- Personale dipendente + soci di ogni area → in `garantitoPersonale` P1
+  (40.916/mese).
+
+**Totale ~68,8k/mese contato due volte**. Utili sempre 0 anche con
+incassato realistico perché la cascata comprimeva il pool per non
+andare negativa.
+
+### 17.2 Soluzione applicata
+```
+// PRIMA (Fase 3-8, buggato):
+pool2e3 = [ ...prioritariNon1,
+            ...S.aree.map(a => budgetArea(a, inc)),   // <-- doppio conteggio
+            {nome:'Premi', val:premiRichiesti, priorita:3} ];
+
+// DOPO (Fase 9):
+pool2e3 = [ ...prioritariNon1,
+            {nome:'Premi', val:premiRichiesti, priorita:3} ];
+// Budget area esposto come flow().budgetAreeTeorico, monitoraggio, non costo.
+
+// altriCostiOperativi spostato in P1 (era solo in margineAziendaleStimato):
+prioritariBase.push({nome:'Altri costi operativi', val:S.altriCostiOperativi, priorita:1});
+```
+
+### 17.3 Effetto validato (con incassato reale)
+| Incassato | flow.utili | flow.margine% | vs reale 23,41% |
+|---|---:|---:|---:|
+| 130.000 (default troppo basso) | −6.599 | −5,08% | segnala perdita (corretto) |
+| **174.265** (media reale 5 mesi 2026) | **35.453** | **20,34%** | **Δ 3,07 pt ✅** |
+| 200.000 (cloud) | 61.188 | 30,60% | Δ 7,19 pt (mese sopra media) |
+
+Coerente con `margineAziendaleStimato` (Fase 8, includeva già gli stessi
+costi). La piccola differenza residua tra i due (~5 pt) è dovuta al fatto
+che flow include GRFM come costo che consuma liquidità SSI, mentre
+margineAziendaleStimato lo esclude (GRFM è trattenuta holding, non
+"costo esterno" ai fini del margine reale del foglio Controllo di
+gestione).
+
+### 17.4 Pagina Sistema estesa (SPEC §F, richiesta esplicita utente)
+- Blocchi **COSTI FISSI** / **COSTI VARIABILI** separati:
+  - Ognuno con **tabella** completa (nome · categoria · area · natura ·
+    €/mese · %inc · azioni).
+  - **Totale € e % dell'incassato** in intestazione di ciascun blocco.
+- Banner `kpi-strip` in cima con 3 card: fissi filtrati · variabili
+  filtrati · totale filtrato (con % incassato).
+- **Filtri**:
+  - Area: 13 aree del modello + "— Nessuna area (overhead puro)" + tutte.
+  - Natura: solo fissi / solo variabili / tutte.
+  - Ricerca testuale su nome/categoria/area (debounce 250ms).
+  - Bottone "Reset filtri".
+- Ogni **riga** ha dropdown per cambiare in-place:
+  - **Area** (con save immediato).
+  - **Natura** (fisso↔variabile con save immediato).
+- CRUD completo: nome/valore inline editing, aggiungi voce, aggiungi
+  categoria, elimina voce (con conferma).
+- Persistenza filtri tra render (window.sistemaFilters).
+
+### 17.5 Meta no-cache
+Aggiunti nell'HTML `<head>`:
+```html
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+```
+
+Motivazione: dopo un deploy Live, il browser può servire per ore la
+vecchia versione dalla cache (GitHub Pages ha `cache-control:
+max-age=600` di suo). Con questi meta ogni load prende la nuova versione
+subito. Root cause fix del sintomo "regressione X" riportato da utenti
+mentre l'app in realtà era già stata aggiornata.
+
+### 17.6 Debug organigramma "vuoto sul live"
+Segnalato dall'utente come regressione bloccante. Verificato con
+screenshot headless sul live (`https://maci81x.github.io/compensi-ssi/`):
+- SVG 992×620 renderizzato correttamente.
+- 12/12 card visibili (GRFM, SSI SRL €200k, CDA €13.6k, Utili €0, Gaia,
+  Commerciale €34.5k, Marketing €11.5k, Produzione €22.6k, Formazione
+  €17k, Sorveglianza Sa…, Amministrazione €20.9k, Segreteria €7.8k).
+- 0 errori console.
+
+Non era regressione codice → cache browser utente (mitigato con meta
+no-cache §17.5).
 
 ---
 
