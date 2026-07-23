@@ -254,6 +254,62 @@ Confronta `incassato` con X/Y/Z e mostra il colore + di quanto sei sopra/sotto c
 4. **Centri di costo / margine** (§6) + rollup area (§5.1).
 5. **Premi / pannello direttore** con slider (§9) + **soglia sostenibilità** (§11).
 6. QA sui numeri contro PF/Previsionale, poi snapshot.
+7. **Ricavo per centro come % di default + passata grafica CDA-ready** (§D
+   sotto, Fase 7 chiusa 2026-07-23).
+
+## 15. Fase 7 — Ricavo per centro % + passata grafica (chiusa 2026-07-23)
+
+### 15.1 Ripartizione % del fatturato (SPEC §D)
+- **8 unità produttive** con ricavo assegnato come % di `S.incassato`:
+  i 6 centri sotto `prod` + `form` (Formazione) + `sorvsan` (Sorv. Sanitaria).
+- **Costante** `UNITA_PRODUTTIVE_RIC_PCT_IDS` in `index.html` (near line 3095).
+- **Default v7** (`RIC_PCT_DEFAULT_V7`) ragionato su fissi reali + volumi
+  attesi, somma 100%:
+  Sorveglianza Sanitaria 20 · Antincendio 18 · Documenti 15 · Formazione 15 ·
+  RSPP 12 · Ambiente 10 · Cantieri 8 · Verifiche Terra 2.
+- **Override "REALE"** automatico: `ricavoManuale > 0` vince sempre — cioè
+  quando l'utente inserisce un ricavo reale (da contabilità o gestionale)
+  quello sostituisce la stima senza cambio di modo. Badge STIMA/REALE/TECNICO.
+- **Sum tracker** in UI: mostra somma corrente vs attesa (100 meno i pesi
+  delle unità switchate a manuale/tecnico). Bottone "Normalizza a 100%" che
+  scala proporzionalmente le % rimaste.
+- **Margine aziendale confrontato col REALE YTD 23,41%** in Dashboard Centri
+  di costo — semaforo verde/giallo/rosso su Δ ≤ 5 / ≤ 10 / > 10 pt.
+  Formula: `(incassato − fornitori centri − sistema − prioritari − tasse) /
+  incassato`. Comparabile con `(fatturato − costi esterni) / fatturato` del
+  foglio REALE.
+- **Contribuzione centri** (Σ valore − Σ costi centri) mostrata come metric
+  informativa separata, NON confrontabile col margine reale aziendale (copre
+  solo costi imputabili ai centri, non gli overhead).
+
+### 15.2 Schema v7 + migrazione
+- `CURRENT_SCHEMA_VERSION = 7`, nuovo step `SCHEMA_MIGRATIONS[to:7]`.
+- Applica DEF v7 SOLO dove l'utente non ha già un override esplicito
+  (`ricavoManuale > 0` o `ricavoPct > 0` con modo `percentuale`).
+- Un `ricavoModo === 'tecnico'` legacy viene ribaltato a `percentuale` (il
+  vecchio default era `tecnico`); l'utente può rimettere `tecnico` dall'UI.
+
+### 15.3 Passata grafica CDA-ready
+- **KPI gerarchizzati**: `.mc.hero` (banner semaforo 30px), `.mc.primary`
+  (Liquidità/Utili/Margine 26px). Su Dashboard CDA i primi 3 numeri che il
+  lettore vede sono liquidità disponibile, utili del mese, margine modello.
+- **Print CSS A4** esteso (`@page` + page-breaks + colori azzerati + tabelle
+  con `thead/tfoot` ripetuti). Pronto per stampa CDA di Dashboard, Centri di
+  costo, Premi. Nasconde nav/topbar/pulsanti/select/notif.
+- **Organigramma**: `CW 148→160`, `CH 80→86`, `HGAP 20→32`, `VGAP 50→64`,
+  `PAD 24→28`. Card più leggibili senza zoom, drag&drop già evidente
+  (esistente Fase 6).
+- **Coerenza componenti**: nuove classi riusabili `.kpi-strip / .kpi-cell /
+  .pane / .pane-title / .alert{.info|.warn|.err|.ok} / .tbl-clean /
+  .tbl-foot / .badge.b-info`. Colori sempre via variabili semaforo
+  (`--green/amber/red`) — nessun HEX inline nuovo.
+
+### 15.4 Pulizia dati (2026-07-23)
+- Cancellati da `compensi_snapshots` i 2 snapshot "giugno 2026" anomali
+  (`incassato = 2.024.840` = budget annuo scambiato per mensile, non dato
+  reale — snapshot di test del 10 giugno) e la riga `TEST 2099-01`.
+- Rimosse anche le voci gemelle da `S.snaps` in `compensi_stato`.
+- Tabella `compensi_snapshots` **vuota**: primo snapshot reale = luglio 2026.
 
 ---
 
@@ -264,10 +320,15 @@ Confronta `incassato` con X/Y/Z e mostra il colore + di quanto sei sopra/sotto c
   Roberto conferma quali sono "priorità 1" alla prima compilazione.
 - Formula esatta del **pool premi proposto** (in % del margine area? del variabile maturato?) — parti da
   "quota personale × gate KPI area" già presente in v9 e affina con Roberto.
-- **Aperto lato DB (Fase 5):** le policy RLS di `compensi_snapshots` non consentono la `DELETE` con la chiave
-  anon usata dal client (l'app non fa mai un login Supabase reale, solo `currentUser` locale) — PostgREST
-  risponde 200 con 0 righe cancellate invece di un errore, quindi va verificato lato Postgres/dashboard, non
-  risolvibile da `index.html`. L'app ora rileva l'esito (verifica `count` sulla delete) e mostra un errore
-  esplicito invece di far credere che la cancellazione sia riuscita, ma gli snapshot restano di fatto
-  non cancellabili dall'app finché la policy non viene aggiornata (serve permettere DELETE al ruolo usato,
-  o autenticare l'app con un ruolo con quel permesso).
+- **Aperto lato DB (Fase 5, ancora aperto):** le policy RLS di
+  `compensi_snapshots` non consentono la `DELETE` con la chiave anon usata dal
+  client. L'app rileva l'esito e mostra errore esplicito, ma serve UNA:
+  policy DELETE per ruolo anon, oppure login Supabase reale (oggi solo
+  `currentUser` locale). L'MCP admin bypassa comunque le RLS (usato per la
+  pulizia snapshot del 2026-07-23).
+- **Aperto per Fase 8:** il modello sottostima ~50k/mese di costi esterni
+  rispetto al foglio Controllo di gestione (77k modellati vs ~130k reali),
+  quindi il margine aziendale modello diverge di ~17 pt dal 23,41% reale
+  YTD. La ripartizione % del ricavo (Fase 7) è corretta e somma 100% — il
+  gap è di completezza del modello, da colmare con voci mancanti
+  (materiali, subappalti/consulenti a fattura, altre spese esterne).

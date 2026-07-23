@@ -212,6 +212,17 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
 .mc .ms{font-size:11px;color:var(--ink3);margin-top:2px}
 .mc.ok .ml,.mc.ok .ms{color:var(--green)}
 .mc.ok .mv{color:var(--green)}
+/* Fase 7 — gerarchia visiva: hero (banner sostenibilità) + primary (numeri
+   che il CDA legge per primi: liquidità disponibile, utili, margine %). */
+.mc.hero{padding:18px 22px}
+.mc.hero .ml{font-size:11px;margin-bottom:6px}
+.mc.hero .mv{font-size:30px;font-weight:400;letter-spacing:-.03em}
+.mc.hero .ms{font-size:12px;margin-top:6px}
+.mc.primary .mv{font-size:26px;font-weight:400}
+.mc.warn .ml,.mc.warn .ms{color:var(--amber)}
+.mc.warn .mv{color:var(--amber)}
+.mc.err .ml,.mc.err .ms{color:var(--red)}
+.mc.err .mv{color:var(--red)}
 
 /* ── FORM ELEMENTS ──────────────────────── */
 .field{margin-bottom:10px}
@@ -476,15 +487,69 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
 .b-warn{background:var(--amber-bg);color:var(--amber)}
 .b-crit{background:var(--red-bg);color:var(--red)}
 .b-nd{background:var(--sheet);color:var(--ink3)}
+.b-info{background:var(--blue-bg);color:var(--blue)}
+
+/* ── KPI STRIP (Fase 7 — banner riepilogo numeri chiave in evidenza) ──── */
+.kpi-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.kpi-cell{background:var(--card);border:1px solid var(--lift);border-radius:var(--rl);padding:14px 16px;box-shadow:var(--shadow)}
+.kpi-lbl{font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
+.kpi-val{font-family:'DM Mono',monospace;font-size:22px;font-weight:300;line-height:1.15;color:var(--ink)}
+.kpi-val.ok{color:var(--green)}
+.kpi-val.warn{color:var(--amber)}
+.kpi-val.err{color:var(--red)}
+.kpi-val.big{font-size:32px;font-weight:400}
+.kpi-sub{font-size:10px;color:var(--ink3);margin-top:4px}
+
+/* ── PANE (card contenitore riusabile) ──────────────────────────────── */
+.pane{background:var(--card);border:1px solid var(--lift);border-radius:var(--rl);padding:14px 16px}
+.pane-title{font-size:12px;font-weight:600;margin-bottom:10px;color:var(--ink)}
+
+/* ── ALERT strisce di stato ─────────────────────────────────────────── */
+.alert{border-radius:var(--rl);padding:10px 14px;font-size:11px;line-height:1.45}
+.alert.info{background:var(--blue-bg);border:1px solid var(--blue-bd);color:var(--blue)}
+.alert.warn{background:var(--amber-bg);border:1px solid var(--amber-bd);color:var(--amber)}
+.alert.err{background:var(--red-bg);border:1px solid var(--red-bd);color:var(--red)}
+.alert.ok{background:var(--green-bg);border:1px solid var(--green-bd);color:var(--green)}
+
+/* ── TABELLE UNIFICATE ──────────────────────────────────────────────── */
+.tbl-clean{border-collapse:collapse;font-size:12px}
+.tbl-clean thead th{padding:7px 8px;text-align:left;color:var(--ink3);font-size:10px;text-transform:uppercase;font-weight:600;letter-spacing:.04em;border-bottom:1px solid var(--lift);background:var(--sheet)}
+.tbl-clean tbody td{padding:6px 8px;border-bottom:1px solid var(--lift);vertical-align:middle}
+.tbl-clean tbody tr:hover{background:var(--sheet)}
+.tbl-clean tr.detail-row td{border-bottom:1px solid var(--lift);background:var(--paper)}
+.tbl-foot td{padding:9px 8px;background:var(--sheet);border-top:2px solid var(--ink3);font-size:12px}
 
 /* ── EMPTY STATE ────────────────────────── */
 .empty{text-align:center;padding:32px;color:var(--ink3);font-size:13px}
 
-/* ── PRINT ──────────────────────────────── */
+/* ── PRINT (Fase 7 — CDA-ready: A4, page breaks, hide UI, tighter) ─── */
 @media print{
-  .nav,.topbar,.org-controls,.btn,.oc-acts,.rr-acts{display:none!important}
-  .main{margin-left:0}
-  .page{display:block!important;padding:0}
+  @page{size:A4;margin:14mm 12mm}
+  html,body{background:#fff!important;color:#000!important;font-size:11px}
+  .nav,.topbar,.org-controls,.btn,.oc-acts,.rr-acts,.notif,input[type=file],select,button{display:none!important}
+  .main{margin-left:0;padding:0}
+  .page{display:none!important}
+  .page.on{display:block!important;padding:0!important}
+  /* Ogni card/pane inizia su una pagina se non ci sta */
+  .kpi-strip,.pane,.chart-card,.mc,.step-card,.snap,.kpi-area{page-break-inside:avoid}
+  h2,h3{page-break-after:avoid}
+  .chart-grid{grid-template-columns:1fr 1fr!important;gap:8px}
+  .chart-wrap{height:180px!important}
+  /* Semaforo hero rimane grosso ma nero su bianco */
+  .mc.hero{background:#fff!important;border:2px solid #000!important;color:#000!important}
+  .mc.hero .mv,.mc.hero .ml{color:#000!important}
+  /* Alerts perdono il colore di fondo per non "sprecare" toner */
+  .alert{background:#fff!important;border:1px solid #000!important;color:#000!important}
+  /* Tabelle full-width, no scroll */
+  table{page-break-inside:auto}
+  tr{page-break-inside:avoid;page-break-after:auto}
+  thead{display:table-header-group}
+  tfoot{display:table-footer-group}
+  .tbl-clean thead th{background:#eee!important;color:#000!important;border-bottom:1px solid #000}
+  /* Nascondi expand carets che in print non hanno senso */
+  details>summary{list-style:none}
+  details{display:block}
+  details[open]>*{display:block!important}
 }
 
 /* ── RESPONSIVE ─────────────────────────── */
@@ -2051,7 +2116,7 @@ const CAT_ICONS={affitto:'🏢',utenze:'⚡',software:'💻',assicurazione:'🛡
 // stato non ha). Vedi SCHEMA_MIGRATIONS più sotto per la logica di
 // migrazione — root cause del problema "una scheda vecchia sovrascrive dati
 // più recenti", non un cerotto sul sintomo.
-const CURRENT_SCHEMA_VERSION=6;
+const CURRENT_SCHEMA_VERSION=7;
 
 const DEF={
   schemaVersion:CURRENT_SCHEMA_VERSION,
@@ -2414,6 +2479,7 @@ const DEF={
     {id:'form',nome:'Formazione',tipo:'RIC',desc:'Corsi sicurezza, docenze, attestati, registro presenze',incPct:8.5,
      resp:'Niccolò',
      parentId:'prod',natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:8.5},chiusa:false,
+     ricavoModo:'percentuale',ricavoPct:15,ricavoManuale:0,
      // 14 docenti esterni con costo reale (PF SI 2026.xlsx, cat "Formazione") — §A seed costi centri.
      fornitoreFisso:1703.52,
      fornitori:[
@@ -2449,6 +2515,7 @@ const DEF={
     {id:'sorvsan',nome:'Sorveglianza Sanitaria',tipo:'RIC',desc:'Visite mediche, medici competenti, gestione protocolli sanitari',incPct:0,
      resp:'',
      parentId:'prod',natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:0},chiusa:false,
+     ricavoModo:'percentuale',ricavoPct:20,ricavoManuale:0,
      // Fornitori/medici reali (PF SI 2026.xlsx, cat "Sorveglianza Sanitaria") — §A seed costi centri.
      fornitoreFisso:7201.77,
      fornitori:[
@@ -2496,7 +2563,7 @@ const DEF={
     // PF era loro attribuito (valori a zero ovunque).
     {id:'c_antincendio',nome:'Antincendio',tipo:'RIC',desc:'Centro di costo — Antincendio (include ex "Estintori": ESMA, GTA)',incPct:0,resp:'',
      parentId:'prod',natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:0},chiusa:true,
-     fornitoreFisso:3465.68,ricavoModo:'tecnico',
+     fornitoreFisso:3465.68,ricavoModo:'percentuale',ricavoPct:18,ricavoManuale:0,
      fornitori:[
        {nome:'Simone Barbagli',valMensile:1484.78},
        {nome:'E.S.M.A. Estintori Srl',valMensile:761.38},
@@ -2507,25 +2574,25 @@ const DEF={
      ],micro:[]},
     {id:'c_ambiente',nome:'Ambiente',tipo:'RIC',desc:'Centro di costo — Ambiente (include ex "Analisi": Gracci, Securlab)',incPct:0,resp:'',
      parentId:'prod',natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:0},chiusa:true,
-     fornitoreFisso:3970.45,ricavoModo:'tecnico',
+     fornitoreFisso:3970.45,ricavoModo:'percentuale',ricavoPct:10,ricavoManuale:0,
      fornitori:[
        {nome:'Ecogam Srl',valMensile:3662.75},
        {nome:'Gracci Laboratori Srl',valMensile:209.43},
        {nome:'Securlab Srl',valMensile:98.27},
      ],micro:[]},
     {id:'c_cantieri',nome:'Cantieri',tipo:'RIC',desc:'Centro di costo — Cantieri',incPct:0,resp:'',
-     parentId:'prod',natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:0},chiusa:true,fornitoreFisso:0,ricavoModo:'tecnico',micro:[]},
+     parentId:'prod',natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:0},chiusa:true,fornitoreFisso:0,ricavoModo:'percentuale',ricavoPct:8,ricavoManuale:0,micro:[]},
     {id:'c_rspp',nome:'RSPP',tipo:'RIC',desc:'Centro di costo — RSPP',incPct:0,resp:'',
-     parentId:'prod',natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:0},chiusa:true,fornitoreFisso:0,ricavoModo:'tecnico',micro:[]},
+     parentId:'prod',natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:0},chiusa:true,fornitoreFisso:0,ricavoModo:'percentuale',ricavoPct:12,ricavoManuale:0,micro:[]},
     {id:'c_verifiche_terra',nome:'Verifiche Terra',tipo:'RIC',desc:'Centro di costo — Verifiche Terra',incPct:0,resp:'',
      parentId:'prod',natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:0},chiusa:true,
-     fornitoreFisso:285.16,ricavoModo:'manuale',ricavoManuale:0,ricavoPct:0,
+     fornitoreFisso:285.16,ricavoModo:'percentuale',ricavoPct:2,ricavoManuale:0,
      fornitori:[
        {nome:'HT Srl',valMensile:264.33},
        {nome:'MGA Consulting Srls',valMensile:20.83},
      ],micro:[]},
     {id:'c_documenti',nome:'Documenti',tipo:'RIC',desc:'Centro di costo — Documenti',incPct:0,resp:'',
-     parentId:'prod',natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:0},chiusa:true,fornitoreFisso:0,ricavoModo:'tecnico',micro:[]},
+     parentId:'prod',natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:0},chiusa:true,fornitoreFisso:0,ricavoModo:'percentuale',ricavoPct:15,ricavoManuale:0,micro:[]},
 
   ],
   tasse:[
@@ -3096,6 +3163,23 @@ const CENTRI_IDS=['c_antincendio','c_ambiente','c_cantieri','c_rspp','c_verifich
 // Analisi assorbita in Ambiente, Estintori assorbito in Antincendio — i campi
 // di generato_tecnico non cambiano nome, solo il centro che li possiede.
 const CENTRO_TECNICO_FIELD={c_ambiente:'analisi',c_antincendio:'estintori',c_cantieri:'cantieri',c_rspp:'rspp',c_documenti:'documenti'};
+// Fase 7: unità produttive con ripartizione % del fatturato — i 6 centri di
+// costo + le 2 sotto-aree produttive con fornitori/personale dedicato (form,
+// sorvsan). La somma dei ricavoPct su queste 8 unità deve fare 100%: è la
+// STIMA di split del fatturato finché non si hanno i ricavi per servizio reali.
+const UNITA_PRODUTTIVE_RIC_PCT_IDS=[...CENTRI_IDS,'form','sorvsan'];
+// Default v7 di ripartizione %: ragionata su fissi reali + volume atteso per
+// unità (SPEC-v10 §D — nota "ragionata iniziale"). Somma = 100. Editabile.
+const RIC_PCT_DEFAULT_V7={
+  sorvsan:20,           // Volume alto (10 fornitori, 7.202 fissi, molte visite ricorrenti)
+  c_antincendio:18,     // Volume alto (estintori + manutenzioni ricorrenti, 3.466 fissi)
+  c_documenti:15,       // Ricorrente (DUVRI/POS mensili, no fisso esterno)
+  form:15,              // Core service (14 docenti, 1.704 fissi, alto valore/ora)
+  c_rspp:12,            // Nomine + retainer mensili, no fisso esterno
+  c_ambiente:10,        // Volume medio (Rifiuti/MUD/ADR, 3.970 fissi)
+  c_cantieri:8,         // POS/PSC/coordinamento, no fisso esterno
+  c_verifiche_terra:2,  // Piccolo (285 fissi, poche pratiche/mese)
+};
 
 // ══════════════════════════════════════════════════
 // MIGRAZIONE SCHEMA — SPEC-v10 Fase 6, §2 (root cause, non un cerotto)
@@ -3131,6 +3215,25 @@ const SCHEMA_MIGRATIONS=[
     if(!s.premi||typeof s.premi!=='object')s.premi={priorita:3,aree:{}};
     if(!s.premi.aree)s.premi.aree={};
     if(s.premi.priorita===undefined)s.premi.priorita=3;
+  }},
+  // Fase 7: ricavo per centro come % del fatturato di default (SPEC-v10 §D,
+  // punto 3 aperto). Applica il default RIC_PCT_DEFAULT_V7 solo dove NON c'è
+  // già un valore reale dell'utente — un ricavoManuale>0 o un ricavoPct>0
+  // esplicito sono override che restano intatti. Un ricavoModo 'tecnico'
+  // pre-v7 (default legacy) viene ribaltato a 'percentuale'; se l'utente lo
+  // rivuole 'tecnico', lo cambia dall'UI (che continua a offrirlo).
+  {to:7,migrate(s){
+    s.aree=s.aree||[];
+    s.aree.forEach(a=>{
+      const defPct=RIC_PCT_DEFAULT_V7[a.id];
+      if(defPct===undefined)return;
+      const hasManualeReale=(a.ricavoManuale||0)>0;
+      const hasPctReale=a.ricavoModo==='percentuale'&&(a.ricavoPct||0)>0;
+      if(hasManualeReale||hasPctReale)return;
+      a.ricavoModo='percentuale';
+      a.ricavoPct=defPct;
+      if(a.ricavoManuale===undefined)a.ricavoManuale=0;
+    });
   }},
 ];
 function migrateSchema(s){
@@ -3174,24 +3277,48 @@ const GENERATO_TEC_TERM={
 //  'manuale'     → valore € inserito a mano (dato preciso)
 //  'percentuale' → % dell'incassato del mese, editabile (coerente con la
 //                  ripartizione ore già esistente su altri centri)
+// Fase 7: default cambiato a 'percentuale' (era 'tecnico' fallback). Un
+// ricavoManuale > 0 = "dato reale conosciuto" e vince SEMPRE sulla stima %,
+// indipendentemente dal modo — così quando arriveranno i ricavi per servizio
+// veri basterà digitarli senza switch di modo (l'UI mostra un badge "REALE").
 function centroValore(centro){
-  const modo=centro.ricavoModo||(CENTRO_TECNICO_FIELD[centro.id]?'tecnico':'manuale');
+  if((centro.ricavoManuale||0)>0)return centro.ricavoManuale;
+  const modo=centro.ricavoModo||'percentuale';
   if(modo==='manuale')return centro.ricavoManuale||0;
-  if(modo==='percentuale')return((centro.ricavoPct||0)/100)*S.incassato;
-  const field=CENTRO_TECNICO_FIELD[centro.id];
-  if(!field)return 0;
-  const term=GENERATO_TEC_TERM[field];
-  return S.personale.reduce((s,p)=>s+(p.slots||[]).reduce((ss,sl)=>{
-    const g=sl.comp&&sl.comp.generato_tecnico;
-    return(g&&g.on)?ss+term(g):ss;
-  },0),0);
+  if(modo==='tecnico'){
+    const field=CENTRO_TECNICO_FIELD[centro.id];
+    if(!field)return 0;
+    const term=GENERATO_TEC_TERM[field];
+    return S.personale.reduce((s,p)=>s+(p.slots||[]).reduce((ss,sl)=>{
+      const g=sl.comp&&sl.comp.generato_tecnico;
+      return(g&&g.on)?ss+term(g):ss;
+    },0),0);
+  }
+  // 'percentuale' (default)
+  return((centro.ricavoPct||0)/100)*S.incassato;
 }
-// Somma delle % dei centri attualmente in modo 'percentuale' — informativo,
-// come il controllo già esistente sulla ripartizione ore (§6 richiesta B).
+// True se il valore visualizzato è una STIMA (%) invece che un dato reale
+// (manuale o tecnico da produzione). Usato dall'UI per il badge.
+function centroValoreEStima(centro){
+  if((centro.ricavoManuale||0)>0)return false;
+  const modo=centro.ricavoModo||'percentuale';
+  if(modo==='tecnico')return false;
+  if(modo==='manuale')return false;
+  return true;
+}
+// Somma delle % delle 8 unità produttive in modo 'percentuale' (SPEC-v10 §D
+// Fase 7). Deve fare 100% se tutte usano %: se una passa a manuale/tecnico,
+// il suo peso viene sottratto e la somma attesa scende di conseguenza.
 function checkRicavoPct(){
-  const centriPct=CENTRI_IDS.map(id=>S.aree.find(a=>a.id===id)).filter(c=>c&&(c.ricavoModo||'')==='percentuale');
+  const centriPct=UNITA_PRODUTTIVE_RIC_PCT_IDS
+    .map(id=>S.aree.find(a=>a.id===id))
+    .filter(c=>c&&(c.ricavoModo||'percentuale')==='percentuale'&&(c.ricavoManuale||0)===0);
   const sum=centriPct.reduce((s,c)=>s+(c.ricavoPct||0),0);
-  return{centri:centriPct,sum};
+  const nonPct=UNITA_PRODUTTIVE_RIC_PCT_IDS
+    .map(id=>S.aree.find(a=>a.id===id))
+    .filter(c=>c&&((c.ricavoModo||'percentuale')!=='percentuale'||(c.ricavoManuale||0)>0));
+  const attesa=100-nonPct.reduce((s,c)=>s+(RIC_PCT_DEFAULT_V7[c.id]||0),0);
+  return{centri:centriPct,sum,attesa,nonPct};
 }
 // Ore di un tecnico imputate a un centro: l'override manuale (dato reale)
 // vince sempre sulla ripartizione % (dato stimato) — SPEC-v10 §6 richiesta B.
@@ -3203,6 +3330,51 @@ function getOreCentro(p,centroId){
 }
 function centroCostoVar(centro){
   return S.personale.reduce((s,p)=>s+getOreCentro(p,centro.id)*(p.costoOrario||0),0);
+}
+// Fase 7: costo variabile per unità produttiva. Per i 6 centri usa la
+// ripartizione ore tecnici (centroCostoVar). Per form/sorvsan (che non
+// hanno ripartizioneCentri: hanno personale dedicato di area) somma il
+// costo mensile dei dipendenti con p.area === unità id.
+function unitaCostoVar(unita){
+  if(CENTRI_IDS.includes(unita.id))return centroCostoVar(unita);
+  return S.personale.reduce((s,p)=>{
+    if(p.area!==unita.id)return s;
+    const mens=p.costoAziendaMensile||((p.costoAziendaAnnuo||0)/12)||((p.costoOrario||0)*(p.oreMensili||0));
+    return s+mens;
+  },0);
+}
+function unitaMargine(unita){return centroValore(unita)-centroCostoFisso(unita)-unitaCostoVar(unita);}
+function unitaMarginePct(u){const v=centroValore(u);return v>0?(unitaMargine(u)/v)*100:null;}
+// Margine di contribuzione delle 8 unità produttive (SPEC-v10 §6): utile per
+// vedere quale unità tira e quale no, ma NON confrontabile col margine
+// aziendale reale — copre solo i costi imputabili ai centri, non gli
+// overhead. Usato per il rollup e le card di dettaglio, non per il semaforo.
+function margineContribuzioneCentri(){
+  const unita=UNITA_PRODUTTIVE_RIC_PCT_IDS.map(id=>S.aree.find(a=>a.id===id)).filter(Boolean);
+  const val=unita.reduce((s,u)=>s+centroValore(u),0);
+  const cost=unita.reduce((s,u)=>s+centroCostoFisso(u)+unitaCostoVar(u),0);
+  return{valore:val,costo:cost,margine:val-cost,marginePct:val>0?((val-cost)/val)*100:null};
+}
+// Margine aziendale stimato dal modello — questo SÌ confrontabile con
+// margineRealeYTD (23.41%): il foglio REALE è (fatturato − costi esterni),
+// che nel modello corrisponde a (incassato − fornitori centri − sistema
+// − prioritari − tasse), tutti costi verso l'esterno. Il costo del personale
+// interno (garantito) NON è "costo esterno" e va escluso dal confronto.
+function margineAziendaleStimato(){
+  const inc=S.incassato||0;
+  const unita=UNITA_PRODUTTIVE_RIC_PCT_IDS.map(id=>S.aree.find(a=>a.id===id)).filter(Boolean);
+  const fornitoriCentri=unita.reduce((s,u)=>s+centroCostoFisso(u),0);
+  const sistema=(S.sistemaFissi||[]).reduce((s,v)=>s+((v.val||0)),0);
+  const prioritari=(S.prioritari||[]).reduce((s,v)=>s+((v.val||0)),0);
+  const tasse=(S.tasse||[]).reduce((s,g)=>s+(g.voci||[]).reduce((ss,v)=>ss+(v.val||0),0),0);
+  const costiEsterni=fornitoriCentri+sistema+prioritari+tasse;
+  return{
+    valore:inc,
+    costiEsterni,
+    margine:inc-costiEsterni,
+    marginePct:inc>0?((inc-costiEsterni)/inc)*100:null,
+    dettaglio:{fornitoriCentri,sistema,prioritari,tasse},
+  };
 }
 // Se il centro/area ha un elenco fornitori dettagliato (§A seed costi centri),
 // quello è autoritativo — evita di tenere due numeri (totale + elenco) che
@@ -3973,7 +4145,7 @@ function renderOrg(){
   if(!S.personale||!S.personale.length){wrap.innerHTML='';return;}
   const f=flow(),inc=Math.max(f.inc,1);
 
-  const CW=148,CH=80,HGAP=20,VGAP=50,PAD=24;
+  const CW=160,CH=86,HGAP=32,VGAP=64,PAD=28;
   let nid=0;
   const allN=[],allE=[];
   function mkN(c){const n={id:nid++,w:CW,h:CH,children:[],...c};allN.push(n);return n;}
@@ -5041,64 +5213,107 @@ function renderProduzioneRiepilogo(tecs){
       </div>`;     }).join('')}   </div>`;
 }
 
-// ── CENTRI DI COSTO — margine per centro (SPEC-v10 §6, Fase 4) ───────────
+// ── CENTRI DI COSTO — margine per centro + ripartizione % (SPEC-v10 §6+§D, Fase 4/7) ───
 function renderCentriCostoPage(){
   const el=document.getElementById('centri-costo-cont');if(!el)return;
   const prodArea=S.aree.find(a=>a.id==='prod');
   const roll=prodArea?areaRollup(prodArea):null;
-  const centri=S.aree.filter(a=>CENTRI_IDS.includes(a.id));
+  // Fase 7: mostro tutte le 8 unità produttive (6 centri + form + sorvsan),
+  // così la STIMA % del fatturato è visibile in un colpo solo.
+  const unita=UNITA_PRODUTTIVE_RIC_PCT_IDS.map(id=>S.aree.find(a=>a.id===id)).filter(Boolean);
   const warn=checkRipartizioneCentri();
+  const pctCheck=checkRicavoPct();
+  const contrib=margineContribuzioneCentri();
+  const margAz=margineAziendaleStimato();
+  const margReale=S.margineRealeYTD||23.41;
+  const margDelta=margAz.marginePct!==null?Math.abs(margAz.marginePct-margReale):null;
+  const margColor=margDelta===null?'var(--ink3)':(margDelta<=5?'var(--green)':(margDelta<=10?'var(--amber)':'var(--red)'));
+  const margLabel=margDelta===null?'—':(margDelta<=5?'coerente col reale':(margDelta<=10?'da verificare':'divergente'));
   let html='';
+
+  // ── Banner Fase 7: KPI numeri chiave in evidenza (SPEC-v10 §D) ─────────
+  html+=`<div class="kpi-strip" style="margin-bottom:14px">
+    <div class="kpi-cell">
+      <div class="kpi-lbl">Somma % ripartizione</div>
+      <div class="kpi-val ${Math.abs(pctCheck.sum-pctCheck.attesa)<=0.5?'ok':'warn'}">${pctCheck.sum.toFixed(1)}%</div>
+      <div class="kpi-sub">attesa ${pctCheck.attesa.toFixed(0)}%${pctCheck.nonPct.length?' — '+pctCheck.nonPct.length+' unità fuori %':''}</div>
+    </div>
+    <div class="kpi-cell">
+      <div class="kpi-lbl">Contribuzione centri</div>
+      <div class="kpi-val ${contrib.margine>=0?'ok':'err'}">${contrib.marginePct!==null?contrib.marginePct.toFixed(1)+'%':'—'}</div>
+      <div class="kpi-sub">valore ${fmt(contrib.valore)} − costi centri ${fmt(contrib.costo)}</div>
+    </div>
+    <div class="kpi-cell">
+      <div class="kpi-lbl">Margine aziendale (modello)</div>
+      <div class="kpi-val" style="color:${margColor}">${margAz.marginePct!==null?margAz.marginePct.toFixed(1)+'%':'—'}</div>
+      <div class="kpi-sub">reale YTD ${margReale.toFixed(1)}% — <strong style="color:${margColor}">${margLabel}</strong>${margDelta!==null?' (Δ '+margDelta.toFixed(1)+' pt)':''}</div>
+    </div>
+  </div>`;
+
   if(roll){
-    html+=`<div style="background:var(--card);border:1px solid var(--lift);border-radius:var(--rl);padding:14px 16px;margin-bottom:14px">
-      <div style="font-size:12px;font-weight:600;margin-bottom:10px">Rollup Produzione (§5.1) — ${roll.nFigli} centri</div>
+    html+=`<div class="pane" style="margin-bottom:14px">
+      <div class="pane-title">Rollup Produzione (§5.1) — ${roll.nFigli} centri</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px">
-        <div><div style="font-size:10px;color:var(--ink3);text-transform:uppercase">Valore prodotto</div><div class="mono" style="font-size:16px;font-weight:300">${fmt(roll.valore)}</div></div>
-        <div><div style="font-size:10px;color:var(--ink3);text-transform:uppercase">Costo (fisso+var)</div><div class="mono" style="font-size:16px;font-weight:300">${fmt(roll.costo)}</div></div>
-        <div><div style="font-size:10px;color:var(--ink3);text-transform:uppercase">Margine</div><div class="mono" style="font-size:16px;font-weight:300;color:${roll.margine>=0?'var(--green)':'var(--red)'}">${fmt(roll.margine)}</div></div>
-        <div><div style="font-size:10px;color:var(--ink3);text-transform:uppercase">Margine %</div><div class="mono" style="font-size:16px;font-weight:300">${roll.marginePct!==null?roll.marginePct.toFixed(1)+'%':'—'}</div></div>
-        <div><div style="font-size:10px;color:var(--ink3);text-transform:uppercase">Peso su SSI</div><div class="mono" style="font-size:16px;font-weight:300">${roll.pesoPct.toFixed(1)}% <span style="font-size:10px;color:var(--ink3)">(${fmt(roll.costo)})</span></div></div>
+        <div><div class="kpi-lbl">Valore prodotto</div><div class="mono" style="font-size:16px;font-weight:300">${fmt(roll.valore)}</div></div>
+        <div><div class="kpi-lbl">Costo (fisso+var)</div><div class="mono" style="font-size:16px;font-weight:300">${fmt(roll.costo)}</div></div>
+        <div><div class="kpi-lbl">Margine</div><div class="mono" style="font-size:16px;font-weight:300;color:${roll.margine>=0?'var(--green)':'var(--red)'}">${fmt(roll.margine)}</div></div>
+        <div><div class="kpi-lbl">Margine %</div><div class="mono" style="font-size:16px;font-weight:300">${roll.marginePct!==null?roll.marginePct.toFixed(1)+'%':'—'}</div></div>
+        <div><div class="kpi-lbl">Peso su SSI</div><div class="mono" style="font-size:16px;font-weight:300">${roll.pesoPct.toFixed(1)}% <span style="font-size:10px;color:var(--ink3)">(${fmt(roll.costo)})</span></div></div>
       </div>
     </div>`;
   }
   if(warn.length){
-    html+=`<div style="background:#fff3cd;border:1px solid #e8d68a;border-radius:var(--rl);padding:10px 14px;margin-bottom:14px;font-size:11px;color:#6b5400">
+    html+=`<div class="alert warn" style="margin-bottom:14px">
       ⚠️ ${warn.length} incoerenza/e nella ripartizione ore tecnici:<br>${warn.map(w=>'• '+w).join('<br>')}
     </div>`;
   }
-  const pctCheck=checkRicavoPct();
-  if(pctCheck.centri.length){
-    html+=`<div style="background:var(--sheet);border:1px solid var(--lift);border-radius:var(--rl);padding:8px 14px;margin-bottom:14px;font-size:11px;color:var(--ink3)">
-      Centri in modo "percentuale": somma ${pctCheck.sum.toFixed(1)}% dell'incassato ${Math.abs(pctCheck.sum-100)>0.5?'<strong style="color:var(--amber)">(non fa 100%, ok se altri centri usano un altro modo)</strong>':''}
+  if(Math.abs(pctCheck.sum-pctCheck.attesa)>0.5&&pctCheck.centri.length){
+    html+=`<div class="alert info" style="margin-bottom:14px">
+      La somma delle % non fa ${pctCheck.attesa.toFixed(0)}% attesi. <button class="btn xs" style="margin-left:8px" onclick="normalizzaRicavoPct()">Normalizza a ${pctCheck.attesa.toFixed(0)}%</button>
     </div>`;
   }
-  html+=`<div style="max-height:700px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
-    <thead><tr style="text-align:left;color:var(--ink3);font-size:10px;text-transform:uppercase">
-      <th style="padding:5px 8px">Centro</th><th style="padding:5px 8px">Ricavo — modo</th><th style="padding:5px 8px" class="mono">Valore €</th><th style="padding:5px 8px">Fornitore fisso €</th><th style="padding:5px 8px" class="mono">Costo var €</th><th style="padding:5px 8px" class="mono">Margine €</th><th style="padding:5px 8px" class="mono">Margine %</th>
+
+  html+=`<div class="pane"><div class="pane-title" style="display:flex;align-items:center;gap:10px">
+      Ripartizione ricavo per unità produttiva
+      <span class="badge b-info" title="STIMA: valori calcolati come % del fatturato del mese. Sostituibili con dato reale (manuale) quando arrivano i ricavi per servizio.">STIMA finché non arrivano i ricavi per servizio</span>
+    </div>
+    <div style="overflow:auto"><table class="tbl-clean" style="width:100%">
+    <thead><tr>
+      <th>Unità</th><th>Modo</th><th style="text-align:right">%</th>
+      <th style="text-align:right">Manuale € (override)</th>
+      <th class="mono" style="text-align:right">Valore €</th>
+      <th class="mono" style="text-align:right">Fisso €</th>
+      <th class="mono" style="text-align:right">Var €</th>
+      <th class="mono" style="text-align:right">Margine €</th>
+      <th class="mono" style="text-align:right">Margine %</th>
     </tr></thead>
     <tbody>
-    ${centri.map((c)=>{
+    ${unita.map((c)=>{
       const ci=S.aree.indexOf(c);
-      const v=centroValore(c),cf=centroCostoFisso(c),cv=centroCostoVar(c),m=centroMargine(c),mp=centroMarginePct(c);
+      const v=centroValore(c),cf=centroCostoFisso(c),cv=unitaCostoVar(c),m=unitaMargine(c),mp=unitaMarginePct(c);
       const hasTecnico=!!CENTRO_TECNICO_FIELD[c.id];
-      const modo=c.ricavoModo||(hasTecnico?'tecnico':'manuale');
-      const modoSelect=`<select class="inp" style="width:auto;display:inline-block;font-size:11px"
+      const modo=c.ricavoModo||'percentuale';
+      const isStima=centroValoreEStima(c);
+      const badge=(c.ricavoManuale||0)>0
+        ?'<span class="badge b-ok" title="Dato reale inserito — vince sempre sulla %">REALE</span>'
+        :(modo==='tecnico'?'<span class="badge b-info" title="Da produzione tecnici">TECNICO</span>'
+        :isStima?'<span class="badge b-warn" title="Stima da % fatturato">STIMA</span>':'');
+      const modoSelect=`<select class="inp" style="width:auto;font-size:11px"
           onchange="S.aree[${ci}].ricavoModo=this.value;renderAll()">
-          ${hasTecnico?`<option value="tecnico" ${modo==='tecnico'?'selected':''}>tecnico</option>`:''}
+          <option value="percentuale" ${modo==='percentuale'?'selected':''}>% fatturato</option>
           <option value="manuale" ${modo==='manuale'?'selected':''}>manuale</option>
-          <option value="percentuale" ${modo==='percentuale'?'selected':''}>% incassato</option>
+          ${hasTecnico?`<option value="tecnico" ${modo==='tecnico'?'selected':''}>tecnico</option>`:''}
         </select>`;
-      const modoInput=modo==='manuale'
-        ?`<input type="number" value="${c.ricavoManuale||0}" class="inp n" style="width:80px;margin-left:4px"
-            onblur="S.aree[${ci}].ricavoManuale=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13)this.blur()">`
-        :modo==='percentuale'
-        ?`<input type="number" value="${c.ricavoPct||0}" step="0.1" class="inp n" style="width:60px;margin-left:4px"
-            onblur="S.aree[${ci}].ricavoPct=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13)this.blur()">%`
-        :'';
+      const pctCell=modo==='percentuale'
+        ?`<input type="number" value="${c.ricavoPct||0}" step="0.5" class="inp n" style="width:64px"
+            onblur="S.aree[${ci}].ricavoPct=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13)this.blur()">`
+        :`<span style="color:var(--ink3)">—</span>`;
+      const manCell=`<input type="number" value="${c.ricavoManuale||0}" step="10" class="inp n" style="width:100px"
+            onblur="S.aree[${ci}].ricavoManuale=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13)this.blur()"
+            title="Un valore > 0 vince sempre sulla % (override reale)">`;
       const fornitori=c.fornitori||[];
       const fiDetail=fornitori.length
-        ?`<tr style="border-top:none">
-            <td colspan="7" style="padding:0 8px 8px 8px">
+        ?`<tr class="detail-row"><td colspan="9" style="padding:0 8px 8px 8px">
               <details><summary style="font-size:10px;color:var(--ink3);cursor:pointer">${fornitori.length} fornitori — dettaglio</summary>
                 <table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:4px">
                   ${fornitori.map((fo,fi)=>`<tr>
@@ -5111,22 +5326,48 @@ function renderCentriCostoPage(){
                 </table>
                 <button class="btn xs" style="margin-top:4px" onclick="S.aree[${ci}].fornitori=S.aree[${ci}].fornitori||[];S.aree[${ci}].fornitori.push({nome:'Nuovo fornitore',valMensile:0});renderAll()">+ Fornitore</button>
               </details>
-            </td>
-          </tr>`
-        :`<tr><td colspan="7" style="padding:0 8px 8px 8px"><button class="btn xs" onclick="S.aree[${ci}].fornitori=S.aree[${ci}].fornitori||[];S.aree[${ci}].fornitori.push({nome:'Nuovo fornitore',valMensile:0});renderAll()">+ Fornitore</button></td></tr>`;
-      return`<tr style="border-top:1px solid var(--lift)">
-        <td style="padding:5px 8px;font-weight:600">${c.nome}</td>
-        <td style="padding:5px 8px;white-space:nowrap">${modoSelect}${modoInput}</td>
-        <td style="padding:5px 8px" class="mono">${fmt(v)}</td>
-        <td style="padding:5px 8px" class="mono">${fmt(cf)}</td>
-        <td style="padding:5px 8px" class="mono">${fmt(cv)}</td>
-        <td style="padding:5px 8px;color:${m>=0?'var(--green)':'var(--red)'}" class="mono">${fmt(m)}</td>
-        <td style="padding:5px 8px" class="mono">${mp!==null?mp.toFixed(1)+'%':'—'}</td>
+            </td></tr>`
+        :'';
+      return`<tr>
+        <td style="font-weight:600">${c.nome} ${badge}</td>
+        <td style="white-space:nowrap">${modoSelect}</td>
+        <td style="text-align:right">${pctCell}</td>
+        <td style="text-align:right">${manCell}</td>
+        <td class="mono" style="text-align:right">${fmt(v)}</td>
+        <td class="mono" style="text-align:right">${fmt(cf)}</td>
+        <td class="mono" style="text-align:right">${fmt(cv)}</td>
+        <td class="mono" style="text-align:right;color:${m>=0?'var(--green)':'var(--red)'}">${fmt(m)}</td>
+        <td class="mono" style="text-align:right">${mp!==null?mp.toFixed(1)+'%':'—'}</td>
       </tr>${fiDetail}`;
     }).join('')}
     </tbody>
-  </table></div>`;
+    <tfoot><tr class="tbl-foot">
+      <td><strong>Totale 8 unità (contribuzione)</strong></td><td></td>
+      <td style="text-align:right"><strong>${pctCheck.sum.toFixed(1)}%</strong></td>
+      <td></td>
+      <td class="mono" style="text-align:right"><strong>${fmt(contrib.valore)}</strong></td>
+      <td class="mono" style="text-align:right"><strong>${fmt(unita.reduce((s,u)=>s+centroCostoFisso(u),0))}</strong></td>
+      <td class="mono" style="text-align:right"><strong>${fmt(unita.reduce((s,u)=>s+unitaCostoVar(u),0))}</strong></td>
+      <td class="mono" style="text-align:right;color:${contrib.margine>=0?'var(--green)':'var(--red)'}"><strong>${fmt(contrib.margine)}</strong></td>
+      <td class="mono" style="text-align:right;color:${contrib.margine>=0?'var(--green)':'var(--red)'}"><strong>${contrib.marginePct!==null?contrib.marginePct.toFixed(1)+'%':'—'}</strong></td>
+    </tr></tfoot>
+  </table></div></div>`;
   el.innerHTML=html;
+}
+// Normalizza le % dei centri in modo 'percentuale' così sommino ad "attesa"
+// (100 meno i pesi delle unità switchate a manuale/tecnico). Preserva i
+// rapporti relativi tra le unità che restano in %.
+function normalizzaRicavoPct(){
+  const chk=checkRicavoPct();
+  if(!chk.centri.length)return;
+  const cur=chk.sum||chk.centri.reduce((s,c)=>s+(RIC_PCT_DEFAULT_V7[c.id]||0),0)||1;
+  const scale=chk.attesa/cur;
+  chk.centri.forEach(c=>{c.ricavoPct=Math.round(((c.ricavoPct||RIC_PCT_DEFAULT_V7[c.id]||0)*scale)*10)/10;});
+  // Aggiusto la piccola deriva di arrotondamento sull'ultima entry
+  const sum2=chk.centri.reduce((s,c)=>s+(c.ricavoPct||0),0);
+  const delta=chk.attesa-sum2;
+  if(chk.centri.length)chk.centri[chk.centri.length-1].ricavoPct=Math.round((chk.centri[chk.centri.length-1].ricavoPct+delta)*10)/10;
+  saveLocal();renderAll();
 }
 
 function renderProdSezioniExtra(){
@@ -5149,37 +5390,32 @@ function renderProdSezioniExtra(){
 
   wrap.innerHTML='';
 
-  // ── RICAVO PER CENTRO (manuale / % — SPEC-v10 §D, Fase 6) ───────────────
-  // Il fatturato nei file sorgente non è mai spezzato per servizio: oltre al
-  // valore "tecnico" (da generato_tecnico, dove esiste un campo collegato) si
-  // può scegliere per ogni centro un valore manuale preciso o una % del
-  // fatturato del mese — stessa logica di CRUD già usata per fornitori/KPI.
-  mkCollapsible('ricavo','💹','Ricavo per centro (manuale / %)','#0F4499',body=>{
-    const centri=S.aree.filter(a=>CENTRI_IDS.includes(a.id));
+  // ── RICAVO PER CENTRO (Fase 7 — % di default, 8 unità produttive) ─────
+  // % del fatturato è il default; un ricavoManuale > 0 è il "dato reale"
+  // che vince sempre sulla stima. La stessa tabella completa è sulla
+  // pagina Centri di costo; qui è un accesso rapido dalla Produzione.
+  mkCollapsible('ricavo','💹','Ripartizione ricavo per unità (STIMA)','#0F4499',body=>{
+    const unita=UNITA_PRODUTTIVE_RIC_PCT_IDS.map(id=>S.aree.find(a=>a.id===id)).filter(Boolean);
     const pctCheck=checkRicavoPct();
-    body.innerHTML=`<div style="font-size:11px;color:var(--ink3);margin-bottom:10px">Alternativa al calcolo da produzione tecnici: valore manuale preciso, oppure % del fatturato del mese (${fmt(S.incassato)}) — editabile per centro, switchabile in ogni momento senza perdere i dati dell'altro modo.</div>
-      ${pctCheck.centri.length?`<div style="font-size:11px;color:var(--ink3);margin-bottom:8px">Centri in % oggi: somma ${pctCheck.sum.toFixed(1)}%</div>`:''}
-      <table style="width:100%;border-collapse:collapse;font-size:12px">
-        <thead><tr style="background:var(--ink);color:#fff"><th style="padding:7px 10px;text-align:left">Centro</th><th style="padding:7px 6px;text-align:left">Modo</th><th style="padding:7px 6px;text-align:right">Valore</th><th style="padding:7px 6px;text-align:right">Ricavo calcolato €</th></tr></thead>
-        <tbody>${centri.map((c)=>{
+    body.innerHTML=`<div style="font-size:11px;color:var(--ink3);margin-bottom:10px">Ripartizione % del fatturato del mese (${fmt(S.incassato)}) tra le 8 unità produttive — STIMA finché non arrivano i ricavi per servizio. Un valore in "Manuale €" > 0 sostituisce automaticamente la stima.</div>
+      <div style="font-size:11px;color:${Math.abs(pctCheck.sum-pctCheck.attesa)<=0.5?'var(--green)':'var(--amber)'};margin-bottom:8px">Somma % attuale: ${pctCheck.sum.toFixed(1)}% / attesa ${pctCheck.attesa.toFixed(0)}%</div>
+      <table class="tbl-clean" style="width:100%">
+        <thead><tr><th>Unità</th><th>Modo</th><th style="text-align:right">%</th><th style="text-align:right">Manuale €</th><th style="text-align:right" class="mono">Valore €</th></tr></thead>
+        <tbody>${unita.map((c)=>{
           const ci=S.aree.indexOf(c);
           const hasTecnico=!!CENTRO_TECNICO_FIELD[c.id];
-          const modo=c.ricavoModo||(hasTecnico?'tecnico':'manuale');
+          const modo=c.ricavoModo||'percentuale';
+          const badge=(c.ricavoManuale||0)>0?'<span class="badge b-ok">REALE</span>':(modo==='tecnico'?'<span class="badge b-info">TECNICO</span>':'<span class="badge b-warn">STIMA</span>');
           return`<tr>
-            <td style="padding:6px 10px;border-bottom:1px solid var(--lift);font-weight:500">${c.nome}</td>
-            <td style="padding:4px 6px;border-bottom:1px solid var(--lift)">
-              <select class="inp" style="width:auto" onchange="S.aree[${ci}].ricavoModo=this.value;renderAll()">
-                ${hasTecnico?`<option value="tecnico" ${modo==='tecnico'?'selected':''}>tecnico</option>`:''}
-                <option value="manuale" ${modo==='manuale'?'selected':''}>manuale</option>
+            <td style="font-weight:500">${c.nome} ${badge}</td>
+            <td><select class="inp" style="width:auto" onchange="S.aree[${ci}].ricavoModo=this.value;renderAll()">
                 <option value="percentuale" ${modo==='percentuale'?'selected':''}>% fatturato</option>
-              </select>
-            </td>
-            <td style="padding:4px 6px;border-bottom:1px solid var(--lift);text-align:right">
-              ${modo==='manuale'?`<input type="number" value="${c.ricavoManuale||0}" class="inp n" style="width:90px" onblur="S.aree[${ci}].ricavoManuale=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13)this.blur()">`
-                :modo==='percentuale'?`<input type="number" value="${c.ricavoPct||0}" step="0.1" class="inp n" style="width:70px" onblur="S.aree[${ci}].ricavoPct=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13)this.blur()">%`
-                :'<span style="color:var(--ink3)">da produzione tecnici</span>'}
-            </td>
-            <td style="padding:6px 10px;border-bottom:1px solid var(--lift);text-align:right" class="mono">${fmt(centroValore(c))}</td>
+                <option value="manuale" ${modo==='manuale'?'selected':''}>manuale</option>
+                ${hasTecnico?`<option value="tecnico" ${modo==='tecnico'?'selected':''}>tecnico</option>`:''}
+              </select></td>
+            <td style="text-align:right">${modo==='percentuale'?`<input type="number" value="${c.ricavoPct||0}" step="0.5" class="inp n" style="width:64px" onblur="S.aree[${ci}].ricavoPct=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13)this.blur()">`:'<span style="color:var(--ink3)">—</span>'}</td>
+            <td style="text-align:right"><input type="number" value="${c.ricavoManuale||0}" step="10" class="inp n" style="width:90px" title="Un valore > 0 vince sulla %" onblur="S.aree[${ci}].ricavoManuale=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13)this.blur()"></td>
+            <td style="text-align:right" class="mono">${fmt(centroValore(c))}</td>
           </tr>`;
         }).join('')}</tbody>
       </table>`;
@@ -6801,19 +7037,32 @@ function renderSemaforo(f){
   const mp=margineModelloPct(f);
   const bench=margineRealeBenchmark();
   const divergeMolto=mp!==null&&Math.abs(mp-bench.pct)>5;
+  const liq=f.liquidita;
+  const utili=f.utili;
+  const utiliOk=utili>=0;
   el.innerHTML=`
-    <div class="mc ${cur.cls}" style="grid-column:1/-1;background:${cur.bg};border-color:${cur.bd}">
+    <div class="mc ${cur.cls} hero" style="grid-column:1/-1;background:${cur.bg};border-color:${cur.bd}">
       <div class="ml">Semaforo sostenibilità — incassato ${fmt(f.inc)}</div>
       <div class="mv" style="color:${cur.c}">${cur.label}</div>
+    </div>
+    <div class="mc primary ${liq>=0?'ok':'err'}">
+      <div class="ml">Liquidità disponibile</div>
+      <div class="mv">${fmt(liq)}</div>
+      <div class="ms">dopo GRFM, prioritari e garantito</div>
+    </div>
+    <div class="mc primary ${utiliOk?'ok':'err'}">
+      <div class="ml">Utili del mese</div>
+      <div class="mv">${fmt(utili)}</div>
+      <div class="ms">${utiliOk?'liquidità netta dopo budget aree e premi':'in perdita rispetto alla coperta'}</div>
+    </div>
+    <div class="mc primary ${mp!==null&&mp>=0?'ok':'err'}">
+      <div class="ml">Margine modello</div>
+      <div class="mv">${mp!==null?mp.toFixed(1)+'%':'—'}</div>
+      <div class="ms">reale (${bench.label}) ${bench.pct.toFixed(1)}% ${divergeMolto?`— <strong style="color:var(--red)">Δ &gt;5 pt</strong>`:''}</div>
     </div>
     ${row('Z — Prioritari + Garantito',s.Z,s.deltaZ)}
     ${row('Y — Z + Budget fisso aree',s.Y,s.deltaY)}
     ${row('X — Y + Budget variabile + Accantonamenti',s.X,s.deltaX)}
-    <div class="mc ${divergeMolto?'err':'ok'}" style="grid-column:1/-1">
-      <div class="ml">Margine modello (utili/incassato) vs reale — benchmark Controllo di gestione (§C)</div>
-      <div class="mv">Modello: <strong class="mono">${mp!==null?mp.toFixed(1)+'%':'—'}</strong> · Reale (${bench.label}): <strong class="mono">${bench.pct.toFixed(1)}%</strong></div>
-      ${divergeMolto?`<div class="ms" style="color:var(--red)">⚠ Divergenza &gt;5 punti — segnale che il modello va rivisto</div>`:''}
-    </div>
   `;
 }
 function renderDash(f){
