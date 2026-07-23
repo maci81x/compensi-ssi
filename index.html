@@ -2071,12 +2071,26 @@ function classifyPFRow(v){
 // ── RILEVAMENTO DOPPIONI (Fase 2, richiesta esplicita) ────────────────────
 // Confronta una riga PF non esclusa con le voci Sistema già presenti "a mano"
 // (non taggate areaPF da un import precedente) per nome simile + importo vicino.
+// Fase 10 (§I): chiave stabile per identificare la stessa voce del PF in
+// import successivi — sopravvive a rename e cambio di val purché area
+// macro + categoria + descrizione originale corrispondano.
+function pfImportKey(v){
+  return 'PF/'+normalizeStr((v.areaPF||'')+'|'+(v.cat||'')+'|'+(v.voce||''));
+}
 function findPossibileDoppione(v){
   const nv=normalizeStr(v.voce);
-  if(!nv)return null; // descrizione vuota: nessun confronto testuale affidabile
   const mensile=v.annuo/12;
+  // Match 1: se una voce esistente ha lo stesso importKey (Fase 10), è
+  // sicuramente la stessa riga di un import precedente — anche se l'utente
+  // l'ha ribattezzata a mano nel frattempo. Priorità massima.
+  const key=pfImportKey(v);
+  const byKey=(S.sistemaFissi||[]).find(sf=>sf.importKey&&sf.importKey===key);
+  if(byKey)return byKey;
+  if(!nv)return null; // descrizione vuota: nessun confronto testuale affidabile
+  // Match 2 (fallback): voce manuale con nome simile e importo vicino ±20%.
+  // Ora considero anche voci già importate (Fase 10: prima erano escluse e
+  // portava a duplicati al re-import).
   return (S.sistemaFissi||[]).find(sf=>{
-    if(sf.areaPF)return false; // già da import, non è un doppione "a mano"
     const nsf=normalizeStr(sf.nome);
     if(!nsf)return false;
     const simile=nsf.includes(nv)||nv.includes(nsf)||condivideToken(sf.nome,v.voce);
@@ -2093,16 +2107,29 @@ function applyImport(){
   if(pendingImport.pf){
     S.sistemaFissi=S.sistemaFissi||[];
     S.prioritari=S.prioritari||[];
+    let nPreserved=0;
     pendingImport.pf.filter(v=>!v.escludi).forEach(v=>{
+      const key=pfImportKey(v);
+      const monthly=Math.round((v.annuo/12)*100)/100;
       if(v.mergeInto){
-        // "Unisci": aggiorna la voce Sistema esistente invece di crearne una nuova
+        // "Unisci": aggiorna la voce Sistema esistente. Fase 10 (§I): rispetta
+        // gli override manuali dell'utente — se ha modificato natura/areaId
+        // dall'UI Sistema (userEdited flag), NON li sovrascrive dall'import.
         const sf=S.sistemaFissi.find(x=>x.id===v.mergeInto);
-        if(sf){sf.val=Math.round((v.annuo/12)*100)/100;sf.areaPF=v.areaPF;sf.natura=v.natura;nMerge++;return;}
+        if(sf){
+          const ue=sf.userEdited||{};
+          sf.val=monthly;
+          if(!ue.areaPF)sf.areaPF=v.areaPF;
+          if(!ue.natura){sf.natura=v.natura;}else nPreserved++;
+          sf.importKey=key;
+          nMerge++;
+          return;
+        }
       }
       const cls=classifyPFRow(v);
       if(cls.dest==='prioritari'){
         S.prioritari.push({id:'pr_'+Math.random().toString(36).slice(2,9),
-          nome:v.voce||v.cat||v.areaPF,val:Math.round((v.annuo/12)*100)/100,tipo:cls.tipo,priorita:1});
+          nome:v.voce||v.cat||v.areaPF,val:monthly,tipo:cls.tipo,priorita:1});
         nPrio++;
       }else{
         S.sistemaFissi.push({
@@ -2112,11 +2139,17 @@ function applyImport(){
           areaPF:v.areaPF,
           natura:v.natura,
           areaId:cls.areaId,
-          val:Math.round((v.annuo/12)*100)/100
+          val:monthly,
+          importKey:key
         });
         n++;
       }
     });
+    if(nPreserved>0){
+      // Non silenziare: se ci sono conflitti tra import e override manuali,
+      // l'utente deve saperlo per decidere se resettare qualche flag.
+      console.log('[applyImport] '+nPreserved+' voci con override utente preservate (natura/area non sovrascritte)');
+    }
   }
   if(pendingImport.previsionale){
     S.importPrevisionale=pendingImport.previsionale.filter(v=>!v.escludi);
@@ -2138,7 +2171,7 @@ function applyImport(){
   renderAll();
   scheduleSync();
   let msg='✅ Import applicato: '+n+' voci in Sistema (ora '+sfCountAfter+' totali), '+nPrio+' in Prioritari (ora '+prioCountAfter+' totali)';
-  if(nMerge)msg+=', '+nMerge+' unite';
+  if(nMerge)msg+=', '+nMerge+' unite (dedup Fase 10)';
   if(dipMatch)msg+=' — dipendenti: '+dipMatch.matched+'/'+(dipMatch.matched+dipMatch.unmatched.length)+' agganciati'+(dipMatch.unmatched.length?' (non trovati: '+dipMatch.unmatched.join(', ')+')':'');
   notify(msg);
 }
@@ -2223,7 +2256,7 @@ const CAT_ICONS={affitto:'🏢',utenze:'⚡',software:'💻',assicurazione:'🛡
 // stato non ha). Vedi SCHEMA_MIGRATIONS più sotto per la logica di
 // migrazione — root cause del problema "una scheda vecchia sovrascrive dati
 // più recenti", non un cerotto sul sintomo.
-const CURRENT_SCHEMA_VERSION=8;
+const CURRENT_SCHEMA_VERSION=9;
 
 const DEF={
   schemaVersion:CURRENT_SCHEMA_VERSION,
@@ -3364,6 +3397,30 @@ const SCHEMA_MIGRATIONS=[
   {to:8,migrate(s){
     if(s.altriCostiOperativi===undefined)s.altriCostiOperativi=15000;
   }},
+  // Fase 10 (§H): KPI MACRO per area. Aggiunge a.macro = {nome, modo, target,
+  // effettivo, pesoMicro} a ogni area se assente. Default modo='auto' →
+  // areaMacroKpi torna la media dei micro come prima della Fase 10, quindi
+  // non cambia comportamento fino a che l'utente non passa a 'manuale' o
+  // regola i pesi. Migrazione idempotente e non distruttiva.
+  {to:9,migrate(s){
+    (s.aree||[]).forEach(a=>{
+      if(!a.macro){
+        a.macro={
+          nome:'KPI '+a.nome,
+          modo:'auto',
+          target:100,
+          effettivo:0,
+          pesoMicro:{},
+        };
+      } else {
+        if(a.macro.modo===undefined)a.macro.modo='auto';
+        if(a.macro.target===undefined)a.macro.target=100;
+        if(a.macro.effettivo===undefined)a.macro.effettivo=0;
+        if(!a.macro.pesoMicro)a.macro.pesoMicro={};
+        if(!a.macro.nome)a.macro.nome='KPI '+a.nome;
+      }
+    });
+  }},
 ];
 function migrateSchema(s){
   let v=s.schemaVersion||0;
@@ -3371,6 +3428,14 @@ function migrateSchema(s){
   s.schemaVersion=Math.max(v,CURRENT_SCHEMA_VERSION);
   return s;
 }
+// Fase 10: assicura che anche un fresh boot (senza localStorage/cloud, S =
+// clone di DEF) passi per tutti gli step di migrazione — così i campi
+// aggiunti nelle migrazioni (es. a.macro per il KPI macro area, §H) sono
+// presenti su ogni area anche senza aver mai importato uno stato esterno.
+// Forzo v=0 così le migrazioni cumulative additive girano (sono tutte
+// idempotenti — aggiungono solo campi mancanti, non toccano valori esistenti).
+S.schemaVersion=0;
+migrateSchema(S);
 // Applica uno stato in arrivo (cloud, realtime) con controllo di versione: se
 // più vecchio di quello corrente, lo migra e chiede conferma prima di
 // sovrascrivere — una scheda dimenticata aperta non deve più poter
@@ -3645,10 +3710,34 @@ function areaFissiVariabili(area,includeChildren){
 
 // KPI helpers
 function kpiM(m){return(m.kt&&m.kt>0)?Math.round((m.ke/m.kt)*100):null;}
-function kpiA(a){
-  const vs=a.micro.map(kpiM).filter(v=>v!==null);
-  return vs.length?Math.round(vs.reduce((s,v)=>s+v,0)/vs.length):null;
+// Fase 10 (§H): KPI MACRO per area — indicatore sintetico target/effettivo che
+// fa da CANCELLO per i premi area. Due modi:
+//  • auto:    media (pesata) dei micro-KPI. Peso di default 1 per ogni micro,
+//             sovrascrivibile via a.macro.pesoMicro[microIdx].
+//  • manuale: valore effettivo/target digitato direttamente (utile quando il
+//             capo area valuta il risultato mensile in modo qualitativo/
+//             sintetico, indipendentemente dai micro-KPI di dettaglio).
+// Restituisce sempre il valore % (100 = target raggiunto, ≥soglia S.soglia
+// sblocca il premio via bonusOk).
+function areaMacroKpi(a){
+  const macro=a.macro;
+  if(macro&&macro.modo==='manuale'){
+    const t=macro.target||0,e=macro.effettivo||0;
+    return t>0?Math.round((e/t)*100):null;
+  }
+  // Modo 'auto' (default): media pesata dei micro-KPI. Se nessun peso
+  // esplicito, tutti gli micro pesano 1 (= media aritmetica classica).
+  const pesi=(macro&&macro.pesoMicro)||{};
+  const items=(a.micro||[]).map((m,mi)=>({val:kpiM(m),w:(pesi[mi]!==undefined?pesi[mi]:1)}))
+    .filter(x=>x.val!==null&&x.w>0);
+  if(!items.length)return null;
+  const num=items.reduce((s,x)=>s+x.val*x.w,0);
+  const den=items.reduce((s,x)=>s+x.w,0);
+  return den>0?Math.round(num/den):null;
 }
+// kpiA resta il nome storico; ora è wrapper su areaMacroKpi così le viste
+// esistenti (waterfall, gate premi, semaforo bonus) prendono il macro unico.
+function kpiA(a){return areaMacroKpi(a);}
 function bonusOk(k){return k!==null&&k>=S.soglia;}
 
 // ══════════════════════════════════════════════════
@@ -4257,9 +4346,41 @@ function renderStep5(){
   el.innerHTML='';
   S.aree.forEach((a,ai)=>{
     const ka=kpiA(a);const ok=bonusOk(ka);
+    // Fase 10 (§H): pannello KPI MACRO per l'area — target/effettivo con modo
+    // auto (media pesata dei micro) o manuale (valore digitato). Fa da
+    // cancello per i premi via bonusOk(kpiA(a)).
+    const macro=a.macro||{nome:'KPI '+a.nome,modo:'auto',target:100,effettivo:0,pesoMicro:{}};
+    if(!a.macro)a.macro=macro; // idempotente
+    const isManuale=macro.modo==='manuale';
+    const macroPanel=`<div class="pane" style="margin-bottom:10px;padding:12px 14px;background:var(--sheet)">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+        <span style="font-size:11px;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em;font-weight:600">KPI macro area</span>
+        <input value="${(macro.nome||'').replace(/"/g,'&quot;')}" style="flex:1;min-width:150px;border:1px solid var(--lift);background:var(--card);padding:4px 8px;border-radius:var(--r);font-size:12px;font-weight:600"
+          onblur="S.aree[${ai}].macro.nome=this.value;saveLocal()" onkeydown="if(event.keyCode===13)this.blur()">
+        <label style="font-size:11px;color:var(--ink3)">Modo</label>
+        <select class="inp" style="width:auto;font-size:11px" onchange="S.aree[${ai}].macro.modo=this.value;saveLocal();renderAll()">
+          <option value="auto" ${!isManuale?'selected':''}>Auto (media pesata micro)</option>
+          <option value="manuale" ${isManuale?'selected':''}>Manuale (target + effettivo)</option>
+        </select>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <div><span style="font-size:10px;color:var(--ink3)">Target</span>
+          <input type="number" value="${macro.target||100}" step="1" class="inp n" style="width:80px" ${isManuale?'':'title="Solo informativo in modo Auto: il target è implicito 100%"'}
+            onblur="S.aree[${ai}].macro.target=parseFloat(this.value)||0;saveLocal();renderAll()" onkeydown="if(event.keyCode===13)this.blur()"></div>
+        ${isManuale?`<div><span style="font-size:10px;color:var(--ink3)">Effettivo</span>
+          <input type="number" value="${macro.effettivo||0}" step="1" class="inp n" style="width:80px"
+            onblur="S.aree[${ai}].macro.effettivo=parseFloat(this.value)||0;saveLocal();renderAll()" onkeydown="if(event.keyCode===13)this.blur()"></div>`:''}
+        <div style="margin-left:auto;text-align:right">
+          <div style="font-size:10px;color:var(--ink3)">Valore attuale</div>
+          <div class="mono" style="font-size:20px;font-weight:400;color:${ka!==null?(ok?'var(--green)':'var(--red)'):'var(--ink3)'}">${ka!==null?ka+'%':'—'}</div>
+          <div style="font-size:10px;color:var(--ink3)">soglia bonus ${S.soglia}% · ${ok?'✓ sblocca':'✗ blocca'} premi area</div>
+        </div>
+      </div>
+    </div>`;
     const div=document.createElement('div');div.className='kpi-area';
-    div.innerHTML=`<div class="kpi-head" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'':'none'">       <div style="display:flex;align-items:center;gap:8px">         <span style="font-size:13px;font-weight:600">${a.nome}</span>         <span class="badge ${a.tipo==='RIC'?'b-ok':'b-nd'}">${a.tipo}</span>       </div>       <div style="display:flex;align-items:center;gap:8px">         <span class="${kpiCls(ka)}">${ka!==null?ka+'%':'N/D'}</span>         <span class="badge ${kpiBC(ka)}">${ka!==null?(ok?'Bonus ✓':'Sotto soglia'):'N/D'}</span>       </div>     </div>     <div class="kpi-body">       <div class="kpi-bar-bg"><div class="kpi-bar" style="width:${ka!==null?Math.min(ka,100):0}%;background:${ka!==null?(ok?'var(--green)':'var(--red)'):'var(--lift)'}"></div></div>       <table class="kpi-tbl">         <thead><tr><th>Micro area</th><th>Target</th><th>Effettivo</th><th>%</th><th>Bonus</th></tr></thead>         <tbody>${a.micro.map((m,mi)=>{const km=kpiM(m);const ok2=bonusOk(km);           const noteHtml=m.note?`<span class='tip-icon' style='cursor:help'>i<span class='tip-text left'>${m.note}</span></span>`:'';             return`<tr>
+    div.innerHTML=`<div class="kpi-head" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'':'none'">       <div style="display:flex;align-items:center;gap:8px">         <span style="font-size:13px;font-weight:600">${a.nome}</span>         <span class="badge ${a.tipo==='RIC'?'b-ok':'b-nd'}">${a.tipo}</span>       </div>       <div style="display:flex;align-items:center;gap:8px">         <span class="${kpiCls(ka)}">${ka!==null?ka+'%':'N/D'}</span>         <span class="badge ${kpiBC(ka)}">${ka!==null?(ok?'Bonus ✓':'Sotto soglia'):'N/D'}</span>       </div>     </div>     <div class="kpi-body">       ${macroPanel}       <div class="kpi-bar-bg"><div class="kpi-bar" style="width:${ka!==null?Math.min(ka,100):0}%;background:${ka!==null?(ok?'var(--green)':'var(--red)'):'var(--lift)'}"></div></div>       <div style="font-size:11px;color:var(--ink3);margin:8px 0 4px">Micro-KPI (dettaglio sottostante${isManuale?' — non contribuiscono al macro in modo manuale':''})</div>       <table class="kpi-tbl">         <thead><tr><th>Micro area</th>${!isManuale?'<th>Peso</th>':''}<th>Target</th><th>Effettivo</th><th>%</th><th>Bonus</th></tr></thead>         <tbody>${a.micro.map((m,mi)=>{const km=kpiM(m);const ok2=bonusOk(km);           const noteHtml=m.note?`<span class='tip-icon' style='cursor:help'>i<span class='tip-text left'>${m.note}</span></span>`:'';           const peso=(a.macro&&a.macro.pesoMicro&&a.macro.pesoMicro[mi]!==undefined)?a.macro.pesoMicro[mi]:1;           return`<tr>
             <td><div style="display:flex;align-items:center;gap:4px"><input value="${m.nome}" style="border:none;background:transparent;font-size:12px;flex:1;outline:none;font-family:'DM Sans',sans-serif;color:var(--ink)" onblur="S.aree[${ai}].micro[${mi}].nome=this.value" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">${noteHtml}</div></td>
+            ${!isManuale?`<td><input class="ki" type="number" value="${peso}" step="0.5" title="Peso di questo micro-KPI nella media (default 1)" onblur="S.aree[${ai}].macro=S.aree[${ai}].macro||{pesoMicro:{}};S.aree[${ai}].macro.pesoMicro=S.aree[${ai}].macro.pesoMicro||{};S.aree[${ai}].macro.pesoMicro[${mi}]=parseFloat(this.value)||0;saveLocal();renderAll()" onkeydown="if(event.keyCode===13)this.blur()"></td>`:''}
             <td><input class="ki" type="number" value="${m.kt}" onblur="S.aree[${ai}].micro[${mi}].kt=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()"></td>
             <td><input class="ki" type="number" value="${m.ke}" onblur="S.aree[${ai}].micro[${mi}].ke=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()"></td>
             <td class="${kpiCls(km)}">${km!==null?km.toFixed(1)+'%':'—'}</td>
@@ -4466,13 +4587,15 @@ function renderOrg(){
     {f:nUtili.id, t:nGaia.id,  s:'v'}
   );
 
-  // ── SEGRETERIA: staff a lato del CDA per default (SPEC-v10 §3) — solo se
-  // non è stata trascinata altrove (in tal caso è già stata resa da walkArea).
+  // ── SEGRETERIA: staff ORIZZONTALMENTE a lato del CDA (SPEC-v10 §3) — solo
+  // se non è stata trascinata altrove. Fase 10: prima era in fondo alla
+  // colonna CDA→Utili→Gaia→Segreteria come se dipendesse dagli Utili;
+  // è staff del CDA/SSI, va a fianco con connessione orizzontale tratteggiata.
   if(sisIsDefault){
     const nSis=mkAreaNode('sis','% — ');
     if(nSis){
-      nSis.x=nCDA.x; nSis.y=nGaia.y+CH+20;
-      allE.push({f:nCDA.id,t:nSis.id,s:'v'});
+      nSis.x=nCDA.x+CW+30; nSis.y=nCDA.y;
+      allE.push({f:nCDA.id,t:nSis.id,s:'lat-r'});
     }
   }
 
@@ -4490,7 +4613,10 @@ function renderOrg(){
   const NS='http://www.w3.org/2000/svg';
   const svg=document.createElementNS(NS,'svg');
   svg.setAttribute('width',svgW);svg.setAttribute('height',svgH);
-  svg.style.cssText='display:block;overflow:visible';
+  // Fase 10: touch-action:none e user-select:none sull'SVG impediscono al
+  // browser (soprattutto trackpad Mac e touch device) di interpretare il
+  // gesto come pan/scroll o selezione testo — bloccava il DnD delle card.
+  svg.style.cssText='display:block;overflow:visible;touch-action:none;user-select:none;-webkit-user-select:none';
   const g=document.createElementNS(NS,'g');
   g.setAttribute('transform','translate('+offX+','+PAD+')');svg.appendChild(g);
 
@@ -4534,6 +4660,9 @@ function renderOrg(){
     fg.setAttribute('transform','translate('+n.x+','+n.y+')');
     if(n.pi>=0) fg.style.cursor='pointer';
 
+    // Fase 10: touch-action:none anche su ogni card così il browser non
+    // interpreta il gesto come scroll/pan quando si parte dalla card.
+    fg.style.touchAction='none';
     const rx=document.createElementNS(NS,'rect');
     rx.setAttribute('width',n.w);rx.setAttribute('height',n.h);rx.setAttribute('rx','7');
     rx.setAttribute('fill',n.bg||'#fff');rx.setAttribute('stroke',n.bd||'#C8C6BE');
@@ -4620,6 +4749,10 @@ function renderOrg(){
       // annullare (isSelfOrDescendant blocca le mosse illegali).
       fg.addEventListener('pointerdown',(evt)=>{
         if(evt.button!==0)return;
+        // Fase 10: preventDefault blocca il drag/selezione nativa che sui
+        // browser desktop (Chrome/Safari mac) impediva ai pointermove
+        // successivi di aggiornare la posizione del ghost.
+        try{evt.preventDefault();}catch(e){}
         const p=orgSvgPoint(evt,svg,g);
         orgDragState={areaId:n.areaId,startX:p.x,startY:p.y,moved:false,ghost:null,overId:null};
         try{fg.setPointerCapture(evt.pointerId);}catch(e){}
@@ -4971,9 +5104,9 @@ function renderSistemaPage(){
         onblur="S.sistemaFissi[${v._i}].nome=this.value;saveLocal();renderSistemaPage()" onkeydown="if(event.keyCode===13)this.blur()"></td>
       <td style="font-size:11px;color:var(--ink3)">${(v.cat||'—').replace(/&/g,'&amp;').replace(/</g,'&lt;')}</td>
       <td><select class="inp" style="font-size:11px;padding:3px 5px;width:100%"
-        onchange="S.sistemaFissi[${v._i}].areaId=this.value||null;saveLocal();renderAll()">${rowAreaOpts(v)}</select></td>
+        onchange="S.sistemaFissi[${v._i}].areaId=this.value||null;S.sistemaFissi[${v._i}].userEdited=S.sistemaFissi[${v._i}].userEdited||{};S.sistemaFissi[${v._i}].userEdited.areaPF=true;saveLocal();renderAll()">${rowAreaOpts(v)}</select></td>
       <td><select class="inp" style="font-size:11px;padding:3px 5px;width:100%"
-        onchange="S.sistemaFissi[${v._i}].natura=this.value;saveLocal();renderAll()">${rowNaturaOpts(v)}</select></td>
+        onchange="S.sistemaFissi[${v._i}].natura=this.value;S.sistemaFissi[${v._i}].userEdited=S.sistemaFissi[${v._i}].userEdited||{};S.sistemaFissi[${v._i}].userEdited.natura=true;saveLocal();renderAll()">${rowNaturaOpts(v)}</select></td>
       <td style="text-align:right"><input type="number" value="${v.val||0}" step="10" class="inp n" style="width:90px;font-size:12px;padding:3px 6px;background:${(v.val||0)>0?'var(--blue-bg)':'var(--card)'}"
         onblur="S.sistemaFissi[${v._i}].val=parseFloat(this.value)||0;this.style.background=this.value>0?'var(--blue-bg)':'var(--card)';saveLocal();renderAll()" onkeydown="if(event.keyCode===13)this.blur()"></td>
       <td style="text-align:right;font-size:10px;color:var(--ink3)">${((v.val||0)/inc*100).toFixed(2)}%</td>
@@ -5565,13 +5698,25 @@ function renderProduzioneRiepilogo(tecs){
       </div>`;     }).join('')}   </div>`;
 }
 
-// ── CENTRI DI COSTO — margine per centro + ripartizione % (SPEC-v10 §6+§D, Fase 4/7) ───
+// Fase 10: assicura che i centri custom (creati da addCentroDaCentri) siano
+// visibili in tutte le viste che iterano UNITA_PRODUTTIVE_RIC_PCT_IDS —
+// necessario dopo un reload che ripristina lo stato ma non l'array runtime.
+function syncUnitaProduttive(){
+  (S.aree||[]).forEach(a=>{
+    if(a.parentId==='prod'&&a.chiusa===true&&!UNITA_PRODUTTIVE_RIC_PCT_IDS.includes(a.id)){
+      UNITA_PRODUTTIVE_RIC_PCT_IDS.push(a.id);
+    }
+  });
+}
+
+// ── CENTRI DI COSTO — margine per centro + ripartizione % (SPEC-v10 §6+§D, Fase 4/7/10) ───
 function renderCentriCostoPage(){
   const el=document.getElementById('centri-costo-cont');if(!el)return;
+  syncUnitaProduttive();
   const prodArea=S.aree.find(a=>a.id==='prod');
   const roll=prodArea?areaRollup(prodArea):null;
-  // Fase 7: mostro tutte le 8 unità produttive (6 centri + form + sorvsan),
-  // così la STIMA % del fatturato è visibile in un colpo solo.
+  // Fase 7/10: mostro tutte le unità produttive (6 centri base + form + sorvsan
+  // + eventuali centri custom aggiunti runtime).
   const unita=UNITA_PRODUTTIVE_RIC_PCT_IDS.map(id=>S.aree.find(a=>a.id===id)).filter(Boolean);
   const warn=checkRipartizioneCentri();
   const pctCheck=checkRicavoPct();
@@ -5652,9 +5797,10 @@ function renderCentriCostoPage(){
     </div>`;
   }
 
-  html+=`<div class="pane"><div class="pane-title" style="display:flex;align-items:center;gap:10px">
-      Ripartizione ricavo per unità produttiva
+  html+=`<div class="pane"><div class="pane-title" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span>Ripartizione ricavo per unità produttiva</span>
       <span class="badge b-info" title="STIMA: valori calcolati come % del fatturato del mese. Sostituibili con dato reale (manuale) quando arrivano i ricavi per servizio.">STIMA finché non arrivano i ricavi per servizio</span>
+      <button class="btn xs prim" style="margin-left:auto" onclick="addCentroDaCentri()" title="Crea un nuovo centro di costo sotto Produzione">+ Nuovo centro di costo</button>
     </div>
     <div style="overflow:auto"><table class="tbl-clean" style="width:100%">
     <thead><tr>
@@ -5665,6 +5811,7 @@ function renderCentriCostoPage(){
       <th class="mono" style="text-align:right">Var €</th>
       <th class="mono" style="text-align:right">Margine €</th>
       <th class="mono" style="text-align:right">Margine %</th>
+      <th style="text-align:right;min-width:70px">Azioni</th>
     </tr></thead>
     <tbody>
     ${unita.map((c)=>{
@@ -5691,8 +5838,10 @@ function renderCentriCostoPage(){
             onblur="S.aree[${ci}].ricavoManuale=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13)this.blur()"
             title="Un valore > 0 vince sempre sulla % (override reale)">`;
       const fornitori=c.fornitori||[];
+      const isCentro=CENTRI_IDS.includes(c.id); // le 8 sono form/sorvsan + 6 centri; solo i 6 c_* sono elimin
+      const canDelete=isCentro; // form/sorvsan sono strutturali, non eliminabili qui
       const fiDetail=fornitori.length
-        ?`<tr class="detail-row"><td colspan="9" style="padding:0 8px 8px 8px">
+        ?`<tr class="detail-row"><td colspan="10" style="padding:0 8px 8px 8px">
               <details><summary style="font-size:10px;color:var(--ink3);cursor:pointer">${fornitori.length} fornitori — dettaglio</summary>
                 <table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:4px">
                   ${fornitori.map((fo,fi)=>`<tr>
@@ -5708,7 +5857,7 @@ function renderCentriCostoPage(){
             </td></tr>`
         :'';
       return`<tr>
-        <td style="font-weight:600">${c.nome} ${badge}</td>
+        <td style="font-weight:600"><input value="${(c.nome||'').replace(/"/g,'&quot;')}" style="width:calc(100% - 4px);border:none;background:transparent;font-weight:600;font-size:12px;outline:none;color:var(--ink)" onblur="S.aree[${ci}].nome=this.value;saveLocal();renderAll()" onkeydown="if(event.keyCode===13)this.blur()"> ${badge}</td>
         <td style="white-space:nowrap">${modoSelect}</td>
         <td style="text-align:right">${pctCell}</td>
         <td style="text-align:right">${manCell}</td>
@@ -5717,6 +5866,9 @@ function renderCentriCostoPage(){
         <td class="mono" style="text-align:right">${fmt(cv)}</td>
         <td class="mono" style="text-align:right;color:${m>=0?'var(--green)':'var(--red)'}">${fmt(m)}</td>
         <td class="mono" style="text-align:right">${mp!==null?mp.toFixed(1)+'%':'—'}</td>
+        <td style="text-align:right;white-space:nowrap">
+          ${canDelete?`<button class="btn xs danger" title="Elimina centro di costo" onclick="eliminaCentroCosto('${c.id}')">✕</button>`:`<span title="Sotto-area strutturale — modificabile solo da Struttura & aree" style="font-size:10px;color:var(--ink3)">—</span>`}
+        </td>
       </tr>${fiDetail}`;
     }).join('')}
     </tbody>
@@ -5729,6 +5881,7 @@ function renderCentriCostoPage(){
       <td class="mono" style="text-align:right"><strong>${fmt(unita.reduce((s,u)=>s+unitaCostoVar(u),0))}</strong></td>
       <td class="mono" style="text-align:right;color:${contrib.margine>=0?'var(--green)':'var(--red)'}"><strong>${fmt(contrib.margine)}</strong></td>
       <td class="mono" style="text-align:right;color:${contrib.margine>=0?'var(--green)':'var(--red)'}"><strong>${contrib.marginePct!==null?contrib.marginePct.toFixed(1)+'%':'—'}</strong></td>
+      <td></td>
     </tr></tfoot>
   </table></div></div>`;
   el.innerHTML=html;
@@ -5747,6 +5900,47 @@ function normalizzaRicavoPct(){
   const delta=chk.attesa-sum2;
   if(chk.centri.length)chk.centri[chk.centri.length-1].ricavoPct=Math.round((chk.centri[chk.centri.length-1].ricavoPct+delta)*10)/10;
   saveLocal();renderAll();
+}
+// Fase 10 (§G): CRUD centri di costo dalla pagina Centri di costo.
+// Chiede solo il nome, crea il centro sotto 'prod' con natura produttiva e
+// chiusa (rollup su Produzione §5.1), modo % di default a 5% — l'utente
+// aggiusta subito nella riga. Non lo aggiunge a CENTRI_IDS (che è una lista
+// hard-coded dei centri "storici" con generato_tecnico collegato); il nuovo
+// centro appare come unità produttiva via UNITA_PRODUTTIVE_RIC_PCT_IDS
+// grazie al fatto che filterrfi con parentId==='prod' + natura produttiva.
+// Nota: il nuovo centro non è in UNITA_PRODUTTIVE_RIC_PCT_IDS statico, quindi
+// non contribuisce alla ripartizione % di default — l'utente deve digitare
+// manualmente il valore o cambiare modo (idem come i "% incassato" custom).
+function addCentroDaCentri(){
+  const nome=prompt('Nome del nuovo centro di costo (es. Acustica, Privacy, Consulenze specifiche):');
+  if(!nome||!nome.trim())return;
+  const id='c_'+nome.trim().toLowerCase().replace(/[^a-z0-9]/g,'_').replace(/_+/g,'_').replace(/^_|_$/g,'').substring(0,24)+'_'+Date.now().toString(36);
+  S.aree.push({
+    id,nome:nome.trim(),tipo:'RIC',desc:'Centro di costo — '+nome.trim(),incPct:0,resp:'',
+    parentId:'prod',natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:0},chiusa:true,
+    fornitoreFisso:0,ricavoModo:'manuale',ricavoManuale:0,ricavoPct:0,
+    fornitori:[],micro:[]
+  });
+  if(!UNITA_PRODUTTIVE_RIC_PCT_IDS.includes(id))UNITA_PRODUTTIVE_RIC_PCT_IDS.push(id);
+  saveLocal();
+  notify('Centro di costo aggiunto: '+nome.trim()+' — imposta ricavo e fornitori dalla riga');
+  renderAll();
+}
+function eliminaCentroCosto(id){
+  const a=S.aree.find(x=>x.id===id);if(!a){notify('Centro non trovato');return;}
+  const forn=(a.fornitori||[]).length;
+  const conferma='Eliminare il centro "'+a.nome+'"?'+(forn?' Contiene '+forn+' fornitori collegati che andranno persi.':'');
+  if(!confirm(conferma))return;
+  const idx=S.aree.indexOf(a);
+  S.aree.splice(idx,1);
+  // Rimuovo anche la ripartizioneCentri/oreEffettiveCentro del personale (se puntavano a questo id)
+  (S.personale||[]).forEach(p=>{
+    if(p.ripartizioneCentri&&p.ripartizioneCentri[id]!==undefined)delete p.ripartizioneCentri[id];
+    if(p.oreEffettiveCentro&&p.oreEffettiveCentro[id]!==undefined)delete p.oreEffettiveCentro[id];
+  });
+  saveLocal();
+  notify('Centro "'+a.nome+'" eliminato');
+  renderAll();
 }
 
 function renderProdSezioniExtra(){

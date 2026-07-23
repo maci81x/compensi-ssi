@@ -1,6 +1,6 @@
 # HANDOVER — Compensi SSI
 
-Stato del lavoro al 2026-07-23 — chiusura Fase 9 (fix doppio conteggio budget aree + pagina Sistema estesa + meta no-cache).
+Stato del lavoro al 2026-07-23 — chiusura Fase 10 (DnD org fix + Segreteria layout + CRUD centri in pagina Centri + KPI macro area + dedup import PF).
 
 ## Come ripartire
 
@@ -43,6 +43,8 @@ Riferimento completo: `SPEC-v10.md`.
    2026-07-23).
 9. **Fix doppio conteggio budget aree + pagina Sistema estesa + meta
    no-cache** (Fase 9, 2026-07-23).
+10. **Fix DnD organigramma + Segreteria layout + CRUD centri in pagina +
+    KPI macro area + dedup import PF** (Fase 10, 2026-07-23).
 
 ### Cosa fa la Fase 7 nel dettaglio
 
@@ -153,6 +155,67 @@ Riferimento completo: `SPEC-v10.md`.
   del browser dell'utente sulla vecchia Fase 6/7 → mitigato con i meta
   no-cache di cui sopra.
 
+### Cosa fa la Fase 10 nel dettaglio
+
+- **Fix DnD organigramma** (segnalato: "il codice c'è ma trascinando non
+  succede nulla"). Test headless con mouse reale (down/move/up simulati)
+  conferma il reparent funziona; il problema era su alcuni browser desktop
+  (Chrome/Safari macOS con trackpad) e touch device dove il gesto veniva
+  intercettato come pan/scroll o selezione testo prima di arrivare all'app.
+  Fix:
+  - `touch-action:none` sull'SVG root e su ogni card SVG → blocca il
+    browser dall'usare il gesto per pan/scroll.
+  - `user-select:none` + `-webkit-user-select:none` → blocca la selezione
+    testo che cancellava il pointerdown iniziale.
+  - `evt.preventDefault()` nel pointerdown → blocca il drag/selezione
+    nativa che sui browser desktop mac impediva ai pointermove successivi.
+  - Test: reparent di Marketing→Amministrazione via mouse simulato passa.
+- **Fix layout Segreteria**: era in fondo alla colonna CDA→Utili→Gaia→
+  Segreteria come dipendesse dagli Utili. Ora è **ORIZZONTALMENTE a lato
+  del CDA** (staff, connessione tratteggiata `lat-r`). Se l'utente la
+  trascina altrove, la nuova posizione da `parentId` prevale.
+- **CRUD centri di costo nella pagina Centri di costo**:
+  - Bottone **"+ Nuovo centro di costo"** nel pane header → chiede solo
+    il nome, crea il centro sotto Produzione con modo manuale, ricavo 0.
+  - **Colonna "Azioni"** con delete su ogni centro (i 6 centri storici +
+    quelli custom). Sotto-aree strutturali (form, sorvsan) non
+    eliminabili: solo da Struttura & aree (per evitare rotture del rollup).
+  - **Nome del centro editabile inline** nella prima colonna.
+  - `syncUnitaProduttive()` all'apertura della pagina: assicura che i
+    centri custom creati runtime finiscano automaticamente nell'array
+    `UNITA_PRODUTTIVE_RIC_PCT_IDS` così partecipano al rollup Produzione.
+  - Accesso da Struttura & aree conservato.
+- **KPI macro per area** (SPEC §H): ogni area ora ha `a.macro = {nome,
+  modo, target, effettivo, pesoMicro}` (schema v9, migrazione additiva):
+  - **Modo `auto`** (default): media pesata dei micro-KPI. Peso di default
+    1 per ogni micro, sovrascrivibile via `a.macro.pesoMicro[microIdx]`.
+    Nuova colonna "Peso" nella tabella micro in modo auto.
+  - **Modo `manuale`**: `(effettivo/target)*100` — quando il capo area
+    dà un giudizio sintetico indipendente dai micro.
+  - `areaMacroKpi(a)` → % vs target (100 = target raggiunto, ≥soglia
+    sblocca premi via `bonusOk`). `kpiA(a)` è ora wrapper su `areaMacroKpi`.
+  - Pannello dedicato in Struttura & aree con nome/modo/target/effettivo/
+    valore attuale + indicazione "sblocca/blocca premi area".
+- **Dedup import PF su re-import** (SPEC §I):
+  - Nuova `pfImportKey(v)` = chiave stabile basata su `areaPF|cat|voce`
+    normalizzati, salvata in ogni voce importata come `sf.importKey`.
+  - `findPossibileDoppione` ora **prima** cerca per importKey (match
+    esatto, sopravvive a rename dell'utente) e **poi** fallback su
+    similarità nome+valore. Prima escludeva le voci già importate,
+    causando duplicati al re-import dello stesso file.
+  - `applyImport` in modalità merge preserva override utente:
+    `sf.userEdited={natura, areaPF}` flag settati quando l'utente cambia
+    dropdown natura/area dalla pagina Sistema. Il merge aggiorna sempre
+    `sf.val` (importo aggiornato) ma NON sovrascrive natura/areaPF se
+    l'utente li ha modificati (log console: "N voci con override utente
+    preservate").
+- **Fresh boot migration fix**: prima le migrazioni schema si applicavano
+  solo su stato in arrivo (localStorage/cloud), non su un boot pulito con
+  `S = DEF`. Aggiunto `S.schemaVersion=0; migrateSchema(S)` subito dopo
+  la definizione di `migrateSchema` così anche il fresh boot passa per
+  tutti gli step additivi (necessario perché la migrazione v9 aggiunge
+  `a.macro` a ogni area).
+
 ---
 
 ## Numeri chiave validati (QA finale headless — Playwright)
@@ -167,7 +230,7 @@ Supabase bloccata per non contaminare lo stato condiviso durante i test):
 | Prioritari (leasing/F24/IVA/rateizzi/TFR) | **€ 6.088,56** ✓ |
 | Dipendenti agganciati (match import ↔ personale) | **13/13** ✓ |
 | Incassi settimanali reali 2026 | 6 settimane, somma € 312.816,91 |
-| Schema version | 8 ✓ |
+| Schema version | 9 ✓ |
 | Margine modello a inc 174k (media reale 2026) | 25,34% (Δ 1,93 pt vs reale 23,41%) ✓ |
 | Utili da `flow()` a inc 174k (Fase 9) | 35.453 = 20,34% (Δ 3,07 pt vs reale 23,41%) ✓ |
 | Budget aree teorico (`flow().budgetAreeTeorico`) | 99.697 (esposto per monitoraggio, NON in cascata) |

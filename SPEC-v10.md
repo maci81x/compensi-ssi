@@ -260,6 +260,9 @@ Confronta `incassato` con X/Y/Z e mostra il colore + di quanto sei sopra/sotto c
    minori** (§E sotto, Fase 8 chiusa 2026-07-23).
 9. **Fix doppio conteggio budget aree + pagina Sistema estesa + meta
    no-cache** (§F sotto, Fase 9 chiusa 2026-07-23).
+10. **DnD organigramma + Segreteria layout + CRUD centri in pagina +
+    KPI macro area + dedup import PF** (§G-I sotto, Fase 10 chiusa
+    2026-07-23).
 
 ## 15. Fase 7 — Ricavo per centro % + passata grafica (chiusa 2026-07-23)
 
@@ -487,6 +490,126 @@ screenshot headless sul live (`https://maci81x.github.io/compensi-ssi/`):
 
 Non era regressione codice → cache browser utente (mitigato con meta
 no-cache §17.5).
+
+## 18. Fase 10 — Fix DnD org + layout Segreteria + CRUD centri in pagina + KPI macro area + dedup import PF (chiusa 2026-07-23)
+
+### 18.1 Fix DnD organigramma (§G)
+Segnalato: il codice DnD (pointerdown/pointermove/setPointerCapture) c'è
+ma trascinare le card non fa nulla. Test headless con mouse simulato
+conferma il reparent funziona in headless; ipotesi era touch-action /
+user-select mancanti su desktop mac (Chrome/Safari) o touch device
+intercettano il gesto come pan/scroll o selezione.
+
+Fix:
+- `svg.style.touchAction='none'` + `user-select:none` +
+  `-webkit-user-select:none` sull'SVG root.
+- `fg.style.touchAction='none'` su ogni card SVG.
+- `evt.preventDefault()` nel pointerdown handler.
+
+Test: reparent Marketing→Amministrazione via `page.mouse.down/move/up`
+di Playwright passa. Prima del fix su alcuni browser il gesto veniva
+consumato dal browser prima di arrivare all'handler.
+
+### 18.2 Layout Segreteria (§G)
+Prima: Segreteria era nella colonna verticale CDA → Utili → Gaia →
+**Segreteria** (posizionata a `nSis.y = nGaia.y + CH + 20`), come se
+dipendesse dagli Utili.
+
+Fix: `nSis.x = nCDA.x + CW + 30; nSis.y = nCDA.y;` — Segreteria a lato
+del CDA, stessa fascia y (357), connessione orizzontale `lat-r` (linea
+tratteggiata di staff). Se l'utente la trascina altrove, la nuova
+posizione da `parentId` prevale (`sisIsDefault` false).
+
+### 18.3 CRUD centri di costo nella pagina Centri di costo (§G)
+Richiesto dall'utente: `addArea()` esisteva ma il bottone solo in
+Struttura & aree. Portata la gestione completa nella pagina Centri di
+costo:
+- Nuove funzioni `addCentroDaCentri()` (nome via prompt, crea sotto
+  Produzione con modo manuale) e `eliminaCentroCosto(id)` (con conferma
+  + rimozione di ripartizioneCentri/oreEffettiveCentro del personale che
+  puntava a quel centro).
+- Colonna "Azioni" con ✕ per riga: solo i 6 centri storici + custom sono
+  eliminabili (form/sorvsan strutturali, non eliminabili qui).
+- Nome del centro editabile inline (input nella prima colonna).
+- `syncUnitaProduttive()` aggiunto in cima a `renderCentriCostoPage`:
+  garantisce che centri custom (aggiunti runtime) siano nell'array
+  `UNITA_PRODUTTIVE_RIC_PCT_IDS` — necessario perché `const` array
+  perde i push tra reload; syncUnitaProduttive li reidenta da S.aree
+  ad ogni render.
+- Accesso da Struttura & aree conservato per compatibilità.
+
+### 18.4 KPI MACRO per area (§H)
+Richiesto: KPI macro sintetico per ogni area con target ed effettivo,
+calcolato come media pesata dei micro OPPURE manuale. Deve fare da
+cancello per i premi. CRUD completo.
+
+Modello dati (schema v9, migrazione additiva su ogni area):
+```js
+a.macro = {
+  nome: 'KPI '+a.nome,   // rinominabile dall'UI
+  modo: 'auto' | 'manuale',
+  target: 100,           // rilevante in modo manuale (in auto è implicito 100%)
+  effettivo: 0,          // rilevante in modo manuale
+  pesoMicro: {},         // { microIdx: peso }, default 1 se assente
+};
+```
+
+Motore:
+- `areaMacroKpi(a)`: se `modo=='manuale'` → `(effettivo/target)*100`.
+  Altrimenti media pesata dei `kpiM(micro)` non-null con pesi da
+  `a.macro.pesoMicro` (default 1).
+- `kpiA(a)` diventa wrapper su `areaMacroKpi(a)` — tutte le viste
+  esistenti (waterfall, gate premi, semaforo bonus) prendono il macro.
+- `bonusOk(kpiA(a))` inalterato → il gate dei premi area usa la nuova
+  logica trasparentemente.
+
+UI in Struttura & aree (renderStep5):
+- Pannello dedicato in cima a ogni area con nome/modo/target(/effettivo)/
+  valore attuale + indicazione "sblocca/blocca premi area".
+- In modo auto: colonna "Peso" nella tabella micro editabile per ogni
+  micro-KPI.
+- In modo manuale: colonna Peso nascosta + nota "non contribuiscono al
+  macro in modo manuale" nella tabella micro.
+
+### 18.5 Dedup import PF su re-import (§I)
+Diagnosi: `findPossibileDoppione(v)` escludeva le voci già importate
+(`if(sf.areaPF)return false`), quindi al re-import dello stesso file le
+righe apparivano tutte come "nuove" e venivano DUPLICATE. Inoltre
+`applyImport` in modalità merge sovrascriveva `natura` e `areaPF` senza
+preservare eventuali override manuali dell'utente.
+
+Fix:
+1. Nuova `pfImportKey(v) = 'PF/'+normalizeStr(areaPF+'|'+cat+'|'+voce)`
+   — chiave stabile che sopravvive a rename di `sf.nome` e cambio di
+   `sf.val` (val nuovo può essere diverso).
+2. Ogni voce importata (nuova o merge) riceve `sf.importKey=key`.
+3. `findPossibileDoppione` cerca **prima** per importKey (match esatto,
+   priorità massima) e **poi** fallback su similarità nome+valore. Ora
+   trova anche voci con `areaPF` settato (era il bug).
+4. `applyImport` merge branch: rispetta `sf.userEdited={natura, areaPF}`
+   — se true, non li sovrascrive. Aggiorna sempre `sf.val` (importo
+   aggiornato è comunque atteso).
+5. Nella pagina Sistema, i dropdown natura/area settano
+   `sf.userEdited.natura=true` / `sf.userEdited.areaPF=true` quando
+   l'utente li cambia manualmente.
+6. Log console: `[applyImport] N voci con override utente preservate`
+   quando si trigga il branch.
+
+### 18.6 Fresh boot migration fix
+Bug scoperto durante il QA della Fase 10: le migrazioni schema si
+applicavano solo su stato in arrivo (localStorage/cloud in
+`restoreLocal`/`applyIncomingState`), NON su un fresh boot dove
+`S = JSON.parse(JSON.stringify(DEF))` e `S.schemaVersion === CURRENT_SCHEMA_VERSION`
+già dal DEF, quindi `SCHEMA_MIGRATIONS.filter(m=>m.to>v)` restituiva
+lista vuota.
+
+Impatto: il campo `a.macro` (aggiunto dalla migrazione v9) non veniva
+creato su una installazione pulita perché il DEF non lo include.
+
+Fix: `S.schemaVersion=0; migrateSchema(S);` subito dopo la definizione
+di `migrateSchema`. Le migrazioni sono tutte additive/idempotenti,
+quindi rieseguirle da 0 su un DEF nuovo non crea problemi (aggiungono
+solo campi mancanti).
 
 ---
 
