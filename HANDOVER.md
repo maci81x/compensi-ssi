@@ -1,6 +1,6 @@
 # HANDOVER — Compensi SSI
 
-Stato del lavoro al 2026-07-23 — chiusura Fase 7 e merge su `main`.
+Stato del lavoro al 2026-07-23 — chiusura Fase 8 (gap costi + guida + minori).
 
 ## Come ripartire
 
@@ -39,6 +39,8 @@ Riferimento completo: `SPEC-v10.md`.
    versionato v6**.
 7. **Ricavo per centro come % di default + passata grafica + QA finale +
    merge in produzione** (Fase 7, 2026-07-23).
+8. **Chiusura gap costi + guida operativa + correzioni minori** (Fase 8,
+   2026-07-23).
 
 ### Cosa fa la Fase 7 nel dettaglio
 
@@ -69,6 +71,41 @@ Riferimento completo: `SPEC-v10.md`.
   sia dentro `S.snaps`. Cancellata anche la riga `TEST 2099-01`. La tabella
   `compensi_snapshots` è vuota: **il primo snapshot vero sarà luglio 2026.**
 
+### Cosa fa la Fase 8 nel dettaglio
+
+- **Fix doppio conteggio nel margine aziendale**: `totSistemaFissi` include
+  57 voci con `areaId` puntante a un centro (form/sorvsan/c_ambiente/
+  c_antincendio/c_verifiche_terra) che sono le STESSE voci dei `.fornitori`
+  di quei centri. Prima venivano contate due volte (16.627/mese doppio).
+  Ora il modello sottrae automaticamente le dupliche.
+- **Personale interno incluso nel margine**: il foglio Controllo di gestione
+  contabilizza il margine come "dopo-personale" (fatturato − costi esterni
+  che includono stipendi + fornitori). Il modello ora somma garantito
+  personale (dipendenti + soci = 40.916) + CDA (13.600) nei costi.
+- **Voce "altri costi operativi"** (`S.altriCostiOperativi`, default 15.000,
+  editabile dall'UI in Centri di costo): copre ammortamenti + materiali +
+  subappalti occasionali + provvigioni variabili agenti non modellate (nel
+  PF sono aggregate come "Manutenzioni varie/Varie/Regali"). Badge STIMA.
+- **Effetto**: con incassato 174k (media reale 2026) il margine modello è
+  **25,34%** vs reale YTD 23,41% → **Δ 1,93 pt**, dentro ±5 pt come richiesto.
+- **Schema v8** con migrazione che aggiunge `altriCostiOperativi` solo se
+  assente (preserva override utente).
+- **Nuovo pannello espandibile in Centri di costo** con dettaglio composizione
+  costi aziendali (fornitori centri · sistema dedotto · prioritari · tasse ·
+  personale · CDA · altri) e nota sul confronto vs reale.
+- **Guida operativa riscritta** (📖 nel menu): allineata alla v10 con 13
+  passi (era 8 pre-Fase 2), rimossa HR come area, aggiornato Marco come
+  Dir. Marketing autonomo, aggiunti Centri di costo/Premi/Semaforo/Import/
+  Drag&drop/Prioritari/Simulatore/Personale. Corretto "i dati non si
+  salvano automaticamente" (era falso dalla Fase 3, autosave + sync cloud
+  attivi). Chi inserisce cosa aggiornato.
+- **Correzioni minori**: etichetta login "v9" → "v10 · Fasi 1-8"; passo 3
+  wizard riscritto — mostra solo GRFM/CDA/Soglia (le uniche voci ancora
+  usate dalla cascata a priorità), rimosse le 3 voci %-based legacy (costi
+  fissi/variabili/accantonamenti) che dalla Fase 3 non impattavano più
+  utili/liquidità/semaforo. Sostituite dalle voci puntuali in Sistema/
+  Prioritari/Tasse.
+
 ---
 
 ## Numeri chiave validati (QA finale headless — Playwright)
@@ -83,7 +120,11 @@ Supabase bloccata per non contaminare lo stato condiviso durante i test):
 | Prioritari (leasing/F24/IVA/rateizzi/TFR) | **€ 6.088,56** ✓ |
 | Dipendenti agganciati (match import ↔ personale) | **13/13** ✓ |
 | Incassi settimanali reali 2026 | 6 settimane, somma € 312.816,91 |
-| Schema version | 7 ✓ |
+| Schema version | 8 ✓ |
+| Margine modello a inc 174k (media reale 2026) | 25,34% (Δ 1,93 pt vs reale 23,41%) ✓ |
+| Dedup sistema (voci con areaId centri) | 16.627/mese sottratti ✓ |
+| Personale interno incluso nel margine aziendale | 40.916,15 ✓ |
+| altri costi operativi (STIMA, default v8) | € 15.000/mese |
 | Cascata somma 100% dell'incassato | ✓ |
 | Semaforo X/Y/Z coerente Dashboard ↔ Simulatore | ✓ (stessa `flow()`) |
 | Pagine navigate senza errore console | 17 / 17 ✓ |
@@ -92,7 +133,9 @@ Supabase bloccata per non contaminare lo stato condiviso durante i test):
 ## Cloud (Supabase — progetto `qujxbvootvollmziaqrd`)
 
 - `compensi_stato` (stato condiviso multi-dispositivo, `id='current'`):
-  **migrato a `schemaVersion: 7`** al primo caricamento del client aggiornato.
+  **verrà migrato a `schemaVersion: 8`** al primo caricamento del client
+  aggiornato (aggiunge `altriCostiOperativi=15000` se assente, non tocca
+  override utenti).
   Dati reali preesistenti (`incassato=200000`, `periodicita='settimanale'`)
   restano intatti: la migrazione v7 aggiunge/ribalta solo `ricavoModo` e
   `ricavoPct` sulle 8 unità produttive quando non c'è un override esplicito
@@ -124,12 +167,9 @@ Supabase bloccata per non contaminare lo stato condiviso durante i test):
    unità: l'app userà automaticamente quel valore (badge REALE) al posto
    della stima. Nessun ricalcolo o switch di modo necessario.
 
-3. **Modello aziendale sottostima ~50k/mese di costi esterni**: il margine
-   aziendale calcolato dal modello (incassato − fornitori centri − sistema −
-   prioritari − tasse) diverge di ~17 pt dal margine reale del foglio
-   Controllo di gestione (23,41% YTD). Non è colpa della ripartizione %: è
-   perché il modello copre ~77k/mese di costi esterni contro ~130k reali. Da
-   colmare aggiungendo voci mancanti (materiali, subappalti/consulenti a
-   fattura non tra i prioritari, altre spese esterne) — Fase 8, out-of-scope
-   per la finalizzazione corrente. L'UI del Dashboard Centri di costo mostra
-   il gap con semaforo così è sempre visibile.
+3. **Voce "altri costi operativi" come stima aggregata** (default 15.000/mese):
+   copre ammortamenti, materiali, subappalti occasionali, provvigioni variabili
+   agenti — voci del foglio Controllo di gestione non ancora catalogate
+   puntualmente nel modello. Da spacchettare in voci concrete quando arriveranno
+   i dati (fattura per fattura) e portare a 0 il "residuo" — Fase 9 futura.
+   Oggi è editabile con badge STIMA sulla pagina Centri di costo.

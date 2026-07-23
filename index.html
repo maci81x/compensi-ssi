@@ -649,7 +649,7 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
 
     <!-- Footer -->
     <div style="margin-top:32px;font-size:11px;color:#C8C6BE;letter-spacing:.05em">
-      v9 &nbsp;·&nbsp; SSI Poggibonsi &nbsp;·&nbsp; <span id="login-date"></span>
+      v10 · Fasi 1-8 &nbsp;·&nbsp; SSI Poggibonsi &nbsp;·&nbsp; <span id="login-date"></span>
     </div>
 
   </div>
@@ -852,13 +852,13 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
         </div>
       </div>
 
-      <!-- STEP 3 — COSTI VARIABILI -->
+      <!-- STEP 3 — GRFM + governance -->
       <div class="step-card" id="sc3">
         <div class="step-head" onclick="toggleStep('sc3')">
           <div class="step-num">3</div>
           <div style="flex:1">
-            <div class="step-title">Costi strutturali</div>
-            <div class="step-summary" id="s3-sum">Percentuali strutturali e accantonamenti</div>
+            <div class="step-title">GRFM, CDA e soglia bonus</div>
+            <div class="step-summary" id="s3-sum">% holding, compenso governance, soglia KPI premio</div>
           </div>
           <span class="step-status nd" id="s3-st">—</span>
         </div>
@@ -1318,105 +1318,121 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
         <p style="font-size:12px;color:var(--ink3)">Come compilare l'app ogni mese — passo per passo</p>
       </div>
 
+      <!-- Nota versione allineata a v10 (Fasi 1-8) -->
+      <div style="background:var(--blue-bg);border:1px solid var(--blue-bd);border-radius:var(--rl);padding:12px 16px;margin-bottom:14px;font-size:12px;color:var(--blue);line-height:1.5">
+        <strong>Guida aggiornata alla v10 (Fasi 1-8, 2026-07-23).</strong>
+        Tassonomia aree Commerciale · Produzione (Formazione, Sorveglianza Sanitaria, Centri di costo) · Amministrazione · Marketing (autonomo, sotto Commerciale) · Segreteria (staff).
+        <strong>Autosave locale</strong> attivo (localStorage) + <strong>sync cloud</strong> multi-dispositivo (Supabase, se raggiungibile).
+        <strong>HR eliminata</strong> come area (non presidiata).
+      </div>
+
       <!-- STEP 1: Incassato -->
       <div style="background:var(--card);border:1px solid var(--lift);border-radius:var(--rl);padding:18px 22px;margin-bottom:10px">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
           <div style="width:32px;height:32px;border-radius:50%;background:var(--ink);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0">1</div>
           <div>
             <div style="font-size:14px;font-weight:600">Incassato del mese</div>
-            <div style="font-size:11px;color:var(--ink3)">Dove: 📋 Mese corrente → Passo 1</div>
+            <div style="font-size:11px;color:var(--ink3)">Dove: 📋 Mese corrente → Passo 1 · Chi: Francesco Martini (dalla contabilità)</div>
           </div>
         </div>
         <div style="font-size:12px;line-height:1.6;color:var(--ink2)">
-          Inserisci l'incassato totale SSI del mese (Francesco Martini lo ricava dalla contabilità).<br>
-          Tutto il resto si calcola in percentuale su questo valore. <strong>È il dato più importante.</strong><br>
-          Puoi scegliere periodicità mensile o settimanale.
+          Inserisci l'incassato totale SSI del mese. <strong>È il numero base della cascata a priorità</strong>: da lui si sottraggono GRFM, prioritari, garantito, budget aree, premi.<br>
+          Puoi scegliere <strong>periodicità mensile o settimanale</strong> (le settimane sommate del 2026 sono già pre-caricate come riferimento, foglio "Incassi Settimanali").<br>
+          Se preferisci partire da un mese reale: dal Passo 1 puoi selezionare "Marzo 2026" (o altro mese chiuso 2026) e l'incassato si precompila dal foglio Controllo di gestione.
         </div>
       </div>
 
-      <!-- STEP 2: Sistema -->
+      <!-- STEP 2: Voci prioritarie + Sistema + Tasse -->
       <div style="background:var(--card);border:1px solid var(--lift);border-radius:var(--rl);padding:18px 22px;margin-bottom:10px">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
           <div style="width:32px;height:32px;border-radius:50%;background:var(--ink);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0">2</div>
           <div>
-            <div style="font-size:14px;font-weight:600">Costi fissi sistema</div>
-            <div style="font-size:11px;color:var(--ink3)">Dove: ⚙️ Sistema (menu laterale)</div>
+            <div style="font-size:14px;font-weight:600">Prioritari, Sistema, Tasse (costi esterni)</div>
+            <div style="font-size:11px;color:var(--ink3)">Dove: ⚙️ Sistema · Chi: Francesco Martini</div>
           </div>
         </div>
         <div style="font-size:12px;line-height:1.6;color:var(--ink2)">
-          Aggiorna gli importi mensili dei costi fissi (noleggi auto, software, consulenti, ecc.).<br>
-          Sono divisi per categoria. Clicca su una categoria per espanderla.<br>
-          <strong>Quando cambia un contratto</strong> (es. nuovo canone Odoo) aggiorna la voce corrispondente.<br>
-          Puoi aggiungere voci nuove con "+ Aggiungi voce" e creare nuove categorie.
+          Tre blocchi da tenere aggiornati quando cambia un contratto o una rata:<br>
+          <strong>• Voci prioritarie (priorità 1)</strong> — leasing, F24, IVA, rateizzi cartelle, TFR, accantonamento fondo. Non vengono mai compresse dalla cascata: la coperta si stringe prima sui premi (P3), poi sul budget variabile aree (P2).<br>
+          <strong>• Sistema</strong> — 60+ voci di costi fissi strutturali (auto aziendali, software/abbonamenti, consulenti, banche, utenze, mutui, ecc.), importate dal PF SI 2026.xlsx. Divise per categoria collassabile.<br>
+          <strong>• Tasse</strong> — IRES/IRAP/IVA acconto/INPS titolari (stime mensili).<br>
+          Aggiungi nuove voci con "+ Aggiungi voce" oppure ricarica il PF aggiornato dalla pagina 📥 Import.
         </div>
       </div>
 
-      <!-- STEP 3: Produzione tecnici -->
+      <!-- STEP 3: Personale -->
       <div style="background:var(--card);border:1px solid var(--lift);border-radius:var(--rl);padding:18px 22px;margin-bottom:10px">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
           <div style="width:32px;height:32px;border-radius:50%;background:var(--ink);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0">3</div>
           <div>
-            <div style="font-size:14px;font-weight:600">Produzione tecnici</div>
-            <div style="font-size:11px;color:var(--ink3)">Dove: ⚙️ Produzione tecnici (menu laterale)</div>
+            <div style="font-size:14px;font-weight:600">Personale a lordo (dipendenti, soci, P.IVA)</div>
+            <div style="font-size:11px;color:var(--ink3)">Dove: 🏗 Struttura & aree → dettaglio risorse · Chi: Francesco Martini</div>
           </div>
         </div>
         <div style="font-size:12px;line-height:1.6;color:var(--ink2)">
-          Inserisci per ogni tecnico i dati del mese in 9 colonne:<br>
-          <strong>Documenti</strong> (€ pratiche chiuse) · <strong>Formazione</strong> (ore erogate) · <strong>Analisi</strong> (€) · <strong>RSPP</strong> (€) · <strong>Pacchetti</strong> (€) · <strong>Laika</strong> (ore) · <strong>Cantieri</strong> (€) · <strong>Estintori</strong> (€) · <strong>Sorv. Sanitaria</strong> (€)<br>
-          Il Generato viene calcolato automaticamente. La barra mostra il progresso verso l'obiettivo.<br>
-          Giovanna fornisce i dati, Samuele coordina. Il grafico in fondo mostra il confronto con gli obiettivi.
+          Il modello distingue 3 nature con regole diverse (SPEC-v10 §7):<br>
+          <strong>• Dipendente</strong> — costo azienda annuo dal foglio "26_Dettaglio costi dipendenti.xlsx" ÷12 = <strong>garantito mensile</strong>, priorità 1. Costo orario per la ripartizione ore sui centri.<br>
+          <strong>• Socio</strong> — fisso mensile garantito (default €4.800 × 4: Roberto, Marco, Giovanna, Francesco), priorità 1.<br>
+          <strong>• P.IVA</strong> — nessun garantito; il compenso è variabile dell'area (fattura), scala col fatturato. Non entra in garantito, entra nel budget variabile.<br>
+          Il <strong>variabile/premio</strong> di tutte le nature è calcolato dai KPI area (gate 101%) — vedi Passo 6.<br>
+          Ricarica i costi aggiornati dalla pagina 📥 Import quando cambiano paga/contratto.
         </div>
       </div>
 
-      <!-- STEP 4: Commerciale -->
+      <!-- STEP 4: Produzione tecnici + Ripartizione ore centri -->
       <div style="background:var(--card);border:1px solid var(--lift);border-radius:var(--rl);padding:18px 22px;margin-bottom:10px">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
           <div style="width:32px;height:32px;border-radius:50%;background:var(--ink);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0">4</div>
           <div>
-            <div style="font-size:14px;font-weight:600">Dati commerciali</div>
-            <div style="font-size:11px;color:var(--ink3)">Dove: 💰 Commerciale (menu laterale)</div>
+            <div style="font-size:14px;font-weight:600">Produzione tecnici + ripartizione ore sui centri</div>
+            <div style="font-size:11px;color:var(--ink3)">Dove: ⚙️ Produzione tecnici · Chi: Giovanna (dati), Samuele (coordina)</div>
           </div>
         </div>
         <div style="font-size:12px;line-height:1.6;color:var(--ink2)">
-          Per ogni agente inserisci: <strong>Venduto €</strong> · <strong>Incassato €</strong> · <strong>Provvigioni maturate €</strong> · <strong>Premi €</strong> · <strong>Nr clienti nuovi</strong> · <strong>Nr sinergie</strong><br>
-          Gli agenti sono raggruppati per area CA (Fiorentina/Senese). Il peso % viene calcolato automaticamente.<br>
-          In cima: imposta l'obiettivo libero del mese (es. "10 DVR") + target clienti nuovi + sinergie.<br>
-          <strong>Scorri a destra</strong> per vedere tutte le colonne.
+          Inserisci per ogni tecnico i dati del mese (9 colonne):<br>
+          <strong>Documenti</strong> (€) · <strong>Formazione</strong> (h) · <strong>Analisi</strong> (€) · <strong>RSPP</strong> (€) · <strong>Pacchetti</strong> (€) · <strong>Laika</strong> (h) · <strong>Cantieri</strong> (€) · <strong>Estintori</strong> (€) · <strong>Sorv.San.</strong> (€).<br>
+          Il "Generato" viene calcolato automaticamente. Il grafico in fondo confronta con l'obiettivo mensile.<br>
+          Nella pagina personale (Struttura & aree) trovi anche <strong>ripartizione ore sui 6 centri</strong> (default 16,67% ciascuno per i tecnici) e <strong>override manuale</strong> ore effettive per centro (dato reale vince sulla %).
         </div>
       </div>
 
-      <!-- STEP 5: Altre aree -->
+      <!-- STEP 5: Centri di costo + margine + ripartizione ricavo % -->
       <div style="background:var(--card);border:1px solid var(--lift);border-radius:var(--rl);padding:18px 22px;margin-bottom:10px">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
           <div style="width:32px;height:32px;border-radius:50%;background:var(--ink);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0">5</div>
           <div>
-            <div style="font-size:14px;font-weight:600">Dati aree: Formazione, Amm., HR, Segreteria</div>
-            <div style="font-size:11px;color:var(--ink3)">Dove: menu laterale → ogni area</div>
+            <div style="font-size:14px;font-weight:600">Centri di costo + margine + ripartizione ricavo %</div>
+            <div style="font-size:11px;color:var(--ink3)">Dove: 🎯 Centri di costo · Chi: Roberto (STIMA %), Francesco (ricavi reali quando disponibili)</div>
           </div>
         </div>
         <div style="font-size:12px;line-height:1.6;color:var(--ink2)">
-          <strong>Formazione</strong>: ore erogate, nr persone in aula, nr corsi, attestati, valore economico.<br>
-          <strong>Amministrazione</strong>: cash flow, fatture pagate %, F24 (sì/no), proforma nr, DSO giorni, riduzione costi.<br>
-          <strong>HR/MKT</strong>: costo agenzia esterna, costo ads, fornitori MKT (Telesales, Marco il Coso, Canva).<br>
-          <strong>Segreteria</strong>: chiamate gestite, scadenze rispettate %, richieste soci evase 24h %, errori.<br>
-          In fondo a ogni pagina: KPI dell'area con target e effettivo modificabili.
+          8 unità produttive (6 centri sotto Produzione + Formazione + Sorveglianza Sanitaria) con <strong>margine = valore − costo fisso − costo variabile</strong>.<br>
+          Il ricavo per unità ha 3 modi editabili per riga:<br>
+          <strong>• % del fatturato</strong> (default) — ripartizione STIMA (Sorvsan 20 · Antinc 18 · Doc 15 · Form 15 · RSPP 12 · Amb 10 · Cant 8 · VT 2 = 100). Bottone "Normalizza a 100%" se ne cambi una.<br>
+          <strong>• Manuale €</strong> — valore reale per servizio (badge <strong>REALE</strong>): quando arriva dalla contabilità, digitalo qui e la stima viene sostituita automaticamente.<br>
+          <strong>• Tecnico</strong> — solo per i 5 centri con campo collegato in "Produzione tecnici", usa il generato_tecnico.<br>
+          In fondo alla pagina: <strong>margine aziendale modello</strong> con confronto vs reale YTD del foglio Controllo di gestione (semaforo ±5/±10 pt).
         </div>
       </div>
 
-      <!-- STEP 6: KPI -->
+      <!-- STEP 6: Aree operative + KPI -->
       <div style="background:var(--card);border:1px solid var(--lift);border-radius:var(--rl);padding:18px 22px;margin-bottom:10px">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
           <div style="width:32px;height:32px;border-radius:50%;background:var(--ink);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0">6</div>
           <div>
-            <div style="font-size:14px;font-weight:600">KPI e obiettivi area</div>
-            <div style="font-size:11px;color:var(--ink3)">Dove: 🏗 Struttura & aree oppure in fondo a ogni pagina area</div>
+            <div style="font-size:14px;font-weight:600">Aree operative + KPI</div>
+            <div style="font-size:11px;color:var(--ink3)">Dove: menu laterale → ogni area · Chi: v. sotto</div>
           </div>
         </div>
         <div style="font-size:12px;line-height:1.6;color:var(--ink2)">
-          Ogni area ha micro-KPI con <strong>Target</strong> e <strong>Effettivo</strong>. Inserisci l'effettivo mensile.<br>
-          La barra diventa verde quando effettivo ≥ target. La soglia bonus è fissata a <strong>101%</strong>.<br>
-          Il bonus di una risorsa si sblocca solo se il KPI dell'area supera il 101% del target.<br>
-          Puoi aggiungere KPI personalizzati con "+ KPI" in fondo alla sezione.
+          Aggiorna KPI (Target/Effettivo) e dati operativi mensili. La barra diventa verde a effettivo ≥ target. Il <strong>bonus si sblocca a 101%</strong> del KPI area.<br>
+          <strong>• Commerciale</strong> (Roberto) — venduto/incassato/provvigioni per agente (Fiorentina/Senese), obiettivo libero del mese, clienti nuovi, sinergie.<br>
+          <strong>• Formazione</strong> (Niccolò) — ore erogate/pianificate, corsi completati, aule, attestati, docenti impiegati.<br>
+          <strong>• Sorveglianza Sanitaria</strong> (—) — visite effettuate, nuovi MC attivati, protocolli.<br>
+          <strong>• Amministrazione</strong> (Valentina/Mattia) — cash flow, fatture pagate %, F24, proforma, DSO.<br>
+          <strong>• Marketing</strong> (Marco, autonomo sotto Commerciale) — costo per lead, ROI campagne, lead generati.<br>
+          <strong>• Segreteria</strong> (—) — scadenze rispettate, tempi risposta telefono, richieste soci evase 24h.<br>
+          KPI personalizzati aggiungibili con "+ KPI".
         </div>
       </div>
 
@@ -1426,47 +1442,133 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
           <div style="width:32px;height:32px;border-radius:50%;background:var(--ink);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0">7</div>
           <div>
             <div style="font-size:14px;font-weight:600">Compensi risorsa per risorsa</div>
-            <div style="font-size:11px;color:var(--ink3)">Dove: 📋 Mese corrente → Passo 4</div>
+            <div style="font-size:11px;color:var(--ink3)">Dove: 📋 Mese corrente → Passo 4 · Chi: Francesco Martini</div>
           </div>
         </div>
         <div style="font-size:12px;line-height:1.6;color:var(--ink2)">
-          Per ogni risorsa puoi espandere la riga e inserire i dati del suo compenso variabile.<br>
-          I dati già inseriti nelle pagine area (es. generato tecnici, venduto agenti) si riflettono automaticamente.<br>
-          Per aggiungere un secondo ruolo a una risorsa (es. Giovanna che fa anche docenze): usa il popover <strong>⚙️</strong> → "+ Aggiungi ruolo secondario".
+          Per ogni risorsa espandi la riga: dati inseriti nelle pagine area (generato tecnici, venduto agenti) si riflettono automaticamente sui compensi variabili.<br>
+          Ruolo secondario (es. Giovanna che fa anche docenze) → popover <strong>⚙️</strong> → "+ Aggiungi ruolo secondario".<br>
+          Un tecnico può essere responsabile di un centro: il suo bonus dipende dal gate KPI di quell'area.
         </div>
       </div>
 
-      <!-- STEP 8: Salva e dashboard -->
+      <!-- STEP 8: Premi & pannello direttore -->
+      <div style="background:var(--card);border:1px solid var(--lift);border-radius:var(--rl);padding:18px 22px;margin-bottom:10px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+          <div style="width:32px;height:32px;border-radius:50%;background:var(--ink);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0">8</div>
+          <div>
+            <div style="font-size:14px;font-weight:600">Premi &amp; pannello direttore</div>
+            <div style="font-size:11px;color:var(--ink3)">Dove: 💰 Premi &amp; Direttore · Chi: Roberto (validazione), direttore area (distribuzione)</div>
+          </div>
+        </div>
+        <div style="font-size:12px;line-height:1.6;color:var(--ink2)">
+          Per ogni area con KPI ok (≥101%) l'app propone un <strong>pool premi</strong> automatico basato sul margine area, con <strong>slider di regolazione</strong> in tempo reale e capienza rispetto alla liquidità disponibile (P3 nella cascata).<br>
+          Il <strong>direttore d'area</strong> può distribuire il pool tra le sue persone oppure tenerlo per sé — al CDA interessa che l'area resti sostenibile.<br>
+          Toggle <strong>mese/trimestre</strong> per la maturazione. Il residuo non liquidato si accumula in "maturato". Lo storico premi resta visibile per risorsa/area e viene salvato nello snapshot.
+        </div>
+      </div>
+
+      <!-- STEP 9: Dashboard CDA + semaforo X/Y/Z -->
+      <div style="background:var(--card);border:1px solid var(--lift);border-radius:var(--rl);padding:18px 22px;margin-bottom:10px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+          <div style="width:32px;height:32px;border-radius:50%;background:var(--ink);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0">9</div>
+          <div>
+            <div style="font-size:14px;font-weight:600">Dashboard CDA + semaforo sostenibilità X/Y/Z</div>
+            <div style="font-size:11px;color:var(--ink3)">Dove: 📊 Dashboard CDA · Chi: tutti in lettura</div>
+          </div>
+        </div>
+        <div style="font-size:12px;line-height:1.6;color:var(--ink2)">
+          Riepilogo mensile con banner semaforo + <strong>numeri chiave</strong>: liquidità disponibile, utili, margine.<br>
+          <strong>Semaforo di sostenibilità</strong> (SPEC-v10 §11):<br>
+          <strong>🔴 ROSSO — sotto Z</strong> (Prioritari + Garantito): l'incassato non copre i garantiti, a rischio.<br>
+          <strong>🟡 GIALLO — tra Z e Y</strong> (Z + Budget fisso aree): niente variabili di area.<br>
+          <strong>🟢 VERDE — sopra X</strong> (Y + Budget variabile + Accantonamenti): sostenibile, ci sono utili.<br>
+          Grafici: cascata incassato → utili, distribuzione costi, aree budget vs costo, personale garantito vs variabile.<br>
+          Confronto <strong>margine modello vs reale</strong> (foglio Controllo di gestione): se diverge &gt;5 pt, il modello va rivisto.
+        </div>
+      </div>
+
+      <!-- STEP 10: Simulatore + break-even -->
+      <div style="background:var(--card);border:1px solid var(--lift);border-radius:var(--rl);padding:18px 22px;margin-bottom:10px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+          <div style="width:32px;height:32px;border-radius:50%;background:var(--ink);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0">10</div>
+          <div>
+            <div style="font-size:14px;font-weight:600">Simulatore what-if + break-even</div>
+            <div style="font-size:11px;color:var(--ink3)">Dove: 🎛 Simulatore · Chi: Roberto (analisi scenari)</div>
+          </div>
+        </div>
+        <div style="font-size:12px;line-height:1.6;color:var(--ink2)">
+          Slider sull'incassato + 3 scenari (Pessimistico −20% · Base · Ottimistico +25%). Usa la <strong>stessa cascata a priorità</strong> della Dashboard: il numero del simulatore non può discordare da quello reale.<br>
+          <strong>Break-even</strong> — incassato minimo per non andare in perdita, calcolato per bisezione sulla `flow()` reale (la cascata non è lineare: prioritari e garantito sono € fissi, budget variabili scalano). Se sei sotto: ti dice di quanto.
+        </div>
+      </div>
+
+      <!-- STEP 11: Organigramma drag&drop -->
+      <div style="background:var(--card);border:1px solid var(--lift);border-radius:var(--rl);padding:18px 22px;margin-bottom:10px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+          <div style="width:32px;height:32px;border-radius:50%;background:var(--ink);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0">11</div>
+          <div>
+            <div style="font-size:14px;font-weight:600">Organigramma con drag &amp; drop</div>
+            <div style="font-size:11px;color:var(--ink3)">Dove: 🏛 Organigramma · Chi: Roberto</div>
+          </div>
+        </div>
+        <div style="font-size:12px;line-height:1.6;color:var(--ink2)">
+          Vista SVG gerarchica: CDA → Utili, Segreteria (staff), SSI srl (−GRFM%) → Amministrazione, Commerciale (con Marketing), Produzione (con Formazione, Sorveglianza Sanitaria, 6 centri di costo).<br>
+          <strong>Trascina una card su un'altra</strong> per cambiare parentId — con controllo anti-ciclo (non puoi far diventare un figlio genitore di suo padre), flash di conferma e pulsante Annulla.<br>
+          Controlli: dimensione card (sm/md/lg), layout verticale/orizzontale, zoom.
+        </div>
+      </div>
+
+      <!-- STEP 12: Import Excel -->
+      <div style="background:var(--card);border:1px solid var(--lift);border-radius:var(--rl);padding:18px 22px;margin-bottom:10px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+          <div style="width:32px;height:32px;border-radius:50%;background:var(--ink);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0">12</div>
+          <div>
+            <div style="font-size:14px;font-weight:600">Import Excel — aggiornamento dati sorgente</div>
+            <div style="font-size:11px;color:var(--ink3)">Dove: 📥 Import · Chi: Francesco Martini (quando cambiano fissi/costi/dipendenti)</div>
+          </div>
+        </div>
+        <div style="font-size:12px;line-height:1.6;color:var(--ink2)">
+          I dati veri sono già dentro l'app (seed Fase 6). Ricarica gli Excel solo per <strong>aggiornamenti futuri</strong>:<br>
+          <strong>• PF SI 2026.xlsx</strong> — fogli "2026 PF" (fissi/variabili per area) + "PREVISIONALE 2026" (budget % di incidenza).<br>
+          <strong>• 26_Dettaglio costi dipendenti.xlsx</strong> — costo azienda annuo per dipendente.<br>
+          L'import fa <strong>anteprima + conferma</strong>: vedi la decomposizione prima di sovrascrivere lo stato. Riclassifica automaticamente prioritari/sistema/tasse dalle voci PF. Match nome-dipendente automatico contro le persone già in S.personale.
+        </div>
+      </div>
+
+      <!-- STEP 13: Snapshot + backup -->
       <div style="background:var(--card);border:1px solid var(--lift);border-radius:var(--rl);padding:18px 22px;margin-bottom:10px">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
           <div style="width:32px;height:32px;border-radius:50%;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0">✓</div>
           <div>
-            <div style="font-size:14px;font-weight:600">Salva snapshot e verifica</div>
-            <div style="font-size:11px;color:var(--ink3)">Dove: pulsante verde in alto a destra</div>
+            <div style="font-size:14px;font-weight:600">Snapshot mensile + backup</div>
+            <div style="font-size:11px;color:var(--ink3)">Dove: 📅 Salva snapshot (in alto a destra) · Chi: Roberto o Francesco a fine mese</div>
           </div>
         </div>
         <div style="font-size:12px;line-height:1.6;color:var(--ink2)">
-          Quando tutti i dati sono inseriti: clicca <strong>📅 Salva snapshot</strong> per salvare il mese.<br>
-          Poi vai su 📊 <strong>Dashboard CDA</strong> per la vista semafori e grafici.<br>
-          Esporta JSON per backup locale. Esporta PDF per stampa o invio.<br>
-          Lo <strong>Storico</strong> mostra tutti i mesi salvati con confronto.
+          A fine mese: <strong>📅 Salva snapshot</strong> per bloccare il mese nello Storico (con dedup: se salvi due volte lo stesso mese, aggiorna invece di duplicare).<br>
+          Lo Storico mostra tutti i mesi salvati con confronto e grafici andamento. Include maturato/liquidato premi per risorsa.<br>
+          Backup: <strong>Esporta JSON</strong> in qualsiasi momento (scarica lo stato completo), <strong>Carica JSON</strong> per ripristinare. <strong>Esporta PDF</strong> del Dashboard/Centri/Premi per stampa CDA (print CSS ottimizzato A4).
         </div>
       </div>
 
       <!-- NOTE IMPORTANTI -->
-      <div style="background:#FDF1DC;border:1px solid #F5D898;border-radius:var(--rl);padding:18px 22px;margin-bottom:16px">
+      <div style="background:var(--amber-bg);border:1px solid var(--amber-bd);border-radius:var(--rl);padding:18px 22px;margin-bottom:16px">
         <div style="font-size:13px;font-weight:600;color:var(--amber);margin-bottom:10px">⚠️ Note importanti</div>
         <div style="font-size:12px;line-height:1.7;color:var(--ink2)">
           <strong>Ordine di inserimento suggerito ogni mese:</strong><br>
-          Sistema (importi fissi) → Incassato → Produzione tecnici → Commerciale → Altre aree → KPI → Snapshot<br><br>
-          <strong>Chi inserisce cosa:</strong><br>
-          • Roberto o Francesco: incassato, KPI commerciali, snapshot<br>
-          • Francesco Martini: sistema, amministrazione, compensi finali<br>
-          • Giovanna: dati produzione tecnici<br>
-          • Niccolò: dati formazione<br>
-          • Marco: dati HR/MKT<br><br>
-          <strong>I dati non si salvano automaticamente</strong> — usa Esporta JSON come backup.<br>
-          Carica JSON per ripristinare un backup precedente.
+          Import (se necessario) → Sistema/Prioritari/Tasse (se cambiati) → Incassato → Produzione tecnici → Commerciale → Aree operative + KPI → Ricavo centri (STIMA % o REALE) → Compensi risorsa → Premi/Direttore → Snapshot.<br><br>
+          <strong>Chi inserisce cosa (accountability):</strong><br>
+          • <strong>Roberto Macinai</strong> (Direzione): incassato, KPI commerciali, validazione premi, snapshot, simulatore.<br>
+          • <strong>Francesco Martini</strong> (Amm.): Sistema/Prioritari/Tasse, personale, import Excel, compensi finali.<br>
+          • <strong>Giovanna</strong>: dati produzione tecnici.<br>
+          • <strong>Samuele</strong>: coordina produzione tecnici.<br>
+          • <strong>Niccolò</strong>: dati Formazione.<br>
+          • <strong>Marco Macinai</strong>: dati Marketing (area autonoma sotto Commerciale — <em>ex HR/MKT: HR è stata eliminata come area, Marketing è ora area propria</em>).<br>
+          • <strong>Direttore d'area</strong> (dove definito): distribuzione premi tra le persone della sua area.<br><br>
+          <strong>Salvataggio automatico attivo</strong> (Fase 3+): ogni modifica scrive su <strong>localStorage</strong> del browser + <strong>sync cloud</strong> Supabase (multi-dispositivo, se raggiungibile). Se cambi scheda o riapri, ritrovi i dati.<br>
+          Un dispositivo con app <em>più vecchia</em> che risincronizza <strong>chiede conferma</strong> prima di applicare lo stato (schema versionato con migrazione automatica): non può sovrascrivere in silenzio lavoro più recente.<br><br>
+          <strong>Backup manuale sempre consigliato</strong>: Esporta JSON periodicamente (es. dopo ogni snapshot mensile) per avere una copia locale indipendente.
         </div>
       </div>
 
@@ -2116,7 +2218,7 @@ const CAT_ICONS={affitto:'🏢',utenze:'⚡',software:'💻',assicurazione:'🛡
 // stato non ha). Vedi SCHEMA_MIGRATIONS più sotto per la logica di
 // migrazione — root cause del problema "una scheda vecchia sovrascrive dati
 // più recenti", non un cerotto sul sintomo.
-const CURRENT_SCHEMA_VERSION=7;
+const CURRENT_SCHEMA_VERSION=8;
 
 const DEF={
   schemaVersion:CURRENT_SCHEMA_VERSION,
@@ -2401,6 +2503,19 @@ const DEF={
   ],
 
   cda:13600, soglia:101, wizStep:0,
+
+  // Fase 8 (§E): "altri costi operativi" — voce configurabile che copre le
+  // spese esterne non catalogate nel modello (ammortamenti hardware/software
+  // non in leasing, materiali di consumo, subappalti occasionali, provvigioni
+  // variabili agenti sul venduto, spese di rappresentanza). Il foglio
+  // Controllo di gestione le include nei "Costi Rilevati" ma nel PF sono
+  // aggregate ("Manutenzioni varie", "Varie", "Regali", ecc.) — servono qui
+  // come stima aziendale editabile finché non si categorizzano puntualmente.
+  // Default 15.000/mese: valore che, sommato al resto (fornitori centri +
+  // sistema dedotto + prioritari + tasse + garantito personale + CDA), porta
+  // il margine modello entro pochi punti dal reale YTD 23,41% quando
+  // l'incassato riflette il fatturato reale (~174k/mese). Editabile dall'UI.
+  altriCostiOperativi:15000,
 
   aree:[
 
@@ -3235,6 +3350,15 @@ const SCHEMA_MIGRATIONS=[
       if(a.ricavoManuale===undefined)a.ricavoManuale=0;
     });
   }},
+  // Fase 8: chiusura gap costi (§E). Aggiunge il campo altriCostiOperativi
+  // (default 15.000/mese) solo se assente — non tocca override utenti. Non
+  // sposta né altera altri dati: il resto del fix è nella formula
+  // margineAziendaleStimato, non richiede migrazione dello stato salvato
+  // (dedup delle voci sistemaFissi con areaId nei centri è calcolato a
+  // runtime, non serve toccare S.sistemaFissi).
+  {to:8,migrate(s){
+    if(s.altriCostiOperativi===undefined)s.altriCostiOperativi=15000;
+  }},
 ];
 function migrateSchema(s){
   let v=s.schemaVersion||0;
@@ -3355,25 +3479,58 @@ function margineContribuzioneCentri(){
   const cost=unita.reduce((s,u)=>s+centroCostoFisso(u)+unitaCostoVar(u),0);
   return{valore:val,costo:cost,margine:val-cost,marginePct:val>0?((val-cost)/val)*100:null};
 }
-// Margine aziendale stimato dal modello — questo SÌ confrontabile con
-// margineRealeYTD (23.41%): il foglio REALE è (fatturato − costi esterni),
-// che nel modello corrisponde a (incassato − fornitori centri − sistema
-// − prioritari − tasse), tutti costi verso l'esterno. Il costo del personale
-// interno (garantito) NON è "costo esterno" e va escluso dal confronto.
+// Margine aziendale del modello — confrontabile con margineRealeYTD (23,41%)
+// dal foglio Controllo di gestione. Fase 8 (§E): fix del doppio conteggio +
+// inclusione dei costi che il foglio REALE contabilizza sotto "Costi
+// Rilevati" ma il modello prima ignorava.
+//
+// DEDUP: totSistemaFissi include 57 voci con `areaId` in un centro
+// (c_ambiente/c_antincendio/c_verifiche_terra/form/sorvsan): sono le stesse
+// voci di `S.aree[centro].fornitori`, già contate in `fornitoriCentri` via
+// centroCostoFisso(). Le sottraggo per non contarle due volte.
+//
+// PERSONALE INTERNO: il "margine 23%" reale di un servizio consulenza è
+// dopo-personale — non ha senso confrontarlo con un modello che esclude
+// stipendi (darebbe 50-60% strutturale). Include quindi garantito personale
+// (dipendenti + soci) e CDA.
+//
+// ALTRI COSTI OPERATIVI: voce configurabile S.altriCostiOperativi che
+// rappresenta ammortamenti + materiali + subappalti occasionali +
+// provvigioni variabili agenti non modellate (nel PF sono aggregate come
+// "Manutenzioni varie/Varie/Regali"). Editabile dall'UI, badge STIMA.
 function margineAziendaleStimato(){
   const inc=S.incassato||0;
   const unita=UNITA_PRODUTTIVE_RIC_PCT_IDS.map(id=>S.aree.find(a=>a.id===id)).filter(Boolean);
   const fornitoriCentri=unita.reduce((s,u)=>s+centroCostoFisso(u),0);
-  const sistema=(S.sistemaFissi||[]).reduce((s,v)=>s+((v.val||0)),0);
+  const centriIdSet=new Set(UNITA_PRODUTTIVE_RIC_PCT_IDS);
+  const sistemaTot=(S.sistemaFissi||[]).reduce((s,v)=>s+((v.val||0)),0);
+  const sistemaDup=(S.sistemaFissi||[]).reduce((s,v)=>s+(centriIdSet.has(v.areaId)?(v.val||0):0),0);
+  const sistemaDedotto=sistemaTot-sistemaDup;
   const prioritari=(S.prioritari||[]).reduce((s,v)=>s+((v.val||0)),0);
   const tasse=(S.tasse||[]).reduce((s,g)=>s+(g.voci||[]).reduce((ss,v)=>ss+(v.val||0),0),0);
-  const costiEsterni=fornitoriCentri+sistema+prioritari+tasse;
+  const garantitoPers=(S.personale||[]).reduce((s,p)=>{
+    if(p.natura==='dipendente')return s+(p.costoAziendaMensile||((p.costoAziendaAnnuo||0)/12));
+    if(p.natura==='socio')return s+(p.fissoMensile||0);
+    return s; // P.IVA: variabile su venduto, già dentro sistema/mkt/comm
+  },0);
+  const cda=S.cda||0;
+  const altri=S.altriCostiOperativi||0;
+  const costiEsterni=fornitoriCentri+sistemaDedotto+prioritari+tasse+garantitoPers+cda+altri;
   return{
     valore:inc,
     costiEsterni,
     margine:inc-costiEsterni,
     marginePct:inc>0?((inc-costiEsterni)/inc)*100:null,
-    dettaglio:{fornitoriCentri,sistema,prioritari,tasse},
+    dettaglio:{
+      fornitoriCentri,
+      sistemaDedotto,
+      sistemaDupliche:sistemaDup,
+      prioritari,
+      tasse,
+      garantitoPersonale:garantitoPers,
+      cda,
+      altriCostiOperativi:altri,
+    },
   };
 }
 // Se il centro/area ha un elenco fornitori dettagliato (§A seed costi centri),
@@ -3922,12 +4079,56 @@ function renderStep2(){
 function renderStep3(){
   const f=flow();const inc=S.incassato;
   const el=document.getElementById('s3-body');if(!el)return;
-  const rows=S.voci.map((v,i)=>{
-    const eur=Math.round((v.pct/100)*inc);
-    const isUtile = v.utile === true;
-    return`<div style="border:1px solid var(--lift);border-radius:var(--r);padding:8px 10px;margin-bottom:5px;background:${isUtile?'var(--green-bg)':'var(--card)'}">       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">         <span style="flex:1;font-size:12px;font-weight:600;color:${isUtile?'var(--green)':'var(--ink)'}">${v.nome}</span>         <div style="display:flex;align-items:center;gap:4px">           <span style="font-size:10px;color:var(--ink3)">€</span>           <input type="number" value="${eur}" style="width:88px" class="inp n"             onblur="if(S.incassato>0){S.voci[${i}].pct=((parseFloat(this.value)||0)/S.incassato)*100;}renderAll()" onkeydown="if(event.keyCode===13)this.blur()">         </div>         <div style="display:flex;align-items:center;gap:4px">           <input type="number" value="${+v.pct.toFixed(2)}" step="0.1" style="width:58px" class="inp n"             onblur="S.voci[${i}].pct=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13)this.blur()">           <span style="font-size:10px;color:var(--ink3)">%</span>         </div>         <button class="btn xs" onclick="S.voci[${i}].showDesc=!S.voci[${i}].showDesc;renderStep3()" style="opacity:.5">✎</button>         ${!isUtile?`<button class="btn xs danger" onclick="if(confirm(\'Eliminare voce?\')){{S.voci.splice(${i},1);renderAll()}}">✕</button>`:''}       </div>       ${v.showDesc||v.desc?`<textarea style="width:100%;margin-top:5px;padding:5px 7px;border:1px solid var(--lift);border-radius:var(--r);font-size:11px;color:var(--ink3);resize:none;background:var(--sheet);font-family:\'DM Sans\',sans-serif" rows="2" placeholder="Descrivi cosa include questa voce..." onblur="S.voci[${i}].desc=this.value">${v.desc||''}</textarea>`:''}     </div>`;
-  }).join('');
-  el.innerHTML=rows+`     <div style="margin-bottom:8px">       <button class="btn xs prim" onclick="S.voci.push({nome:'Nuova voce %',pct:0,desc:'',showDesc:true});renderStep3()">+ Aggiungi voce strutturale</button>     </div>     <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--lift);font-size:12px;flex-wrap:wrap">       <span style="flex:1;color:var(--blue)">CDA (compenso fisso governance)</span>       <input type="number" value="${S.cda}" style="width:95px" class="inp n"         onblur="S.cda=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">       <span style="font-size:11px;color:var(--ink3)">${P((S.cda/Math.max(1,inc))*100)} inc.</span>     </div>     <div style="display:flex;align-items:center;gap:8px;padding:7px 0;font-size:12px">       <span style="flex:1;color:var(--ink3)">Soglia KPI per bonus</span>       <input type="number" value="${S.soglia}" style="width:65px" class="inp n"         onblur="S.soglia=parseFloat(this.value)||80;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">       <span style="font-size:10px;color:var(--ink3)">%</span>     </div>     <div style="margin-top:10px;padding:8px 10px;background:var(--sheet);border-radius:var(--r);font-size:12px;display:flex;gap:16px;flex-wrap:wrap">       <div>Costi strutturali: <strong class="mono">${fmt(f.costiFissi+f.costiVar+f.acc)}</strong></div>       <div>CDA: <strong class="mono">${fmt(f.cda)}</strong></div>       <div style="margin-left:auto;color:${f.utili<0?'var(--red)':'var(--green)'};font-weight:500">Utili: <strong class="mono">${fmt(f.utili)}</strong></div>     </div>`;
+  // Fase 8: passo 3 semplificato — mostro solo le voci REALI usate dalla
+  // cascata a priorità (GRFM + CDA + Soglia). Le voci S.voci[1/2/3]
+  // ("Costi fissi %", "Costi variabili %", "Accantonamenti") erano il vecchio
+  // modello %-based pre-Fase 3, oggi sostituite da Sistema/Prioritari/Tasse
+  // (voci puntuali in €) — restano nello stato per compatibilità di waterfall
+  // e simulatore legacy, ma non impattano più utili/liquidità/semaforo.
+  const grfmPct=(S.voci[0]&&S.voci[0].pct)||5;
+  const grfmEur=Math.round((grfmPct/100)*inc);
+  el.innerHTML=`
+    <div class="alert info" style="margin-bottom:12px">
+      Dalla Fase 3 la cascata a priorità sostituisce il vecchio modello %-based.
+      Sistema (costi overhead), Prioritari (leasing/F24/IVA/rateizzi/TFR) e Tasse
+      si editano in <strong>⚙️ Sistema</strong> (importi puntuali in €, non %).
+      Qui restano solo le voci ancora usate dalla cascata: <strong>GRFM</strong> (%
+      holding), <strong>CDA</strong> (compenso governance) e <strong>Soglia KPI</strong>
+      per lo sblocco premi.
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--lift);border-radius:var(--r);font-size:12px;flex-wrap:wrap;margin-bottom:6px">
+      <span style="flex:1;font-weight:600">GRFM (holding — non distribuito)</span>
+      <div style="display:flex;align-items:center;gap:4px">
+        <span style="font-size:10px;color:var(--ink3)">€</span>
+        <input type="number" value="${grfmEur}" style="width:88px" class="inp n"
+          onblur="if(S.incassato>0){S.voci[0].pct=((parseFloat(this.value)||0)/S.incassato)*100;}renderAll()" onkeydown="if(event.keyCode===13)this.blur()">
+      </div>
+      <div style="display:flex;align-items:center;gap:4px">
+        <input type="number" value="${(+grfmPct.toFixed(2))}" step="0.1" style="width:58px" class="inp n"
+          onblur="S.voci[0].pct=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13)this.blur()">
+        <span style="font-size:10px;color:var(--ink3)">%</span>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--lift);border-radius:var(--r);font-size:12px;flex-wrap:wrap;margin-bottom:6px">
+      <span style="flex:1;color:var(--blue);font-weight:600">CDA (compenso fisso governance)</span>
+      <input type="number" value="${S.cda}" style="width:95px" class="inp n"
+        onblur="S.cda=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13)this.blur()">
+      <span style="font-size:11px;color:var(--ink3)">${P((S.cda/Math.max(1,inc))*100)} inc.</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--lift);border-radius:var(--r);font-size:12px;flex-wrap:wrap;margin-bottom:10px">
+      <span style="flex:1;color:var(--ink3);font-weight:600">Soglia KPI per bonus</span>
+      <input type="number" value="${S.soglia}" style="width:65px" class="inp n"
+        onblur="S.soglia=parseFloat(this.value)||80;renderAll()" onkeydown="if(event.keyCode===13)this.blur()">
+      <span style="font-size:10px;color:var(--ink3)">%</span>
+      <span style="font-size:10px;color:var(--ink3);flex-basis:100%">Il variabile di una risorsa si sblocca se il KPI area supera questa soglia.</span>
+    </div>
+    <div style="margin-top:6px;padding:9px 12px;background:var(--sheet);border-radius:var(--r);font-size:12px;display:flex;gap:16px;flex-wrap:wrap">
+      <div>GRFM: <strong class="mono">${fmt(f.grfm)}</strong></div>
+      <div>CDA: <strong class="mono">${fmt(f.cda)}</strong></div>
+      <div>Sistema: <strong class="mono">${fmt(f.sistema)}</strong></div>
+      <div>Prioritari + Tasse: <strong class="mono">${fmt(f.prioritariP1-f.sistema)}</strong></div>
+      <div style="margin-left:auto;color:${f.utili<0?'var(--red)':'var(--green)'};font-weight:500">Utili: <strong class="mono">${fmt(f.utili)}</strong></div>
+    </div>`;
 }
 
 // ── STEP 4 — RISORSE ATTIVITÀ ─────────────
@@ -5231,7 +5432,7 @@ function renderCentriCostoPage(){
   const margLabel=margDelta===null?'—':(margDelta<=5?'coerente col reale':(margDelta<=10?'da verificare':'divergente'));
   let html='';
 
-  // ── Banner Fase 7: KPI numeri chiave in evidenza (SPEC-v10 §D) ─────────
+  // ── Banner Fase 7/8: KPI numeri chiave in evidenza (SPEC-v10 §D/§E) ────
   html+=`<div class="kpi-strip" style="margin-bottom:14px">
     <div class="kpi-cell">
       <div class="kpi-lbl">Somma % ripartizione</div>
@@ -5248,7 +5449,34 @@ function renderCentriCostoPage(){
       <div class="kpi-val" style="color:${margColor}">${margAz.marginePct!==null?margAz.marginePct.toFixed(1)+'%':'—'}</div>
       <div class="kpi-sub">reale YTD ${margReale.toFixed(1)}% — <strong style="color:${margColor}">${margLabel}</strong>${margDelta!==null?' (Δ '+margDelta.toFixed(1)+' pt)':''}</div>
     </div>
-  </div>`;
+  </div>
+
+  <!-- Dettaglio composizione costi aziendali (Fase 8, §E) -->
+  <details class="pane" style="margin-bottom:14px" ${margDelta===null||margDelta>5?'open':''}>
+    <summary style="cursor:pointer;font-size:12px;font-weight:600">Composizione costi aziendali (dettaglio ${fmt(margAz.costiEsterni)}/mese vs incassato ${fmt(margAz.valore)})</summary>
+    <div style="margin-top:10px;font-size:12px">
+      <table class="tbl-clean" style="width:100%">
+        <thead><tr><th>Voce</th><th style="text-align:right">€/mese</th><th>Origine</th></tr></thead>
+        <tbody>
+          <tr><td>Fornitori dei centri (8 unità)</td><td class="mono" style="text-align:right">${fmt(margAz.dettaglio.fornitoriCentri)}</td><td style="font-size:11px;color:var(--ink3)">Σ .fornitori dei centri</td></tr>
+          <tr><td>Sistema (dedotto ${fmt(margAz.dettaglio.sistemaDupliche)} già in fornitori centri)</td><td class="mono" style="text-align:right">${fmt(margAz.dettaglio.sistemaDedotto)}</td><td style="font-size:11px;color:var(--ink3)">totSistema ${fmt(margAz.dettaglio.sistemaDedotto+margAz.dettaglio.sistemaDupliche)} − dupliche</td></tr>
+          <tr><td>Voci prioritarie (leasing/F24/IVA/rateizzi/TFR)</td><td class="mono" style="text-align:right">${fmt(margAz.dettaglio.prioritari)}</td><td style="font-size:11px;color:var(--ink3)">S.prioritari</td></tr>
+          <tr><td>Tasse (IRES/IRAP/IVA acconto/INPS titolari)</td><td class="mono" style="text-align:right">${fmt(margAz.dettaglio.tasse)}</td><td style="font-size:11px;color:var(--ink3)">S.tasse</td></tr>
+          <tr><td>Personale interno (dipendenti + soci)</td><td class="mono" style="text-align:right">${fmt(margAz.dettaglio.garantitoPersonale)}</td><td style="font-size:11px;color:var(--ink3)">costoAziendaMensile + fissoMensile soci</td></tr>
+          <tr><td>CDA</td><td class="mono" style="text-align:right">${fmt(margAz.dettaglio.cda)}</td><td style="font-size:11px;color:var(--ink3)">S.cda</td></tr>
+          <tr><td>Altri costi operativi <span class="badge b-warn">STIMA</span> — <input type="number" value="${S.altriCostiOperativi||0}" step="500" class="inp n" style="width:100px" title="Ammortamenti, materiali, subappalti occasionali, provvigioni variabili — voci del foglio REALE non catalogate nel modello" onblur="S.altriCostiOperativi=parseFloat(this.value)||0;saveLocal();renderAll()" onkeydown="if(event.keyCode===13)this.blur()"></td><td class="mono" style="text-align:right">${fmt(margAz.dettaglio.altriCostiOperativi)}</td><td style="font-size:11px;color:var(--ink3)">ammortamenti + materiali + varie</td></tr>
+        </tbody>
+        <tfoot><tr class="tbl-foot">
+          <td><strong>Totale costi aziendali</strong></td>
+          <td class="mono" style="text-align:right"><strong>${fmt(margAz.costiEsterni)}</strong></td>
+          <td style="font-size:11px;color:var(--ink3)">${margAz.valore>0?((margAz.costiEsterni/margAz.valore)*100).toFixed(1)+'% dell incassato':''}</td>
+        </tr></tfoot>
+      </table>
+      <div style="margin-top:8px;font-size:11px;color:var(--ink3)">
+        Margine modello si allinea al reale YTD ${margReale.toFixed(1)}% quando l'incassato riflette il fatturato reale (~174k/mese medio 2026). Con incassato ${fmt(margAz.valore)} il margine è ${margAz.marginePct!==null?margAz.marginePct.toFixed(1):'—'}%${margDelta!==null?' (Δ '+margDelta.toFixed(1)+' pt vs reale)':''}.
+      </div>
+    </div>
+  </details>`;
 
   if(roll){
     html+=`<div class="pane" style="margin-bottom:14px">

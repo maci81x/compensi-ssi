@@ -256,6 +256,8 @@ Confronta `incassato` con X/Y/Z e mostra il colore + di quanto sei sopra/sotto c
 6. QA sui numeri contro PF/Previsionale, poi snapshot.
 7. **Ricavo per centro come % di default + passata grafica CDA-ready** (§D
    sotto, Fase 7 chiusa 2026-07-23).
+8. **Chiusura gap costi aziendali + guida operativa aggiornata + correzioni
+   minori** (§E sotto, Fase 8 chiusa 2026-07-23).
 
 ## 15. Fase 7 — Ricavo per centro % + passata grafica (chiusa 2026-07-23)
 
@@ -311,6 +313,84 @@ Confronta `incassato` con X/Y/Z e mostra il colore + di quanto sei sopra/sotto c
 - Rimosse anche le voci gemelle da `S.snaps` in `compensi_stato`.
 - Tabella `compensi_snapshots` **vuota**: primo snapshot reale = luglio 2026.
 
+## 16. Fase 8 — Chiusura gap costi aziendali (chiusa 2026-07-23)
+
+### 16.1 Diagnosi (§E)
+Il modello pre-Fase 8 sottostimava ~50k/mese di costi esterni rispetto al
+foglio Controllo di gestione (77k modellati vs ~128k reali), portando a un
+margine 40,6% vs reale 23,4% (Δ 17 pt). Due cause distinte:
+
+- **BUG doppio conteggio** (~16,6k/mese): `totSistemaFissi` in
+  `margineAziendaleStimato` includeva già le 57 voci con `areaId` puntante
+  a un centro (form/sorvsan/c_ambiente/c_antincendio/c_verifiche_terra),
+  che sono le STESSE voci di `S.aree[centro].fornitori` — quindi contate
+  due volte.
+- **GAP personale interno** (~54k/mese): il "margine 23% del foglio
+  Controllo di gestione" è dopo-personale (fatturato − costi esterni che
+  includono stipendi). Il modello escludeva garantito personale + CDA.
+
+### 16.2 Fix (formula margineAziendaleStimato in index.html)
+```
+margine_aziendale = incassato − (
+  fornitori_centri +
+  sistema_dedotto (totSistemaFissi − voci con areaId nei centri) +
+  prioritari +
+  tasse +
+  garantito_personale (dipendenti + soci) +
+  cda +
+  altri_costi_operativi (S.altriCostiOperativi, default 15k)
+) / incassato
+```
+
+- Il dedup è a runtime: nessuna migrazione dei dati (`S.sistemaFissi` resta
+  intatto, la formula filtra).
+- `S.altriCostiOperativi` è configurabile: rappresenta ammortamenti +
+  materiali + subappalti occasionali + provvigioni variabili agenti — voci
+  del foglio REALE non ancora catalogate puntualmente. Badge STIMA.
+
+### 16.3 Effetto validato
+| Incassato | Margine modello | vs Reale YTD 23,41% |
+|---|---:|---|
+| 130.000 (default) | −0,08% | Δ 23,5 pt — default troppo basso vs realtà |
+| **174.265** (media reale 5 mesi 2026) | **25,34%** | **Δ 1,93 pt ✅** entro ±5 pt |
+| 200.000 (cloud attuale) | 34,95% | Δ 11,5 pt — mese sopra media |
+
+### 16.4 Schema v8 + migrazione
+- `CURRENT_SCHEMA_VERSION = 8`.
+- Migrazione `to:8`: aggiunge `S.altriCostiOperativi = 15000` solo se
+  assente. Non tocca altri campi.
+
+### 16.5 UI (Centri di costo)
+- Nuovo pannello espandibile con **composizione costi aziendali**
+  dettagliata (7 righe: fornitori centri · sistema dedotto · prioritari ·
+  tasse · personale interno · CDA · altri costi operativi editabili).
+- Footer con totale + % dell'incassato.
+- Il pannello è aperto di default quando margine diverge >5 pt dal reale,
+  chiuso altrimenti.
+
+### 16.6 Guida operativa riscritta
+- Da 8 passi (pre-Fase 2) a **13 passi** allineati alla v10.
+- Corretto "i dati non si salvano automaticamente" (dalla Fase 3 c'è
+  autosave localStorage + sync cloud).
+- Aggiornato passo "aree operative" con tassonomia corrente (Formazione,
+  Marketing, Sorveglianza Sanitaria, Amministrazione, Segreteria — HR
+  rimossa).
+- Aggiunti passi mancanti: Personale a lordo, Centri di costo + %
+  ripartizione, Premi & pannello direttore, Semaforo X/Y/Z, Simulatore +
+  break-even, Organigramma drag&drop, Import Excel, Voci prioritarie.
+- "Chi inserisce cosa" allineato (Marco = Dir. Marketing autonomo sotto
+  Commerciale, non più "HR/MKT").
+
+### 16.7 Correzioni minori
+- Etichetta login footer: **v9 → v10 · Fasi 1-8**.
+- Passo 3 wizard **semplificato**: mostrava 4 voci %-based (GRFM, costi
+  fissi, costi variabili, accantonamenti). Solo GRFM (`S.voci[0]`) è ancora
+  usata autoritativa dalla cascata; le altre 3 erano legacy (calcolate ma
+  non sommate agli utili dalla Fase 3, sostituite da Sistema/Prioritari/
+  Tasse puntuali in €). Ora il passo mostra solo GRFM + CDA + Soglia KPI
+  con banner esplicativo. Voci legacy restano in `S.voci` per compatibilità
+  waterfall/simulatore legacy.
+
 ---
 
 ## 14. Da confermare in fase di implementazione (con Roberto)
@@ -326,9 +406,11 @@ Confronta `incassato` con X/Y/Z e mostra il colore + di quanto sei sopra/sotto c
   policy DELETE per ruolo anon, oppure login Supabase reale (oggi solo
   `currentUser` locale). L'MCP admin bypassa comunque le RLS (usato per la
   pulizia snapshot del 2026-07-23).
-- **Aperto per Fase 8:** il modello sottostima ~50k/mese di costi esterni
-  rispetto al foglio Controllo di gestione (77k modellati vs ~130k reali),
-  quindi il margine aziendale modello diverge di ~17 pt dal 23,41% reale
-  YTD. La ripartizione % del ricavo (Fase 7) è corretta e somma 100% — il
-  gap è di completezza del modello, da colmare con voci mancanti
-  (materiali, subappalti/consulenti a fattura, altre spese esterne).
+- **Chiuso in Fase 8 (2026-07-23):** il gap costi 50k/mese è stato risolto
+  fixando il doppio conteggio in `margineAziendaleStimato` (voci
+  sistemaFissi con areaId nei centri) e includendo personale interno +
+  `altriCostiOperativi` (default 15k, editabile). Con incassato 174k
+  medio 2026 il margine modello è 25,34% vs reale 23,41% (Δ 1,93 pt).
+  Vedi §16 per il dettaglio. **Rimane aperto Fase 9**: spacchettare
+  `altriCostiOperativi` in voci concrete (ammortamenti, materiali,
+  subappalti, provvigioni variabili) quando arriveranno i dati puntuali.
