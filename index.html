@@ -2160,7 +2160,87 @@ const CAT_ICONS={affitto:'🏢',utenze:'⚡',software:'💻',assicurazione:'🛡
 // stato non ha). Vedi SCHEMA_MIGRATIONS più sotto per la logica di
 // migrazione — root cause del problema "una scheda vecchia sovrascrive dati
 // più recenti", non un cerotto sul sintomo.
-const CURRENT_SCHEMA_VERSION=7;
+const CURRENT_SCHEMA_VERSION=8;
+
+// ══════════════════════════════════════════════════════════════════════════
+// §D blocco finale — ORGANIGRAMMA UFFICIALE
+// ══════════════════════════════════════════════════════════════════════════
+// Aree TENUTE DISTINTE (niente consolidamento): ogni area rende/incide da sé.
+// RTO e ASF sono NODI con conteggi propri (KPI/premio), non etichette; i nomi
+// delle persone si assegnano dopo. Vincoli invarianti: Sistema resta 43.994,28
+// e nessun doppio conteggio — garantiti dal fatto che flow()/totSistema() non
+// dipendono dalla topologia aree né da area.fornitori, e che i costi ereditati
+// (Medici Competenti, Docenti) vengono SPOSTATI dal padre, non duplicati
+// (vedi normalizzaOrgUfficiale). Le nuove aree hanno budget 0 → cascata
+// invariata. L'erogato per servizio si inserisce a mano (§I).
+function _areaD(o){return Object.assign({
+  id:'',nome:'',tipo:'RIC',desc:'',incPct:0,resp:'',
+  parentId:'prod',natura:'produttiva',priorita:2,
+  budget:{fisso:0,variabilePct:0},chiusa:true,
+  fornitoreFisso:0,ricavoModo:'manuale',ricavoManuale:0,ricavoPct:0,
+  fornitori:[],micro:[]
+},o);}
+// Nuove aree dell'organigramma ufficiale (fornitori vuoti: Medici Competenti e
+// Docenti ereditano i loro spostandoli dal padre a runtime — vedi normalizza).
+const AREE_UFFICIALI_D=[
+  // Ramo produzione: RTO → ASF (nodi con KPI/premio propri)
+  _areaD({id:'rto',nome:'RTO',parentId:'prod',chiusa:false,desc:'Nodo RTO — conteggi/KPI/premio propri (Resp. Tecnico Organizzativo)'}),
+  _areaD({id:'asf',nome:'ASF',parentId:'rto',chiusa:false,desc:'Nodo ASF — conteggi/KPI/premio propri'}),
+  // Centri tecnici sotto ASF (i 6 esistenti vengono ri-genitorizzati qui)
+  _areaD({id:'c_sicurezza',nome:'Sicurezza',parentId:'asf',chiusa:false,desc:'Sicurezza — nodo con sotto-aree'}),
+  _areaD({id:'c_sic_analisi',nome:'Analisi acque/tamponi/alimenti',parentId:'c_sicurezza'}),
+  _areaD({id:'c_sic_edilizia',nome:'Edilizia',parentId:'c_sicurezza'}),
+  _areaD({id:'c_sic_tarature',nome:'Tarature',parentId:'c_sicurezza'}),
+  _areaD({id:'c_sic_ssl',nome:'SSL CEM-ROA',parentId:'c_sicurezza'}),
+  _areaD({id:'c_sic_polveri',nome:'Campionamento polveri',parentId:'c_sicurezza'}),
+  _areaD({id:'c_privacy',nome:'Privacy',parentId:'asf'}),
+  _areaD({id:'c_certificazioni',nome:'Certificazioni/Accreditamenti',parentId:'asf'}),
+  _areaD({id:'c_incendio',nome:'Incendio',parentId:'asf'}),
+  // Sorveglianza Sanitaria → Medici Competenti (eredita i medici dal padre)
+  _areaD({id:'c_medici_competenti',nome:'Medici Competenti',parentId:'sorvsan'}),
+  // Formazione → Segreteria Formativa + Docenti (eredita i docenti dal padre)
+  _areaD({id:'c_segreteria_formativa',nome:'Segreteria Formativa',parentId:'form',natura:'staff'}),
+  _areaD({id:'c_docenti',nome:'Docenti (interni/esterni)',parentId:'form'}),
+  // Amministrazione → Ufficio Acquisti
+  _areaD({id:'c_ufficio_acquisti',nome:'Ufficio Acquisti',parentId:'amm',natura:'costo'}),
+  // Commerciale → Senior/Junior Sales + Bandi e Gare
+  _areaD({id:'c_senior_sales',nome:'Senior Sales',parentId:'comm'}),
+  _areaD({id:'c_junior_sales',nome:'Junior Sales',parentId:'comm'}),
+  _areaD({id:'c_bandi_gare',nome:'Bandi e Gare',parentId:'comm'}),
+];
+// Mappa "eredita costi dal padre spostandoli" (no duplicazione): childId ← parentId.
+const EREDITA_FORNITORI_D=[
+  {child:'c_medici_competenti',parent:'sorvsan'},
+  {child:'c_docenti',parent:'form'},
+];
+// Normalizza uno stato all'organigramma ufficiale — IDEMPOTENTE, usata sia sul
+// clone fresco del DEF sia in migrazione sia su stati persistiti:
+//  1) aggiunge le aree ufficiali mancanti (mai sovrascrive quelle presenti);
+//  2) ri-genitorizza i 6 centri tecnici storici sotto ASF;
+//  3) sposta i fornitori del padre nel figlio (Medici Competenti, Docenti)
+//     UNA SOLA VOLTA — se il figlio ha già fornitori non tocca nulla.
+function normalizzaOrgUfficiale(s){
+  if(!s.aree)return s;
+  const byId=id=>s.aree.find(a=>a.id===id);
+  AREE_UFFICIALI_D.forEach(def=>{ if(!byId(def.id))s.aree.push(JSON.parse(JSON.stringify(def))); });
+  // 6 centri tecnici storici → sotto ASF (erano sotto 'prod')
+  ['c_antincendio','c_ambiente','c_cantieri','c_rspp','c_verifiche_terra','c_documenti'].forEach(id=>{
+    const a=byId(id); if(a&&a.parentId==='prod')a.parentId='asf';
+  });
+  // Ereditarietà costi: sposta i fornitori dal padre al figlio, una sola volta.
+  EREDITA_FORNITORI_D.forEach(({child,parent})=>{
+    const c=byId(child),p=byId(parent); if(!c||!p)return;
+    const childVuoto=!(c.fornitori&&c.fornitori.length);
+    const padreHa=(p.fornitori&&p.fornitori.length)||(p.fornitoreFisso||0)>0;
+    if(childVuoto&&padreHa){
+      c.fornitori=(p.fornitori||[]).map(f=>({...f}));
+      c.fornitoreFisso=p.fornitoreFisso||0;
+      p.fornitori=[]; p.fornitoreFisso=0; // svuota il padre: nessun doppio conteggio
+    }
+  });
+  return s;
+}
+
 
 const DEF={
   schemaVersion:CURRENT_SCHEMA_VERSION,
@@ -2690,6 +2770,9 @@ const DEF={
     {id:'c_documenti',nome:'Documenti',tipo:'RIC',desc:'Centro di costo — Documenti',incPct:0,resp:'',
      parentId:'prod',natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:0},chiusa:true,fornitoreFisso:0,ricavoModo:'tecnico',micro:[]},
 
+    // §D — organigramma ufficiale: RTO→ASF + aree distinte (i 6 centri sopra
+    // vengono ri-genitorizzati sotto ASF da normalizzaOrgUfficiale al load).
+    ...AREE_UFFICIALI_D,
   ],
   tasse:[
     {gruppo:'IRES 24%',   voci:[{nome:'IRES stima mensile',  val:5200}]},
@@ -2959,6 +3042,7 @@ const DEF={
   ]
 };
 let S=JSON.parse(JSON.stringify(DEF));
+normalizzaOrgUfficiale(S); // §D — sposta i costi ereditati anche sul clone fresco
 
 // ── PERSISTENZA LOCALE (autosave) ─────────────────────────────────────────
 // Prima di questo fix l'app non salvava mai in locale: un reload perdeva
@@ -3316,6 +3400,13 @@ const SCHEMA_MIGRATIONS=[
     // §F — GRFM default 2%: porta a 2 solo se ancora sul vecchio placeholder 5.
     if(s.voci&&s.voci[0]&&s.voci[0].pct===5)s.voci[0].pct=2;
   }},
+  {to:8,migrate(s){
+    // §D — organigramma ufficiale (idempotente): aggiunge RTO/ASF e le aree
+    // distinte mancanti, ri-genitorizza i 6 centri sotto ASF, sposta i costi
+    // ereditati (Medici Competenti, Docenti) dal padre. Sistema resta
+    // 43.994,28 e budget aree invariato (nuove aree a budget 0).
+    normalizzaOrgUfficiale(s);
+  }},
 ];
 function migrateSchema(s){
   let v=s.schemaVersion||0;
@@ -3414,8 +3505,20 @@ function checkRipartizioneCentri(){
 }
 // Rollup macro area (SPEC-v10 §5.1): quando la macro ha sotto-aree "chiuse",
 // mostra valore prodotto/costo/margine/peso aggregati dei figli.
+// §D — con l'organigramma ufficiale (RTO→ASF→centri, Sicurezza con sotto-aree)
+// il rollup deve aggregare TUTTE le aree chiuse discendenti, fermandosi a ogni
+// area "chiusa" (confine di aggregazione) per non contarla due volte: una macro
+// (es. Produzione) somma i suoi centri anche se distano più livelli.
+function discendentiChiuse(rootId){
+  const out=[]; const stack=S.aree.filter(a=>a.parentId===rootId);
+  while(stack.length){const a=stack.pop();
+    if(a.chiusa)out.push(a);                                  // foglia di aggregazione: conta, non scendere
+    else stack.push(...S.aree.filter(x=>x.parentId===a.id));  // nodo aperto: scendi
+  }
+  return out;
+}
 function areaRollup(area){
-  const figli=S.aree.filter(a=>a.parentId===area.id&&a.chiusa);
+  const figli=discendentiChiuse(area.id);
   if(!figli.length)return null;
   const valore=figli.reduce((s,c)=>s+centroValore(c),0);
   const costo=figli.reduce((s,c)=>s+centroCostoFisso(c)+centroCostoVar(c),0);
