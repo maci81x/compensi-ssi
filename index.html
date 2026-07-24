@@ -2195,7 +2195,10 @@ const AREE_UFFICIALI_D=[
   _areaD({id:'c_sic_polveri',nome:'Campionamento polveri',parentId:'c_sicurezza'}),
   _areaD({id:'c_privacy',nome:'Privacy',parentId:'asf'}),
   _areaD({id:'c_certificazioni',nome:'Certificazioni/Accreditamenti',parentId:'asf'}),
-  _areaD({id:'c_incendio',nome:'Incendio',parentId:'asf'}),
+  // §D — "Incendio" e "Antincendio" sono la stessa cosa: unificati in
+  // Antincendio (che conserva i suoi fornitori Barbagli/ESMA/Tavanti/GTA);
+  // il nodo "Incendio" vuoto NON viene creato e, se presente, viene rimosso
+  // da normalizzaOrgUfficiale.
   // Sorveglianza Sanitaria → Medici Competenti (eredita i medici dal padre)
   _areaD({id:'c_medici_competenti',nome:'Medici Competenti',parentId:'sorvsan'}),
   // Formazione → Segreteria Formativa + Docenti (eredita i docenti dal padre)
@@ -2223,6 +2226,13 @@ function normalizzaOrgUfficiale(s){
   if(!s.aree)return s;
   const byId=id=>s.aree.find(a=>a.id===id);
   AREE_UFFICIALI_D.forEach(def=>{ if(!byId(def.id))s.aree.push(JSON.parse(JSON.stringify(def))); });
+  // §D (validazione) — "Incendio" = "Antincendio": rimuovi il nodo Incendio se
+  // presente ed è vuoto (nessun fornitore, nessuna sotto-area). Antincendio
+  // conserva i suoi fornitori.
+  const inc=byId('c_incendio');
+  if(inc&&!(inc.fornitori&&inc.fornitori.length)&&!s.aree.some(a=>a.parentId==='c_incendio')){
+    s.aree=s.aree.filter(a=>a.id!=='c_incendio');
+  }
   // 6 centri tecnici storici → sotto ASF (erano sotto 'prod')
   ['c_antincendio','c_ambiente','c_cantieri','c_rspp','c_verifiche_terra','c_documenti'].forEach(id=>{
     const a=byId(id); if(a&&a.parentId==='prod')a.parentId='asf';
