@@ -1186,6 +1186,13 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
         <button class="btn prim" onclick="document.getElementById('import-dip-inp').click()">Carica file dipendenti</button>
         <span id="import-dip-status" style="font-size:11px;color:var(--ink3);margin-left:8px"></span>
       </div>
+      <div style="background:var(--card);border:1px solid var(--lift);border-radius:var(--rl);padding:14px">
+        <div style="font-size:12px;font-weight:600;margin-bottom:4px">template_import_storico_vendite.xlsx</div>
+        <div style="font-size:11px;color:var(--ink3);margin-bottom:8px">VENDUTO · TACITI RINNOVI · INCASSATO per agente/mese, 2024-2025-2026. 2026 = operativo · 2024-2025 = solo stagionalità (§C)</div>
+        <input type="file" id="import-storico-inp" accept=".xlsx,.xls" style="display:none" onchange="handleImportStorico(event)">
+        <button class="btn prim" onclick="document.getElementById('import-storico-inp').click()">Carica storico vendite</button>
+        <span id="import-storico-status" style="font-size:11px;color:var(--ink3);margin-left:8px"></span>
+      </div>
     </div>
     <div style="background:var(--card);border:1px solid var(--lift);border-radius:var(--rl);padding:12px 14px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
       <div style="font-size:11px;color:var(--ink3)">Se in Fase 1 avevi già confermato un import, rilancia la classificazione (Fase 2) senza dover ricaricare i file: sposta le voci IVA/leasing/F24/TFR/rateizzi/accantonamenti in "Voci prioritarie" e tagga le altre con l'area riconosciuta.</div>
@@ -1577,7 +1584,9 @@ function handleLoad(e){
 }
 
 // ── IMPORT EXCEL (PF + Previsionale + Dipendenti — SPEC-v10 §10) ──
-let pendingImport={pf:null,previsionale:null,dipendenti:null};
+let pendingImport={pf:null,previsionale:null,dipendenti:null,storico:null};
+const STORICO_SEZIONI={'VENDUTO':'venduto','TACITI RINNOVI':'taciti','INCASSATO':'incassato'};
+const MESI_KEY=['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
 const PF_SUBTOTAL_KEYWORDS=['VENDUTO','FATTURATO','INCASSATO','ANTICIPI','COSTI FISSI','COSTO SOCI','COSTI VARIABILI'];
 
 function parsePFSheet(wb){
@@ -1707,7 +1716,59 @@ function handleImportDipendenti(event){
   reader.readAsArrayBuffer(file);
 }
 
+// ── §B — STORICO VENDITE (template_import_storico_vendite.xlsx) ────────────
+// Foglio a blocchi: righe "ANNO YYYY", "VENDUTO"/"TACITI RINNOVI"/"INCASSATO"
+// come marcatori di sezione, poi righe agente con 12 valori mensili (col B..M).
+// Restituisce righe piatte {anno,sezione,sezLabel,agente,mesi:[12],tot,importKey}
+// così l'anteprima può contare aggiornate-vs-nuove contro S.storicoVendite.
+function parseStoricoVenditeSheet(wb){
+  // Prende il primo foglio con dati (istruzioni a parte); di norma "Foglio1"/sheet1.
+  let rows=null;
+  for(const name of wb.SheetNames){
+    const r=XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,raw:true,defval:''});
+    if(r.some(row=>/^ANNO\s+\d{4}/i.test(String(row[0]||'').trim()))){rows=r;break;}
+  }
+  if(!rows)return null;
+  const out=[];
+  let anno=null,sezione=null,sezLabel=null;
+  for(const r of rows){
+    const a=String(r[0]||'').trim();
+    const mAnno=a.match(/^ANNO\s+(\d{4})/i);
+    if(mAnno){anno=parseInt(mAnno[1]);continue;}
+    const up=a.toUpperCase();
+    if(STORICO_SEZIONI[up]){sezione=STORICO_SEZIONI[up];sezLabel=up;continue;}
+    if(!a||!anno||!sezione)continue;
+    if(/^gen$/i.test(a))continue; // riga di sole intestazioni mesi
+    // riga agente: 12 valori mensili in col B..M (indici 1..12)
+    const mesi=[];let haveNum=false;
+    for(let c=1;c<=12;c++){const v=r[c];const n=typeof v==='number'?v:parseFloat(v);if(!isNaN(n)&&v!==''){mesi.push(n);haveNum=true;}else mesi.push(0);}
+    if(!haveNum)continue;
+    const tot=mesi.reduce((s,x)=>s+x,0);
+    out.push({anno,sezione,sezLabel,agente:a,mesi,tot,importKey:anno+'|'+sezione+'|'+a});
+  }
+  return out;
+}
+
+function handleImportStorico(event){
+  const file=event.target.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=function(ev){
+    try{
+      const wb=XLSX.read(ev.target.result,{type:'array'});
+      const righe=parseStoricoVenditeSheet(wb);
+      if(!righe||!righe.length){alert('Nessun blocco "ANNO/VENDUTO/INCASSATO" riconosciuto nel file storico vendite.');return;}
+      pendingImport.storico=righe;
+      const anni=[...new Set(righe.map(r=>r.anno))].sort();
+      setEl('import-storico-status','✅ '+file.name+' — '+righe.length+' righe, anni '+anni.join('/'));
+      renderImportPreview();
+    }catch(err){alert('Errore lettura storico vendite: '+err.message);}
+    event.target.value='';
+  };
+  reader.readAsArrayBuffer(file);
+}
+
 function toggleImportRow(kind,idx){
+  if(kind==='storico'){if(pendingImport.storico&&pendingImport.storico[idx]){pendingImport.storico[idx].escludi=!pendingImport.storico[idx].escludi;renderImportPreview();}return;}
   const list=kind==='pf'?pendingImport.pf:pendingImport.previsionale;
   if(!list||!list[idx])return;
   list[idx].escludi=!list[idx].escludi;
@@ -1730,7 +1791,7 @@ function renderImportPage(){renderImportPreview();}
 function renderImportPreview(){
   const el=document.getElementById('import-preview');
   if(!el)return;
-  if(!pendingImport.pf&&!pendingImport.dipendenti){el.innerHTML='';return;}
+  if(!pendingImport.pf&&!pendingImport.dipendenti&&!pendingImport.storico){el.innerHTML='';return;}
   const inc=S.incassato||1;
   let html='';
 
@@ -1858,7 +1919,40 @@ function renderImportPreview(){
     </div>`;
   }
 
-  html+=`<button class="btn prim" ${(!pendingImport.pf&&!pendingImport.dipendenti)?'disabled':''} onclick="applyImport()">✓ Conferma e applica</button>`;
+  if(pendingImport.storico){
+    const righe=pendingImport.storico;
+    const nonEsc=righe.filter(r=>!r.escludi);
+    const sv=S.storicoVendite||{};
+    const isNew=r=>!(sv[r.anno]&&sv[r.anno][r.sezione]&&sv[r.anno][r.sezione][r.agente]!==undefined);
+    const nNew=nonEsc.filter(isNew).length, nUpd=nonEsc.length-nNew;
+    const anni=[...new Set(righe.map(r=>r.anno))].sort();
+    html+=`<div style="background:#eaf4ec;border:1px solid #B8DBBF;border-radius:var(--rl);padding:12px 14px;margin-bottom:14px;font-size:12px;color:#1A6B3C">
+      <strong>Storico vendite — alla conferma: ${nNew} righe create ex novo, ${nUpd} aggiornate</strong> (dedup per importKey <code>anno|sezione|agente</code>: la stessa cella non si duplica).
+      ${anni.includes(2026)?' 2026 = dato operativo.':''} ${(anni.includes(2024)||anni.includes(2025))?'2024/2025 = solo stagionalità (§C).':''}
+    </div>`;
+    anni.forEach(an=>{
+      const perAnno=righe.filter(r=>r.anno===an);
+      const sezioni=[...new Set(perAnno.map(r=>r.sezione))];
+      html+=`<div style="background:var(--card);border:1px solid var(--lift);border-radius:var(--rl);padding:14px;margin-bottom:14px">
+        <div style="font-size:12px;font-weight:600;margin-bottom:8px">ANNO ${an}${an===2026?' <span class="badge" style="background:#e2edfc;color:#0F4499">operativo</span>':' <span class="badge" style="background:#fff3cd;color:#8a6d00">solo stagionalità</span>'}</div>
+        <div style="max-height:320px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:11px">
+          <thead><tr style="text-align:left;color:var(--ink3);font-size:10px;text-transform:uppercase;position:sticky;top:0;background:var(--card)">
+            <th style="padding:3px 6px"></th><th style="padding:3px 6px">Sezione</th><th style="padding:3px 6px">Agente</th>
+            ${MESI_KEY.map(m=>`<th style="padding:3px 4px" class="mono">${m}</th>`).join('')}<th style="padding:3px 6px" class="mono">Tot</th><th style="padding:3px 6px">Stato</th>
+          </tr></thead><tbody>
+          ${sezioni.map(sz=>perAnno.filter(r=>r.sezione===sz).map(r=>{const gi=righe.indexOf(r);return `<tr style="border-top:1px solid var(--lift);opacity:${r.escludi?0.4:1}">
+            <td style="padding:3px 6px"><input type="checkbox" ${r.escludi?'':'checked'} onchange="toggleImportRow('storico',${gi})"></td>
+            <td style="padding:3px 6px">${r.sezLabel}</td><td style="padding:3px 6px">${r.agente}</td>
+            ${r.mesi.map(v=>`<td style="padding:3px 4px" class="mono">${v?fmt(v):'·'}</td>`).join('')}
+            <td style="padding:3px 6px;font-weight:600" class="mono">${fmt(r.tot)}</td>
+            <td style="padding:3px 6px">${isNew(r)?'<span class="badge" style="background:#eaf4ec;color:#1A6B3C">nuova</span>':'<span class="badge" style="background:#fff3cd;color:#8a6d00">aggiorna</span>'}</td>
+          </tr>`;}).join('')).join('')}
+        </tbody></table></div>
+      </div>`;
+    });
+  }
+
+  html+=`<button class="btn prim" ${(!pendingImport.pf&&!pendingImport.dipendenti&&!pendingImport.storico)?'disabled':''} onclick="applyImport()">✓ Conferma e applica</button>`;
 
   el.innerHTML=html;
 }
@@ -1915,7 +2009,7 @@ function findPossibileDoppione(v){
 }
 
 function applyImport(){
-  if(!pendingImport.pf&&!pendingImport.dipendenti){notify('Nessun dato da importare');return;}
+  if(!pendingImport.pf&&!pendingImport.dipendenti&&!pendingImport.storico){notify('Nessun dato da importare');return;}
   const sfCountBefore=(S.sistemaFissi||[]).length;
   const prioCountBefore=(S.prioritari||[]).length;
   let n=0,nPrio=0,nMerge=0;
@@ -1955,6 +2049,19 @@ function applyImport(){
     S.importDipendenti=pendingImport.dipendenti;
     dipMatch=applicaMatchDipendenti();
   }
+  let nStoNew=0,nStoUpd=0;
+  if(pendingImport.storico){
+    S.storicoVendite=S.storicoVendite||{};
+    pendingImport.storico.filter(r=>!r.escludi).forEach(r=>{
+      // dedup per importKey (anno|sezione|agente): stessa cella aggiornata, mai duplicata
+      const sv=S.storicoVendite;
+      sv[r.anno]=sv[r.anno]||{};
+      sv[r.anno][r.sezione]=sv[r.anno][r.sezione]||{};
+      const esiste=sv[r.anno][r.sezione][r.agente]!==undefined;
+      sv[r.anno][r.sezione][r.agente]=r.mesi.slice();
+      if(esiste)nStoUpd++;else nStoNew++;
+    });
+  }
   // Verifica difensiva: i conteggi post-scrittura devono tornare con quelli attesi.
   const sfCountAfter=S.sistemaFissi.length, prioCountAfter=S.prioritari.length;
   const sfDelta=sfCountAfter-sfCountBefore, prioDelta=prioCountAfter-prioCountBefore;
@@ -1969,6 +2076,7 @@ function applyImport(){
   let msg='✅ Import applicato: '+n+' voci in Sistema (ora '+sfCountAfter+' totali), '+nPrio+' in Prioritari (ora '+prioCountAfter+' totali)';
   if(nMerge)msg+=', '+nMerge+' unite';
   if(dipMatch)msg+=' — dipendenti: '+dipMatch.matched+'/'+(dipMatch.matched+dipMatch.unmatched.length)+' agganciati'+(dipMatch.unmatched.length?' (non trovati: '+dipMatch.unmatched.join(', ')+')':'');
+  if(pendingImport.storico)msg+=' — storico vendite: '+nStoNew+' create, '+nStoUpd+' aggiornate';
   notify(msg);
 }
 
@@ -2113,6 +2221,16 @@ const DEF={
     {mese:'Giugno',  anno:2026,incassato:160782},
     {mese:'Luglio',  anno:2026,incassato:162395},
   ],
+
+  // §B blocco finale — STORICO VENDITE per agente/mese (VENDUTO, TACITI
+  // RINNOVI, INCASSATO), 2024-2025-2026. Importato da
+  // template_import_storico_vendite.xlsx (pagina Import, stessa logica:
+  // anteprima/conferma/importKey/nessun duplicato). Shape:
+  //   storicoVendite[anno] = { venduto:{agente:[12]}, taciti:{...}, incassato:{...} }
+  // Uso: 2026 = dato operativo (Commerciale + storico); 2024-2025 = SOLO per
+  // gli indici di stagionalità (§C), non come dato operativo. Tutto editabile/
+  // creabile/eliminabile (§L). importKey di una riga = `anno|sezione|agente`.
+  storicoVendite:{},
 
   // §F blocco finale — GRFM default 2% (SPEC-v10 §4). Era 5% (placeholder):
   // la migrazione v7 lo porta a 2 solo se ancora 5, un valore diverso resta.
@@ -3168,6 +3286,8 @@ const SCHEMA_MIGRATIONS=[
     // Aggiunge la serie mensile reale se manca (mai sovrascrive una serie
     // già editata dall'utente).
     if(!s.incassatoMensile2026)s.incassatoMensile2026=JSON.parse(JSON.stringify(DEF.incassatoMensile2026));
+    if(!s.storicoVendite||typeof s.storicoVendite!=='object')s.storicoVendite={}; // §B
+
     // Il vecchio incassato di default era un PLACEHOLDER (200.000 in cloud,
     // 130.000 in DEF): va portato alla media incassato reale 2026 (136.363).
     // Sostituito SOLO se è ancora uno di quei placeholder — un valore diverso
