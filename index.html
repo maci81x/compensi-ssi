@@ -2232,6 +2232,20 @@ const DEF={
   // creabile/eliminabile (§L). importKey di una riga = `anno|sezione|agente`.
   storicoVendite:{},
 
+  // §C blocco finale — STAGIONALITÀ: due indici DISTINTI (quasi opposti),
+  // calcolati dallo storico 2024-2025 (indice mese = totale mese / media
+  // mensile × 100). I KPI di VENDITA si pesano sull'indice venduto, quelli di
+  // CASSA sull'indice incassato. Target mensile = target medio × indice/100.
+  // Ricalcolabili quando arrivano nuovi anni (ricalcolaStagionalita) e
+  // modificabili a mano. Default = valori reali 2024-2025 (verificati: la
+  // formula li riproduce esatti dallo storico importato).
+  stagionalita:{
+    venduto:  [113,125,136,81,113,93,110,56,68,108,132,66],
+    incassato:[81,71,93,99,115,109,107,106,109,101,103,105],
+    anniBase:[2024,2025],
+  },
+  meseCorrente:7, // 1-12 (Luglio) — mese su cui applicare la destagionalizzazione
+
   // §F blocco finale — GRFM default 2% (SPEC-v10 §4). Era 5% (placeholder):
   // la migrazione v7 lo porta a 2 solo se ancora 5, un valore diverso resta.
   voci:[
@@ -3287,6 +3301,8 @@ const SCHEMA_MIGRATIONS=[
     // già editata dall'utente).
     if(!s.incassatoMensile2026)s.incassatoMensile2026=JSON.parse(JSON.stringify(DEF.incassatoMensile2026));
     if(!s.storicoVendite||typeof s.storicoVendite!=='object')s.storicoVendite={}; // §B
+    if(!s.stagionalita||!s.stagionalita.venduto)s.stagionalita=JSON.parse(JSON.stringify(DEF.stagionalita)); // §C
+    if(s.meseCorrente===undefined)s.meseCorrente=DEF.meseCorrente;
 
     // Il vecchio incassato di default era un PLACEHOLDER (200.000 in cloud,
     // 130.000 in DEF): va portato alla media incassato reale 2026 (136.363).
@@ -3589,6 +3605,36 @@ function applicaMeseRealeIncassato(mese,anno){
   S.incassato=m.incassato;
   renderAll();
   notify('Incassato precompilato da '+mese+' '+anno+' (incassato REALE, non fatturato): '+fmt(m.incassato));
+}
+// ── §C blocco finale — STAGIONALITÀ ───────────────────────────────────────
+const MESI_NOMI=['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
+// Indice del mese (1-12) per una sezione ('venduto'|'incassato'); 100 = neutro.
+function stagIndice(sezione,mese){
+  const st=S.stagionalita;
+  if(!st||!st[sezione])return 100;
+  const v=st[sezione][(mese||S.meseCorrente||1)-1];
+  return(typeof v==='number'&&v>0)?v:100;
+}
+// Target mensile destagionalizzato = target medio × indice del mese / 100.
+function targetDestag(targetMedio,sezione,mese){
+  return(targetMedio||0)*stagIndice(sezione,mese)/100;
+}
+// Ricalcola i due indici dallo storico vendite (anni in stagionalita.anniBase):
+// per ogni mese, totale sezione su tutti gli agenti / media mensile × 100.
+function ricalcolaStagionalita(){
+  const sv=S.storicoVendite||{};
+  const st=S.stagionalita||(S.stagionalita={venduto:[],incassato:[],anniBase:[2024,2025]});
+  const anni=(st.anniBase&&st.anniBase.length?st.anniBase:[2024,2025]).filter(a=>sv[a]);
+  function calc(sez){
+    const month=new Array(12).fill(0);
+    anni.forEach(a=>{const b=sv[a]&&sv[a][sez];if(b)Object.values(b).forEach(arr=>arr.forEach((v,m)=>{month[m]+=(v||0);}));});
+    const tot=month.reduce((s,x)=>s+x,0),avg=tot/12;
+    return avg>0?month.map(x=>Math.round(x/avg*100)):month.map(()=>100);
+  }
+  if(!anni.length)return{ok:false,anni:[]};
+  st.venduto=calc('venduto');
+  st.incassato=calc('incassato');
+  return{ok:true,anni};
 }
 // Pannello Dashboard: scostamento fatturato-incassato + liquidità reale del
 // modello all'incassato corrente (§A). Non forza numeri: legge flow() live.
@@ -4699,10 +4745,47 @@ function closePop(){
 }
 function savePop(){if(popCb){popCb();popCb=null;}closePop();renderAll();notify('Salvato');}
 
+// ── §C — Editor indici di stagionalità (venduto + incassato) ──────────────
+function renderStagionalitaEditor(){
+  const st=S.stagionalita||{venduto:[],incassato:[],anniBase:[2024,2025]};
+  const sec=document.createElement('div');
+  sec.style.cssText='background:var(--card);border:1px solid var(--lift);border-radius:var(--rl);margin-bottom:10px;overflow:hidden';
+  const anniDisp=(st.anniBase||[]).join(', ')||'—';
+  const anniStorico=Object.keys(S.storicoVendite||{}).sort().join(', ')||'nessuno (importa lo storico vendite)';
+  function rowInputs(sez){
+    return (st[sez]||[]).map((v,i)=>`<td style="padding:2px 3px;text-align:center"><input type="number" value="${v}" class="inp n" style="width:44px;font-size:11px;padding:2px 3px;text-align:center"
+      onblur="S.stagionalita.${sez}[${i}]=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13)this.blur()"></td>`).join('');
+  }
+  sec.innerHTML=`<div style="display:flex;align-items:center;gap:10px;padding:12px 15px;cursor:pointer;user-select:none" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'':'none'">
+      <span class="badge b-nd">§C</span><span style="font-size:13px;font-weight:600">Indici di stagionalità</span>
+      <span style="font-size:11px;color:var(--ink3)">venduto e incassato — pesano i target mensili</span>
+      <span style="margin-left:auto;font-size:11px;color:var(--ink3)">base ${anniDisp}</span>
+    </div>
+    <div style="padding:12px 15px;border-top:1px solid var(--lift);display:none">
+      <div style="font-size:11px;color:var(--ink3);margin-bottom:8px">Due indici DISTINTI (quasi opposti): i KPI di vendita si pesano sull'indice <strong>venduto</strong>, quelli di cassa sull'indice <strong>incassato</strong>. Target mensile = target medio × indice / 100. Modificabili a mano; ricalcolabili dallo storico ${anniDisp} (anni disponibili: ${anniStorico}).</div>
+      <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:8px">
+        <thead><tr style="color:var(--ink3);font-size:10px;text-transform:uppercase"><th style="text-align:left;padding:2px 4px">Indice</th>${MESI_NOMI.map(m=>`<th style="padding:2px 3px;text-align:center">${m}</th>`).join('')}</tr></thead>
+        <tbody>
+          <tr style="border-top:1px solid var(--lift)"><td style="padding:2px 4px;font-weight:600;color:var(--blue)">Venduto</td>${rowInputs('venduto')}</tr>
+          <tr style="border-top:1px solid var(--lift)"><td style="padding:2px 4px;font-weight:600;color:var(--green)">Incassato</td>${rowInputs('incassato')}</tr>
+        </tbody>
+      </table>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button class="btn xs prim" onclick="const r=ricalcolaStagionalita();renderAll();notify(r.ok?('↺ Ricalcolati dagli anni '+r.anni.join('/')):'Nessuno storico per gli anni base — importa prima lo storico vendite')">↺ Ricalcola dallo storico ${anniDisp}</button>
+        <span style="font-size:10px;color:var(--ink3)">Anni base:</span>
+        <input class="inp" style="width:110px;font-size:11px;padding:2px 6px" value="${(st.anniBase||[]).join(',')}" placeholder="2024,2025"
+          onblur="S.stagionalita.anniBase=this.value.split(',').map(x=>parseInt(x.trim())).filter(Boolean);renderAll()" onkeydown="if(event.keyCode===13)this.blur()">
+        <span style="font-size:10px;color:var(--ink3)">(quando arrivano nuovi anni, aggiungili qui e ricalcola)</span>
+      </div>
+    </div>`;
+  return sec;
+}
+
 // ── STRUTTURA ─────────────────────────────
 function renderStruttura(){
   const cont=document.getElementById('str-cont');if(!cont)return;
   cont.innerHTML='';
+  cont.appendChild(renderStagionalitaEditor());
   S.aree.forEach((a,ai)=>{
     const bud=areaBudget(a);const cost=areaCosto(a);const ratio=bud>0?(cost/bud)*100:0;
     const nPers=S.personale.filter(p=>p.area===a.id).length;
@@ -6694,9 +6777,13 @@ function renderAreaKPIInto(el, areaId){
   wrap.className='area-kpi-section';
   wrap.style.cssText='margin-top:16px';
 
-  let html='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;padding-bottom:6px;border-bottom:2px solid var(--lift)">'
+  const meseOpts=MESI_NOMI.map((nm,i)=>'<option value="'+(i+1)+'" '+((S.meseCorrente||1)===(i+1)?'selected':'')+'>'+nm+'</option>').join('');
+  let html='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;padding-bottom:6px;border-bottom:2px solid var(--lift);flex-wrap:wrap;gap:6px">'
     +'<span style="font-size:12px;font-weight:600">📊 KPI Area — '+a.nome+'</span>'
-    +'<span style="font-size:11px;color:var(--ink3)">'+achieved+'/'+a.micro.length+' raggiunti (soglia '+S.soglia+'%)</span></div>'
+    +'<span style="font-size:11px;color:var(--ink3);display:flex;align-items:center;gap:6px">Mese destagionalizz.: '
+    +'<select class="inp" style="width:auto;display:inline-block;font-size:11px;padding:1px 4px" onchange="S.meseCorrente=parseInt(this.value);renderAll()">'+meseOpts+'</select>'
+    +'· '+achieved+'/'+a.micro.length+' raggiunti (soglia '+S.soglia+'%)</span></div>'
+    +'<div style="font-size:10px;color:var(--ink3);margin-bottom:6px">Tagga un KPI come <strong>vendita</strong> o <strong>cassa</strong> per vedere il target del mese: target medio × indice stagionale ('+MESI_NOMI[(S.meseCorrente||1)-1]+') / 100.</div>'
     +'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px">';
 
   a.micro.forEach(function(m,mi){
@@ -6712,13 +6799,21 @@ function renderAreaKPIInto(el, areaId){
       +'<div style="height:3px;background:var(--lift);border-radius:2px;overflow:hidden;margin-bottom:6px">'
       +'<div style="height:100%;width:'+pctBar+'%;background:'+barColor+';border-radius:2px"></div></div>'
       +'<div style="display:flex;gap:8px;align-items:center">'
-      +'<div><div style="font-size:9px;color:var(--ink3)">Target</div>'
+      +'<div><div style="font-size:9px;color:var(--ink3)">Target'+(m.stag?' medio':'')+'</div>'
       +'<input type="number" value="'+m.kt+'" class="inp n" style="font-size:11px;padding:2px 5px;width:68px"'
       +' onblur="S.aree['+ai+'].micro['+mi+'].kt=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13)this.blur()"></div>'
       +'<div><div style="font-size:9px;color:var(--ink3)">Effettivo</div>'
       +'<input type="number" value="'+m.ke+'" class="inp n" style="font-size:11px;padding:2px 5px;width:68px"'
       +' onblur="S.aree['+ai+'].micro['+mi+'].ke=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13)this.blur()"></div>'
       +(m.note?'<span title="'+m.note+'" style="font-size:13px;cursor:help;color:var(--ink3);margin-left:4px">ℹ</span>':'')
+      +'</div>'
+      // §C — tag stagionalità + target destagionalizzato del mese
+      +'<div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap">'
+      +'<select class="inp" style="width:auto;display:inline-block;font-size:10px;padding:1px 4px" onchange="S.aree['+ai+'].micro['+mi+'].stag=this.value;renderAll()">'
+      +'<option value="" '+(!m.stag?'selected':'')+'>stag: —</option>'
+      +'<option value="venduto" '+(m.stag==='venduto'?'selected':'')+'>stag: vendita</option>'
+      +'<option value="incassato" '+(m.stag==='incassato'?'selected':'')+'>stag: cassa</option></select>'
+      +(m.stag&&m.kt>0?'<span style="font-size:10px;color:var(--blue)">→ '+MESI_NOMI[(S.meseCorrente||1)-1]+' (indice '+stagIndice(m.stag)+'): target <strong class="mono">'+fmt(Math.round(targetDestag(m.kt,m.stag)))+'</strong></span>':'')
       +'</div></div>';
   });
 
