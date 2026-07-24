@@ -2114,8 +2114,10 @@ const DEF={
     {mese:'Luglio',  anno:2026,incassato:162395},
   ],
 
+  // §F blocco finale — GRFM default 2% (SPEC-v10 §4). Era 5% (placeholder):
+  // la migrazione v7 lo porta a 2 solo se ancora 5, un valore diverso resta.
   voci:[
-    {nome:'GRFM',             pct:5.0,  desc:'Quota trattenuta dalla holding — non distribuita'},
+    {nome:'GRFM',             pct:2.0,  desc:'Quota trattenuta dalla holding — non distribuita'},
     {nome:'Costi fissi %',    pct:10.65,desc:'Stima mensile costi fissi strutturali (affitti, personale garantito medio)'},
     {nome:'Costi variabili',  pct:31.95,desc:'Costi operativi variabili: trasferte, materiali, subappalti occasionali'},
     {nome:'Accantonamenti',   pct:10.65,desc:'TFR, fondo rischi, riserva liquidità (target 3 mesi costi fissi)'},
@@ -2359,6 +2361,12 @@ const DEF={
   ],
 
   cda:13600, soglia:101, wizStep:0,
+  // §A/flusso — costo operativo reale che ESCE dall'azienda ma non era in nessuna
+  // voce del modello (né sistema, né tasse, né prioritari): senza questo la
+  // cascata sovrastima la liquidità. Sottratto in flow() a priorità 1 (come
+  // sistema/tasse). Editabile dal CDA (Passo 3). Default 15.000/mese.
+  altriCostiOperativi:15000,
+  prioritaAltriCosti:1,
 
   aree:[
 
@@ -3165,6 +3173,12 @@ const SCHEMA_MIGRATIONS=[
     // Sostituito SOLO se è ancora uno di quei placeholder — un valore diverso
     // significa che qualcuno l'ha inserito a mano e non va toccato (dato reale).
     if(s.incassato===200000||s.incassato===130000)s.incassato=136363;
+    // §A/flusso — costo operativo reale fuori-modello: seed se manca (mai
+    // sovrascrive un valore già impostato).
+    if(s.altriCostiOperativi===undefined)s.altriCostiOperativi=15000;
+    if(s.prioritaAltriCosti===undefined)s.prioritaAltriCosti=1;
+    // §F — GRFM default 2%: porta a 2 solo se ancora sul vecchio placeholder 5.
+    if(s.voci&&s.voci[0]&&s.voci[0].pct===5)s.voci[0].pct=2;
   }},
 ];
 function migrateSchema(s){
@@ -3471,7 +3485,8 @@ function renderScostamento(f){
       <div><div style="font-size:9px;color:var(--ink3);text-transform:uppercase">Fatturato medio 2026</div><div class="mono" style="font-size:16px;font-weight:600">${fmt(sc.fatt)}</div></div>
       <div><div style="font-size:9px;color:var(--ink3);text-transform:uppercase">Incassato medio 2026</div><div class="mono" style="font-size:16px;font-weight:600;color:var(--green)">${fmt(sc.inc)}</div></div>
       <div><div style="font-size:9px;color:var(--ink3);text-transform:uppercase">Gap (non incassato)</div><div class="mono" style="font-size:16px;font-weight:600;color:var(--red)">−${fmt(sc.gap)}</div><div style="font-size:10px;color:var(--ink3)">${sc.gapPct.toFixed(1)}% del fatturato · si incassa il ${sc.incassoSuFattPct.toFixed(1)}%</div></div>
-      <div><div style="font-size:9px;color:var(--ink3);text-transform:uppercase">Liquidità disponibile @ ${fmt(f.inc)}</div><div class="mono" style="font-size:16px;font-weight:600;color:${f.liquidita<0?'var(--red)':'var(--ink)'}">${fmt(f.liquidita)}</div><div style="font-size:10px;color:var(--ink3)">${liqPct.toFixed(1)}% dell'incassato (inc − GRFM − prioritari − garantito)</div></div>
+      <div><div style="font-size:9px;color:var(--ink3);text-transform:uppercase">Liquidità disponibile §5 @ ${fmt(f.inc)}</div><div class="mono" style="font-size:16px;font-weight:600;color:${f.liquidita<0?'var(--red)':'var(--ink)'}">${fmt(f.liquidita)}</div><div style="font-size:10px;color:var(--ink3)">${liqPct.toFixed(1)}% dell'incassato · inc − GRFM − prioritari (incl. ${fmt(f.altriCostiOperativi)} altri costi op.) − garantito</div></div>
+      <div><div style="font-size:9px;color:var(--ink3);text-transform:uppercase">Cassa netta dopo budget aree + premi</div><div class="mono" style="font-size:16px;font-weight:600;color:${f.utili<0?'var(--red)':(f.utili<1?'var(--amber,#c98a00)':'var(--green)')}">${fmt(f.utili)}</div><div style="font-size:10px;color:var(--ink3)">${(f.inc>0?(f.utili/f.inc*100):0).toFixed(1)}% dell'incassato · ciò che resta dopo la compressione della coperta (§8)</div></div>
     </div>
     <div style="font-size:11px;color:var(--ink3);margin-top:10px;line-height:1.5">
       Questa liquidità sottile <strong>non è un errore del modello</strong>: è la differenza reale tra ciò che si <em>fattura</em> e ciò che si <em>incassa</em>. I costi sono dimensionati su un fatturato più alto (${fmt(sc.fatt)}), ma la cassa che arriva davvero è l'incassato (${fmt(sc.inc)}). Non va "corretta" per tornare al 23%.
@@ -3513,6 +3528,9 @@ function flow(){
     ...(S.prioritari||[]).map(v=>({nome:v.nome,val:v.val||0,priorita:v.priorita||1})),
     {nome:'Sistema (overhead)',val:sistema,priorita:S.prioritaSistema||1},
     {nome:'Tasse',val:tasse,priorita:S.prioritaTasse||1},
+    // Costo operativo reale fuori-modello (§A/flusso) — esce dall'azienda ma non
+    // era in sistema/tasse/prioritari. Senza, la cascata sovrastima la liquidità.
+    {nome:'Altri costi operativi',val:S.altriCostiOperativi||0,priorita:S.prioritaAltriCosti||1},
   ];
   const prioritariP1=prioritariBase.filter(v=>v.priorita===1).reduce((s,v)=>s+v.val,0);
 
@@ -3540,6 +3558,7 @@ function flow(){
   const utili=liquidita-poolP1-poolP2Eff-poolP3Eff; // ← nuova cifra autoritativa
 
   return{inc,grfm,pool,sistema,costiFissi,costiVar,acc,tasse,pers,cda,areD,distTot,utili,
+         altriCostiOperativi:S.altriCostiOperativi||0,
          garantito,garantitoPersonale,prioritariP1,liquidita,
          budgetAreeFisso:S.aree.reduce((s,a)=>s+((a.budget&&a.budget.fisso)||0),0),
          budgetAreeVar:S.aree.reduce((s,a)=>s+(((a.budget&&a.budget.variabilePct)||0)/100)*inc,0),
@@ -3851,7 +3870,7 @@ function renderStep3(){
     const isUtile = v.utile === true;
     return`<div style="border:1px solid var(--lift);border-radius:var(--r);padding:8px 10px;margin-bottom:5px;background:${isUtile?'var(--green-bg)':'var(--card)'}">       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">         <span style="flex:1;font-size:12px;font-weight:600;color:${isUtile?'var(--green)':'var(--ink)'}">${v.nome}</span>         <div style="display:flex;align-items:center;gap:4px">           <span style="font-size:10px;color:var(--ink3)">€</span>           <input type="number" value="${eur}" style="width:88px" class="inp n"             onblur="if(S.incassato>0){S.voci[${i}].pct=((parseFloat(this.value)||0)/S.incassato)*100;}renderAll()" onkeydown="if(event.keyCode===13)this.blur()">         </div>         <div style="display:flex;align-items:center;gap:4px">           <input type="number" value="${+v.pct.toFixed(2)}" step="0.1" style="width:58px" class="inp n"             onblur="S.voci[${i}].pct=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13)this.blur()">           <span style="font-size:10px;color:var(--ink3)">%</span>         </div>         <button class="btn xs" onclick="S.voci[${i}].showDesc=!S.voci[${i}].showDesc;renderStep3()" style="opacity:.5">✎</button>         ${!isUtile?`<button class="btn xs danger" onclick="if(confirm(\'Eliminare voce?\')){{S.voci.splice(${i},1);renderAll()}}">✕</button>`:''}       </div>       ${v.showDesc||v.desc?`<textarea style="width:100%;margin-top:5px;padding:5px 7px;border:1px solid var(--lift);border-radius:var(--r);font-size:11px;color:var(--ink3);resize:none;background:var(--sheet);font-family:\'DM Sans\',sans-serif" rows="2" placeholder="Descrivi cosa include questa voce..." onblur="S.voci[${i}].desc=this.value">${v.desc||''}</textarea>`:''}     </div>`;
   }).join('');
-  el.innerHTML=rows+`     <div style="margin-bottom:8px">       <button class="btn xs prim" onclick="S.voci.push({nome:'Nuova voce %',pct:0,desc:'',showDesc:true});renderStep3()">+ Aggiungi voce strutturale</button>     </div>     <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--lift);font-size:12px;flex-wrap:wrap">       <span style="flex:1;color:var(--blue)">CDA (compenso fisso governance)</span>       <input type="number" value="${S.cda}" style="width:95px" class="inp n"         onblur="S.cda=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">       <span style="font-size:11px;color:var(--ink3)">${P((S.cda/Math.max(1,inc))*100)} inc.</span>     </div>     <div style="display:flex;align-items:center;gap:8px;padding:7px 0;font-size:12px">       <span style="flex:1;color:var(--ink3)">Soglia KPI per bonus</span>       <input type="number" value="${S.soglia}" style="width:65px" class="inp n"         onblur="S.soglia=parseFloat(this.value)||80;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">       <span style="font-size:10px;color:var(--ink3)">%</span>     </div>     <div style="margin-top:10px;padding:8px 10px;background:var(--sheet);border-radius:var(--r);font-size:12px;display:flex;gap:16px;flex-wrap:wrap">       <div>Costi strutturali: <strong class="mono">${fmt(f.costiFissi+f.costiVar+f.acc)}</strong></div>       <div>CDA: <strong class="mono">${fmt(f.cda)}</strong></div>       <div style="margin-left:auto;color:${f.utili<0?'var(--red)':'var(--green)'};font-weight:500">Utili: <strong class="mono">${fmt(f.utili)}</strong></div>     </div>`;
+  el.innerHTML=rows+`     <div style="margin-bottom:8px">       <button class="btn xs prim" onclick="S.voci.push({nome:'Nuova voce %',pct:0,desc:'',showDesc:true});renderStep3()">+ Aggiungi voce strutturale</button>     </div>     <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--lift);font-size:12px;flex-wrap:wrap">       <span style="flex:1;color:var(--blue)">CDA (compenso fisso governance)</span>       <input type="number" value="${S.cda}" style="width:95px" class="inp n"         onblur="S.cda=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">       <span style="font-size:11px;color:var(--ink3)">${P((S.cda/Math.max(1,inc))*100)} inc.</span>     </div>     <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--lift);font-size:12px;flex-wrap:wrap">       <span style="flex:1;color:var(--red)">Altri costi operativi €/mese (fuori sistema/tasse — prio 1)</span>       <input type="number" value="${S.altriCostiOperativi||0}" style="width:95px" class="inp n"         onblur="S.altriCostiOperativi=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13)this.blur()">       <span style="font-size:11px;color:var(--ink3)">${P(((S.altriCostiOperativi||0)/Math.max(1,inc))*100)} inc.</span>     </div>     <div style="display:flex;align-items:center;gap:8px;padding:7px 0;font-size:12px">       <span style="flex:1;color:var(--ink3)">Soglia KPI per bonus</span>       <input type="number" value="${S.soglia}" style="width:65px" class="inp n"         onblur="S.soglia=parseFloat(this.value)||80;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">       <span style="font-size:10px;color:var(--ink3)">%</span>     </div>     <div style="margin-top:10px;padding:8px 10px;background:var(--sheet);border-radius:var(--r);font-size:12px;display:flex;gap:16px;flex-wrap:wrap">       <div>Costi strutturali: <strong class="mono">${fmt(f.costiFissi+f.costiVar+f.acc)}</strong></div>       <div>CDA: <strong class="mono">${fmt(f.cda)}</strong></div>       <div style="margin-left:auto;color:${f.utili<0?'var(--red)':'var(--green)'};font-weight:500">Utili: <strong class="mono">${fmt(f.utili)}</strong></div>     </div>`;
 }
 
 // ── STEP 4 — RISORSE ATTIVITÀ ─────────────
