@@ -1,21 +1,127 @@
 # HANDOVER — Compensi SSI
 
-Stato del lavoro al 2026-07-22, per continuare su un altro portatile.
+Stato del lavoro al **2026-07-24** (blocco finale A–D completati e validati),
+per continuare su un altro portatile.
 
 ## Come ripartire
 
 ```bash
 git clone https://github.com/maci81x/compensi-ssi.git
 cd compensi-ssi
-git checkout ssi-compensi-import-phase
+git checkout blocco-finale        # branch del blocco finale (A–D fatti)
 python3 -m http.server 8791
 # poi apri http://localhost:8791/
 ```
 
-Repo: **https://github.com/maci81x/compensi-ssi**
-Branch di lavoro: **`ssi-compensi-import-phase`** (non è mergiato su `main`, non toccare Pages — il sito live resta quello attuale su `main`).
+> **Percorso reale del repo su questa macchina: `~/Sites/compensi-ssi`**
+> (NON `~/Downloads/compensi-ssi` — quel path non esiste qui, anche se compare
+> negli appunti di avvio).
 
-Nota: i tre file Excel sorgente (`PF SI 2026.xlsx`, `26_Dettaglio costi dipendenti.xlsx`, `26_Controllo di gestione.xlsx`) servono solo per **aggiornamenti futuri** dei dati — i dati veri di questi file sono già stati trascritti dentro `DEF` nel codice (`index.html`), non serve ricaricarli per continuare a lavorare.
+Repo: **https://github.com/maci81x/compensi-ssi**
+Branch di lavoro attuale: **`blocco-finale`** (contiene A–D; parte da
+`ssi-compensi-import-phase`). **Non è mergiato su `main`, non toccare Pages** —
+il sito live resta quello attuale su `main`. Nessun merge finché il blocco
+finale non è validato tutto insieme.
+
+Server locale già attivo in dev su `http://localhost:8791/`.
+
+Nota: i tre file Excel sorgente (`PF SI 2026.xlsx`, `26_Dettaglio costi dipendenti.xlsx`, `26_Controllo di gestione.xlsx`) servono solo per **aggiornamenti futuri** dei dati — i dati veri di questi file sono già stati trascritti dentro `DEF` nel codice (`index.html`), non serve ricaricarli per continuare a lavorare. Il template `template_import_storico_vendite.xlsx` (§B) sta in `~/Desktop`.
+
+---
+
+## BLOCCO FINALE (A–L) — stato al 2026-07-24
+
+Branch **`blocco-finale`**. Commit in ordine: A → fix flusso → B → C → D → fix D.
+
+### ✅ FATTI E VALIDATI (numeri prima → dopo, verificati con Playwright)
+
+- **A — Incassato reale** (`a415de2`): default incassato **200.000 → 136.363**
+  (media incassato reale 2026, 954.538/7 mesi). Serie `incassatoMensile2026`
+  (gen–lug). Dashboard: pannello **scostamento fatturato→incassato**
+  (fatturato medio 174.265 vs incassato 136.363, gap −37.902 = 21,7%). Picker
+  "incassato reale mensile" in Step 1. Migrazione schema **v6→v7** (sostituisce
+  il placeholder solo se ancora 200.000/130.000; un valore digitato resta).
+- **Fix flusso** (`c975d9e`): **`altriCostiOperativi` mancava in `flow()`** —
+  costo reale (15.000/mese) che esce dall'azienda ma non era in sistema/tasse/
+  prioritari → aggiunto a **P1**. **GRFM 5% → 2%**. Effetto: liquidità §5 a
+  136.363 = **3.537 (2,59%)**, combacia col dato reale atteso. Editabile dal CDA
+  in Passo 3.
+- **B — Import storico vendite** (`025097f`): nuova card Import,
+  `template_import_storico_vendite.xlsx`. Parser blocchi ANNO/VENDUTO/TACITI
+  RINNOVI/INCASSATO × agente × 12 mesi. Anteprima con conteggio nuove/aggiornate,
+  **dedup per importKey = `anno|sezione|agente`**. Dati in
+  `S.storicoVendite[anno][sezione][agente]=[12]`. 2026 operativo, 2024/2025 solo
+  stagionalità. Verificato: reimport = 0 nuove, nessun duplicato.
+- **C — Stagionalità** (`55b45e4`): due indici **distinti** venduto/incassato in
+  `S.stagionalita`, ricalcolabili dallo storico 2024-2025
+  (`ricalcolaStagionalita`) — la formula riproduce **esatti** i valori attesi.
+  KPI: tag per micro (vendita/cassa) + selettore mese, mostra target grezzo E
+  destagionalizzato (target × indice/100). Editor indici in Struttura.
+- **D — Organigramma ufficiale** (`c219764` + fix `851ecd3`): RTO→ASF come
+  **nodi** con conteggi propri; 6 centri tecnici ri-genitorizzati sotto ASF;
+  aggiunte Sicurezza (+ Analisi acque/tamponi/alimenti, Edilizia, Tarature,
+  SSL CEM-ROA, Campionamento polveri), Privacy, Certificazioni/Accreditamenti;
+  Medici Competenti (sotto sorvsan), Segreteria Formativa + Docenti (sotto form),
+  Ufficio Acquisti (sotto amm), Senior/Junior Sales + Bandi e Gare (sotto comm).
+  **nAree 13 → 30.** Migrazione schema **v7→v8** (`normalizzaOrgUfficiale`,
+  idempotente). **Invarianti confermati**: Sistema **43.994,28**, garantito
+  **40.916,15**, liquidità **3.537**, budget aree var **78.013**, fornitori
+  totali **20.356,43** (spostati, non duplicati). Medici Competenti (7.201,77) e
+  Docenti (1.703,52) ereditano i costi **spostandoli** dal padre (no doppio
+  conteggio). `areaRollup` ora aggrega i discendenti chiusi fino a ogni confine.
+
+### Risposte di Roberto ai 5 punti aperti di D (validazione 2026-07-24)
+
+1. **Nesting RTO→ASF**: confermato. ASF sotto RTO, servizi sotto ASF.
+2. **Incendio vs Antincendio**: sono la stessa cosa → **unificati in
+   Antincendio** (conserva Barbagli 17.817, ESMA 9.137, Tavanti 6.808, GTA 4.936
+   annui = i suoi fornitori mensili ×12); nodo "Incendio" eliminato (fix
+   `851ecd3`).
+3. **Analisi**: due nodi Analisi **distinti** — uno sotto **Ambiente** (acustico
+   Gracci, fumi/polveri Ecogam) che **resta dov'è**; uno sotto **Sicurezza**
+   (acque/tamponi/alimenti) che **nasce vuoto** (nessun fornitore identificato
+   nel PF) e si popolerà quando arriveranno i costi. Confermato: lasciarla vuota.
+4. **Rollup Produzione**: confermato aggregare tutti i discendenti fermandosi ai
+   confini "chiusa".
+5. Persone ed erogato per le nuove aree arrivano con **E** e **I**.
+
+### ⏳ DA FARE — blocchi E, F, G, H, I, L
+
+- **E — KPI**: precaricare la proposta KPI per ogni area (marcati calcolabili vs
+  manuali), tutti creabili/modificabili/monitorabili/eliminabili; **pannello
+  target unico** dove il CDA imposta i target per tutte le aree con peso di
+  stagionalità applicato in automatico (§C già pronta).
+- **F — Compensi responsabili**: fisso a mano modificabile (riproporziona tutto
+  in tempo reale); variabile con **crescita continua** (no scaglioni): KPI<80→0;
+  80–100 → aliquota 1,0%×(KPI−80)/20; ≥100 → 1,0%+0,05%×(KPI−100); cap 2,5% a
+  130%. Aliquota sull'incassato dell'area. Parametri (soglia 80, base 1,0%,
+  incremento 0,05%, cap) modificabili dal CDA. Vincolo: somma = 100% incassato;
+  totale premi ≤ liquidità (già c'è la compressione §8). Responsabili intermedi
+  (RTO/ASF/micro) prendono sul LORO ramo. *(GRFM 2% già fatto nel fix flusso.)*
+- **G — Dashboard incidenza a 2 livelli**: "Incidenza aree" mostra SOLO le macro;
+  click → esplode le sotto-aree. "i" cliccabile per spiegare i numeri. **Fix bug
+  `0.00%%`** (doppio simbolo percentuale).
+- **H — Click su area = scheda AREA** (erogato/tipologia/costi/tempi/margine/
+  incidenza), non "Configura Giovanna Panti". Il responsabile è un campo della
+  scheda. Stesso comportamento per tutte le aree.
+- **I — Erogato per servizio**: inserimento manuale per centro (tempi, valore
+  erogato, tipologia, centro di costo), modificabile/eliminabile. Margine col
+  metodo "Marginalità" del PF: prezzo vendita netto − var. commerciali − var.
+  interni − incidenza costi fissi.
+- **L — CRUD ovunque**: modificare/eliminare nomi dipendenti e collaboratori in
+  OGNI contesto; oggi la card Segreteria non è modificabile — rendere coerente
+  ovunque.
+
+### Note tecniche per continuare
+
+- Schema attuale **v8**. Ogni bump di `CURRENT_SCHEMA_VERSION` richiede un nuovo
+  step in `SCHEMA_MIGRATIONS` (migra aggiungendo solo ciò che manca, mai
+  sovrascrive dati reali).
+- Verifica rapida senza toccare il cloud condiviso: Playwright con rete Supabase
+  **bloccata** (`ctx.route('**://*.supabase.co/**', r=>r.abort())`), poi
+  `localStorage.clear()`. Vedi gli script in `/tmp/ssi-*.mjs` usati per validare
+  A–D (import di `playwright` per path assoluto dalla cache npx).
+- Controllo sintassi JS: estrai lo `<script>` principale e `node --check`.
 
 ---
 
