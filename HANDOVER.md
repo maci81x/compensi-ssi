@@ -1,6 +1,86 @@
 # HANDOVER — Compensi SSI
 
-Stato del lavoro al 2026-07-23 — chiusura Fase 11 (sync multi-dispositivo timestamp-based, niente più popup di versione, realtime abilitato lato DB).
+**Stato finale al 2026-07-24 — Fasi 1-12 chiuse, app in produzione, consegnata al team SSI.**
+
+Live: **https://maci81x.github.io/compensi-ssi/**
+Repo: **https://github.com/maci81x/compensi-ssi**
+Branch attivo: **`main`**.
+
+---
+
+## Numeri chiave validati (QA finale headless, Playwright)
+
+| Voce | Valore |
+|---|---:|
+| Garantito personale (dipendenti + soci) | **€ 40.916,15 / mese** |
+| Sistema (costi fissi + overhead) | **€ 43.994,28** |
+| Voci prioritarie (leasing/F24/IVA/rateizzi/TFR) | **€ 6.088,56** |
+| Tasse (IRES/IRAP/IVA acconto/INPS titolari) | **€ 10.500** |
+| Altri costi operativi (STIMA, editabile) | **€ 15.000** |
+| CDA | **€ 13.600** |
+| Dipendenti agganciati (match import ↔ personale) | **13 / 13** |
+| Schema version corrente | **10** |
+| Cascata somma 100% dell'incassato | ✓ |
+| Semaforo X/Y/Z coerente Dashboard ↔ Simulatore | ✓ (stessa `flow()`) |
+| Pagine navigate senza errore console | **17 / 17** |
+| **Margine modello a inc 174.265 (media reale 2026)** | **20,34 %** |
+| **Margine reale YTD (foglio Controllo di gestione)** | **23,41 %** |
+| **Δ modello vs reale** | **3,07 pt** ✅ entro tolleranza ±5 pt |
+
+---
+
+## Struttura aree definitiva (13 aree, tassonomia v10)
+
+```
+CDA (Utili)  ── Segreteria (staff, a lato)
+ └─ SSI srl  (− GRFM 5 %)
+     ├─ AMMINISTRAZIONE                 (costo)
+     ├─ COMMERCIALE (17,25 %)
+     │    └─ MARKETING (5,77 %)         (autonomo sotto Commerciale)
+     └─ PRODUZIONE (11,31 %)
+          ├─ FORMAZIONE (8,5 %)          — sotto-area con budget/KPI/fornitori propri
+          ├─ SORVEGLIANZA SANITARIA      — sotto-area con fornitori (10 medici)
+          └─ CENTRI DI COSTO (chiusa=true, rollup su Produzione):
+              · Antincendio  · Ambiente  · Cantieri
+              · RSPP  · Verifiche Terra  · Documenti
+              + eventuali centri custom aggiunti runtime dalla pagina "Centri di costo"
+```
+
+**Ripartizione STIMA % del fatturato** sulle 8 unità produttive (somma = 100):
+Sorveglianza Sanitaria 20 · Antincendio 18 · Documenti 15 · Formazione 15 · RSPP 12 · Ambiente 10 · Cantieri 8 · Verifiche Terra 2.
+
+Ogni area ha un **KPI macro** (`a.macro`) modo auto (media pesata dei micro) o manuale, che fa da cancello per i premi area.
+
+---
+
+## Chi inserisce cosa (accountability)
+
+| Chi | Cosa | Frequenza |
+|---|---|---|
+| **Roberto Macinai** (Direzione) | Incassato del mese, KPI commerciali area, validazione slider premi, snapshot mensile, simulatore what-if | **Mensile** (a inizio/fine mese) |
+| **Francesco Martini** (Amministrazione) | Sistema/Prioritari/Tasse quando cambia un contratto o una rata; personale (nuovi dip, cambio contratto); import Excel PF quando aggiornato; ricavo per servizio "Manuale €" quando arriva dalla contabilità | **All'occorrenza** + **mensile per aggiornare val singoli** |
+| **Giovanna** | Dati Produzione tecnici (9 colonne: Documenti €, Formazione h, Analisi €, RSPP €, Pacchetti €, Laika h, Cantieri €, Estintori €, Sorv.San. €), ripartizione ore tecnici sui centri | **Mensile** (metà mese o fine mese) |
+| **Samuele** | Coordinamento Produzione tecnici (validazione dati Giovanna, override ore effettive per centro dove serve) | **Mensile** |
+| **Niccolò** | KPI Formazione (ore erogate/pianificate, corsi completati, aule, attestati), lista docenti attivi, dati micro-KPI area Formazione | **Mensile** |
+| **Marco Macinai** (Dir. Marketing) | Costo per lead, ROI campagne, lead generati; fornitori Marketing (Google Ads, Facebook Ads, agenzie); KPI area Marketing | **Mensile** |
+| **Direttore d'area** (dove definito) | Distribuzione slider premi tra le persone della propria area a fine mese | **Mensile** (dopo che Roberto ha validato il pool) |
+
+**Ordine di inserimento suggerito ogni mese**:
+Import PF (se aggiornato) → aggiorna Sistema/Prioritari/Tasse cambiati → Incassato del mese → Produzione tecnici + ripartizione ore → Commerciale (venduto agenti) → Aree operative (KPI micro + macro) → Ricavo per centro (STIMA % o REALE se disponibile) → Compensi risorsa per risorsa → Premi/Direttori (slider + distribuzione) → **Snapshot** (📅 in alto a destra della pagina Storico).
+
+**Backup**: Esporta JSON periodicamente (es. dopo ogni snapshot mensile) come copia locale indipendente dal cloud.
+
+---
+
+## Cosa resta aperto (roadmap futura, out-of-scope Fasi 1-12)
+
+1. **Ricavi per servizio dal dato vero**: la ripartizione STIMA % del fatturato (SPEC §D, Fase 7) è il default sulle 8 unità produttive. Quando arriveranno i ricavi per servizio veri (dalla contabilità Odoo o dal gestionale), Francesco li inserisce nel campo **"Manuale €"** della pagina "Centri di costo" unità per unità: la stima viene sostituita automaticamente (badge REALE) senza cambiare modo.
+
+2. **Spacchettamento "altri costi operativi" € 15.000/mese**: è una STIMA aggregata (SPEC §E, Fase 8) che copre ammortamenti hardware/software non in leasing, materiali di consumo, subappalti occasionali, provvigioni variabili agenti — voci del foglio Controllo di gestione non ancora catalogate puntualmente nel modello. Quando arriveranno le fatture per queste voci (materiali, subappalti, ammortamenti), spacchettarle in voci concrete di `sistemaFissi` con `areaId` corretto e portare `S.altriCostiOperativi` a 0. L'infrastruttura per farlo è già pronta nella pagina "Sistema" (blocchi Fissi/Variabili con filtri e CRUD per voce/area/natura).
+
+3. Nessun'altra pendenza tecnica: policy RLS su `compensi_snapshots` sistemate, realtime abilitato, cloud allineato allo schema corrente, popup di versione eliminato.
+
+---
 
 ## Come ripartire
 
@@ -11,10 +91,6 @@ python3 -m http.server 8791
 # poi apri http://localhost:8791/
 ```
 
-Repo: **https://github.com/maci81x/compensi-ssi**
-Branch attivo: **`main`** — GitHub Pages pubblica su
-`https://maci81x.github.io/compensi-ssi/`.
-
 Nota: i tre file Excel sorgente (`PF SI 2026.xlsx`,
 `26_Dettaglio costi dipendenti.xlsx`, `26_Controllo di gestione.xlsx`) servono
 solo per **aggiornamenti futuri** dei dati — i dati veri di questi file sono
@@ -23,7 +99,9 @@ lavorare.
 
 ---
 
-## Fasi completate (1-7)
+## Roadmap delle Fasi 1-12 (storico)
+
+## Fasi completate (1-12)
 
 Riferimento completo: `SPEC-v10.md`.
 
@@ -47,6 +125,9 @@ Riferimento completo: `SPEC-v10.md`.
     KPI macro area + dedup import PF** (Fase 10, 2026-07-23).
 11. **Sync multi-dispositivo timestamp-based + no popup versione +
     realtime cloud abilitato + session id** (Fase 11, 2026-07-23).
+12. **Backfill importKey su sistemaFissi seminato + policy RLS UPDATE/DELETE
+    su compensi_snapshots + docs finali + guida chi-fa-cosa** (Fase 12,
+    2026-07-24, chiusura app).
 
 ### Cosa fa la Fase 7 nel dettaglio
 
@@ -292,7 +373,7 @@ Supabase bloccata per non contaminare lo stato condiviso durante i test):
 | Prioritari (leasing/F24/IVA/rateizzi/TFR) | **€ 6.088,56** ✓ |
 | Dipendenti agganciati (match import ↔ personale) | **13/13** ✓ |
 | Incassi settimanali reali 2026 | 6 settimane, somma € 312.816,91 |
-| Schema version | 9 ✓ |
+| Schema version | 10 ✓ (bump Fase 12: backfill importKey) |
 | Margine modello a inc 174k (media reale 2026) | 25,34% (Δ 1,93 pt vs reale 23,41%) ✓ |
 | Utili da `flow()` a inc 174k (Fase 9) | 35.453 = 20,34% (Δ 3,07 pt vs reale 23,41%) ✓ |
 | Budget aree teorico (`flow().budgetAreeTeorico`) | 99.697 (esposto per monitoraggio, NON in cascata) |
@@ -321,25 +402,63 @@ Supabase bloccata per non contaminare lo stato condiviso durante i test):
 
 ---
 
-## Punti aperti
+## Punti aperti (chiusi nella Fase 12)
 
-1. **Policy RLS su `compensi_snapshots` — non risolto lato DB**: la `DELETE`
-   con la chiave anon usata dall'app viene bloccata in silenzio dalle RLS
-   (PostgREST risponde 200 con 0 righe cancellate, non un errore). L'app
-   rileva l'esito (`count` sulla delete) e mostra errore esplicito invece di
-   far credere che sia andata bene, ma il problema di fondo (permessi) resta
-   lato database. Servono UNA delle due:
-   - policy `DELETE` per il ruolo anon (soluzione più veloce), oppure
-   - autenticare l'app con un utente Supabase reale con permessi (richiede
-     schermata di login vera al posto di `currentUser` locale).
+1. **~~Policy RLS su `compensi_snapshots`~~** — **RISOLTO Fase 12**: aggiunte
+   policy `UPDATE` e `DELETE` per il ruolo `anon` sulla tabella
+   `compensi_snapshots` (migrazione DB
+   `compensi_snapshots_update_delete_policies` applicata su Supabase). Il
+   bottone "elimina snapshot" ora funziona per tutti. Test dal vivo passato:
+   snap fittizio creato via app → cancellato via app → cloud pulito.
 
 2. **Ricavi per servizio reali da inserire** (evoluzione del punto 3 aperto
-   originale): la ripartizione % del fatturato è ora la STIMA di default —
-   somma 100%, ragionata su fissi + volumi attesi. Quando arriveranno i ricavi
-   per servizio veri (dalla contabilità o dal gestionale), basta scrivere il
-   valore € nel campo "Manuale" della pagina Centri di costo, unità per
-   unità: l'app userà automaticamente quel valore (badge REALE) al posto
-   della stima. Nessun ricalcolo o switch di modo necessario.
+   originale): resta come **evoluzione futura**, non blocco tecnico. Vedi la
+   sezione "Cosa resta aperto" in cima al documento — la ripartizione STIMA
+   % è il default; quando arrivano i ricavi veri, Francesco li inserisce
+   nel campo "Manuale €" della pagina "Centri di costo".
+
+### Cosa fa la Fase 12 nel dettaglio (2026-07-24, chiusura app)
+
+- **Backfill importKey su S.sistemaFissi seminato** (SPEC §M): le 183 voci
+  del seed DEF non avevano `importKey` (solo le nuove voci importate ce
+  l'avevano da Fase 10). Al prossimo aggiornamento del PF il dedup si
+  sarebbe affidato alla sola similarità nome+valore — protezione più
+  debole. Migrazione schema **v10** (idempotente/additiva): per ogni
+  voce `sistemaFissi` con `areaPF` ma senza `importKey`, calcola
+  `pfImportKey({areaPF, cat, voce:nome})` e la salva. Vale anche per
+  gli stati salvati sul cloud (la migrazione gira automaticamente su
+  ogni loadState).
+- **Auto-merge in preview import**: nuova funzione `autoMergePFByImportKey`
+  chiamata in `handleImportPF` subito dopo il parse. Per ogni voce PF
+  con `importKey` esatto match in `sistemaFissi`, pre-imposta
+  `mergeInto = sf.id`. L'utente vede il badge "unita con «X»" già
+  apparecchiato e può ancora annullare voce per voce.
+- **Test tripla superata** (`/tmp/backfill-test.mjs`):
+  - **Test 1** — re-import stesso PF: 183 hit di importKey → 183 voci
+    mergiate, 0 create. `sistemaFissi.length` invariato (183 → 183),
+    Sistema totale invariato (**€ 43.994,28 → € 43.994,28**).
+  - **Test 2** — modifica importo nel PF e reimporta: voce aggiornata
+    (val 748,82 → 2.246,46), nessun duplicato (183 → 183).
+  - **Test 3** — cambio a mano natura+area di una voce (con
+    `userEdited`) e reimporta: override utente **preservato** (natura
+    resta "variabile", areaPF resta "Formazione", il PF originale non
+    li ha sovrascritti).
+- **Policy RLS UPDATE + DELETE su `compensi_snapshots`** (SPEC §N):
+  aggiunte via migrazione DB `compensi_snapshots_update_delete_policies`.
+  Test dal vivo: snap fittizio `TEST_RLS_*` creato via `saveSnap()` →
+  cancellato via `deleteSnap()` → cloud pulito (verificato con SELECT
+  post-delete). L'app ora può gestire il ciclo di vita snapshot senza
+  workaround admin.
+- **Documentazione finale**: HANDOVER + SPEC riscritti con:
+  - Numeri chiave validati (tabella in cima).
+  - Struttura aree definitiva (13 aree, tassonomia v10).
+  - Guida "chi inserisce cosa" per Roberto/Francesco/Giovanna/Samuele/
+    Niccolò/Marco/direttori d'area con frequenza.
+  - Cosa resta aperto per evoluzione futura (ricavi per servizio,
+    spacchettamento altri costi operativi).
+- **Nessun altro punto tecnico aperto**: realtime abilitato, cloud
+  allineato, popup di versione eliminato, DnD funzionante, KPI macro
+  attivi, sistema fissi/variabili navigabile e correggibile.
 
 3. **Voce "altri costi operativi" come stima aggregata** (default 15.000/mese):
    copre ammortamenti, materiali, subappalti occasionali, provvigioni variabili

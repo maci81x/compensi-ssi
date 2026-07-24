@@ -265,6 +265,9 @@ Confronta `incassato` con X/Y/Z e mostra il colore + di quanto sei sopra/sotto c
     2026-07-23).
 11. **Sync multi-dispositivo timestamp-based + realtime cloud abilitato +
     session id** (§L sotto, Fase 11 chiusa 2026-07-23).
+12. **Backfill importKey su sistemaFissi seminato + policy RLS UPDATE/DELETE
+    su compensi_snapshots + docs finali** (§M-N sotto, Fase 12 chiusa
+    2026-07-24 — chiusura app).
 
 ## 15. Fase 7 — Ricavo per centro % + passata grafica (chiusa 2026-07-23)
 
@@ -701,17 +704,99 @@ solo campi mancanti).
   Roberto conferma quali sono "priorità 1" alla prima compilazione.
 - Formula esatta del **pool premi proposto** (in % del margine area? del variabile maturato?) — parti da
   "quota personale × gate KPI area" già presente in v9 e affina con Roberto.
-- **Aperto lato DB (Fase 5, ancora aperto):** le policy RLS di
-  `compensi_snapshots` non consentono la `DELETE` con la chiave anon usata dal
-  client. L'app rileva l'esito e mostra errore esplicito, ma serve UNA:
-  policy DELETE per ruolo anon, oppure login Supabase reale (oggi solo
-  `currentUser` locale). L'MCP admin bypassa comunque le RLS (usato per la
-  pulizia snapshot del 2026-07-23).
+- **~~Aperto lato DB (Fase 5)~~ — CHIUSO in Fase 12 (2026-07-24):** aggiunte
+  policy `UPDATE` e `DELETE` per il ruolo `anon` su `compensi_snapshots`
+  (migrazione DB `compensi_snapshots_update_delete_policies`). Il bottone
+  "elimina snapshot" ora funziona per tutti gli utenti dell'app. Test dal
+  vivo: snap `TEST_RLS_*` creato via `saveSnap()` → cancellato via
+  `deleteSnap()` → cloud vuoto. Vedi §20 per il dettaglio.
 - **Chiuso in Fase 8 (2026-07-23):** il gap costi 50k/mese è stato risolto
   fixando il doppio conteggio in `margineAziendaleStimato` (voci
   sistemaFissi con areaId nei centri) e includendo personale interno +
   `altriCostiOperativi` (default 15k, editabile). Con incassato 174k
   medio 2026 il margine modello è 25,34% vs reale 23,41% (Δ 1,93 pt).
-  Vedi §16 per il dettaglio. **Rimane aperto Fase 9**: spacchettare
+  Vedi §16 per il dettaglio. **Rimane aperto oltre Fase 12**: spacchettare
   `altriCostiOperativi` in voci concrete (ammortamenti, materiali,
   subappalti, provvigioni variabili) quando arriveranno i dati puntuali.
+
+## 20. Fase 12 — Backfill importKey + policy RLS + docs finali (chiusa 2026-07-24)
+
+### 20.1 Backfill importKey (§M)
+Problema (rimasto in sospeso dalla Fase 10): al termine della Fase 10 la
+funzione `pfImportKey` veniva scritta solo sulle nuove voci importate
+via `applyImport`. Le 183 voci del seed DEF (già dentro `S.sistemaFissi`
+al fresh boot) non avevano `importKey`. Al prossimo aggiornamento del
+PF il dedup si sarebbe affidato alla sola similarità nome+valore —
+protezione più debole proprio nel caso più importante.
+
+Fix: **migrazione schema v10** (idempotente/additiva):
+```js
+{to:10,migrate(s){
+  (s.sistemaFissi||[]).forEach(sf=>{
+    if(!sf.importKey&&sf.areaPF){
+      sf.importKey=pfImportKey({areaPF:sf.areaPF,cat:sf.cat,voce:sf.nome});
+    }
+  });
+}},
+```
+
+Vale anche per gli stati salvati sul cloud: `migrateSchema` è chiamata
+in `applyIncomingState` su ogni `loadState`, quindi il cloud si allinea
+automaticamente al prossimo login di un client aggiornato.
+
+Auto-suggerimento merge in preview: nuova funzione
+`autoMergePFByImportKey(voci)` chiamata in `handleImportPF` subito
+dopo il parse del file — per ogni voce PF con `importKey` esatto
+match con una voce esistente, pre-imposta `mergeInto = sf.id`.
+L'utente vede il badge "unita con «X»" già apparecchiato e può
+ancora annullare voce per voce.
+
+Test tripla (`/tmp/backfill-test.mjs`) — tutti verdi:
+| Test | Scenario | Risultato |
+|---|---|---|
+| 1 | Re-import identico stesso PF | 183 hit importKey → 183 mergiate, 0 create. `sistemaFissi.length` invariato (183→183), Sistema totale invariato (**43.994,28 → 43.994,28**) |
+| 2 | Modifica importo nel PF, reimporta | Voce aggiornata (748,82 → 2.246,46), zero duplicati |
+| 3 | Utente cambia natura+area con `userEdited`, poi reimporta | Override utente **preservato** (natura resta "variabile", areaPF resta "Formazione") |
+
+### 20.2 Policy RLS UPDATE + DELETE su `compensi_snapshots` (§N)
+Diagnosi: prima esistevano solo policy `SELECT` + `INSERT` per il ruolo
+anon. Le operazioni `UPDATE` (usata da `saveSnap` per aggiornare uno
+snapshot se il mese esiste già) e `DELETE` (usata da `deleteSnap`)
+venivano **bloccate in silenzio** dalle RLS (PostgREST risponde 200
+con 0 righe cancellate, non un errore). L'app rilevava l'esito e
+mostrava errore, ma non poteva risolvere lato client.
+
+Fix (migrazione DB `compensi_snapshots_update_delete_policies`):
+```sql
+CREATE POLICY "anon can update" ON public.compensi_snapshots
+  FOR UPDATE TO public USING (true) WITH CHECK (true);
+CREATE POLICY "anon can delete" ON public.compensi_snapshots
+  FOR DELETE TO public USING (true);
+```
+
+Test dal vivo (`/tmp/rls-test.mjs`): snap fittizio `TEST_RLS_1784882467272`
+creato via `saveSnap()` → 1 riga in cloud → `deleteSnap(idx)` via app
+→ 0 righe in cloud. ✅ Il bottone "elimina snapshot" ora funziona per
+tutti gli utenti.
+
+### 20.3 Documentazione finale
+HANDOVER.md riscritto in cima con:
+- Tabella numeri chiave validati (garantito 40.916,15 · Sistema 43.994,28 ·
+  prioritari 6.088,56 · tasse 10.500 · altri costi operativi 15.000 · CDA
+  13.600 · schema v10 · margine modello 20,34% vs reale 23,41% → Δ 3,07 pt).
+- Struttura aree definitiva (13 aree, tassonomia v10 con ripartizione
+  STIMA %).
+- Sezione "Chi inserisce cosa" — accountability per Roberto/Francesco/
+  Giovanna/Samuele/Niccolò/Marco/direttori d'area con frequenza mensile
+  o all'occorrenza.
+- Sezione "Cosa resta aperto per il futuro" — ricavi per servizio da
+  campo "Manuale €" quando arrivano dalla contabilità;
+  `altriCostiOperativi = 15k` da spacchettare in voci puntuali quando
+  arrivano le fatture di materiali/subappalti/ammortamenti.
+- Ordine di inserimento suggerito ogni mese.
+
+Nessun altro punto tecnico aperto: realtime attivo, cloud allineato,
+popup di versione eliminato, DnD funzionante, KPI macro attivi, sistema
+fissi/variabili navigabile e correggibile, snapshot cancellabile dall'app.
+
+**Chiusura Fasi 1-12 dell'app SSI Compensi.**

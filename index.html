@@ -1888,12 +1888,35 @@ function handleImportPF(event){
       if(!voci&&!previsionale){alert('Fogli "2026 PF" / "PREVISIONALE 2026" non trovati nel file.');return;}
       pendingImport.pf=voci;
       pendingImport.previsionale=previsionale;
+      // Fase 11 (§M): pre-suggerisci merge per ogni voce del PF che ha
+      // importKey esatto match con una voce esistente in sistemaFissi —
+      // così un re-import del PF NON crea 183 doppioni ma aggiorna le
+      // voci originali. L'utente vede il badge "unita con «X»" già
+      // apparecchiato e può ancora annullare voce per voce.
+      autoMergePFByImportKey(pendingImport.pf);
       setEl('import-pf-status','✅ '+file.name);
       renderImportPreview();
     }catch(err){alert('Errore lettura file PF: '+err.message);}
     event.target.value='';
   };
   reader.readAsArrayBuffer(file);
+}
+
+// Fase 11 (§M): scansiona le voci PF pending e imposta mergeInto per
+// quelle con importKey esatto match. Utile in due punti:
+//   - subito dopo il parse del file (handleImportPF), così l'anteprima
+//     mostra "unita" invece di "possibile doppione + click Unisci".
+//   - dopo riclassifica (§M): la lista può cambiare ordine/campi.
+function autoMergePFByImportKey(voci){
+  if(!voci||!voci.length||!S.sistemaFissi)return 0;
+  let hit=0;
+  voci.forEach(v=>{
+    if(v.mergeInto||v.escludi)return;
+    const key=pfImportKey(v);
+    const sf=S.sistemaFissi.find(x=>x.importKey===key);
+    if(sf){v.mergeInto=sf.id;hit++;}
+  });
+  return hit;
 }
 
 function handleImportDipendenti(event){
@@ -2294,7 +2317,7 @@ const CAT_ICONS={affitto:'🏢',utenze:'⚡',software:'💻',assicurazione:'🛡
 // stato non ha). Vedi SCHEMA_MIGRATIONS più sotto per la logica di
 // migrazione — root cause del problema "una scheda vecchia sovrascrive dati
 // più recenti", non un cerotto sul sintomo.
-const CURRENT_SCHEMA_VERSION=9;
+const CURRENT_SCHEMA_VERSION=10;
 
 const DEF={
   schemaVersion:CURRENT_SCHEMA_VERSION,
@@ -3459,6 +3482,25 @@ const SCHEMA_MIGRATIONS=[
       }
     });
   }},
+  // Fase 11 (§M): backfill di importKey su tutte le voci S.sistemaFissi
+  // seminate (o importate senza importKey per bug pre-Fase 10). La chiave
+  // sopravvive a un re-import del PF senza duplicati: senza questo passo,
+  // le 183 voci del seed DEF resterebbero senza importKey e al prossimo
+  // aggiornamento del PF il dedup si affiderebbe alla sola similarità
+  // nome+valore — protezione più debole proprio nel caso più importante.
+  //
+  // Regola: applica solo se la voce ha `areaPF` (viene dal PF, non è
+  // manuale) E non ha già una importKey. La chiave si calcola dai campi
+  // di seed (areaPF/cat/nome), assumendo che al momento del backfill
+  // nome==voce originale del PF (se poi l'utente rinomina, la chiave
+  // resta stabile grazie a userEdited/importKey già settati).
+  {to:10,migrate(s){
+    (s.sistemaFissi||[]).forEach(sf=>{
+      if(!sf.importKey&&sf.areaPF){
+        sf.importKey=pfImportKey({areaPF:sf.areaPF,cat:sf.cat,voce:sf.nome});
+      }
+    });
+  }},
 ];
 function migrateSchema(s){
   let v=s.schemaVersion||0;
@@ -3522,6 +3564,17 @@ function applyIncomingState(incoming,sourceLabel,incomingUpdatedAtIso){
 
   // R2: conflitto vero — locale dirty + cloud più recente
   if(_hasUnsavedLocalChanges&&cloudPiuRecente){
+    // Fase 12 hotfix (§L bis): se abbiamo un push imminente (_syncTimer
+    // attivo dal debounce di scheduleSync), non ha senso interrompere
+    // l'utente con un popup — il push scatterà tra pochi secondi e il
+    // cloud si allineerà. Ripusha subito senza chiedere.
+    // La R2 con popup vera scatta solo in caso di modifiche locali
+    // "orfane" (senza push in coda), es. push cloud fallito.
+    if(_syncTimer){
+      console.log('[applyIncomingState] dirty ma push imminente — ripusho subito, no popup');
+      scheduleSync();
+      return false;
+    }
     const ok=confirm(
       'In questa scheda ci sono modifiche non ancora salvate nel cloud, e nel frattempo un altro dispositivo (o un\'altra scheda) ha salvato nuovi dati più recenti.\n\n'+
       'Come vuoi procedere?\n\n'+
