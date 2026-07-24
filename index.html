@@ -1213,6 +1213,7 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
   <div id="page-dash" class="page">
     <h2 style="font-size:15px;font-weight:600;margin-bottom:2px">Dashboard CDA</h2>
     <p style="font-size:12px;color:var(--ink3);margin-bottom:14px">Semafori e grafici — mese corrente</p>
+    <div id="dash-scostamento" style="margin-bottom:14px"></div>
     <div class="dash-grid" id="sem-grid"></div>
     <div class="chart-grid">
       <div class="chart-card">
@@ -2051,11 +2052,15 @@ const CAT_ICONS={affitto:'🏢',utenze:'⚡',software:'💻',assicurazione:'🛡
 // stato non ha). Vedi SCHEMA_MIGRATIONS più sotto per la logica di
 // migrazione — root cause del problema "una scheda vecchia sovrascrive dati
 // più recenti", non un cerotto sul sintomo.
-const CURRENT_SCHEMA_VERSION=6;
+const CURRENT_SCHEMA_VERSION=7;
 
 const DEF={
   schemaVersion:CURRENT_SCHEMA_VERSION,
-  incassato:130000,
+  // Default = media incassato reale 2026 (§A, blocco finale): 954.538 su 7 mesi
+  // (gen-lug) = 136.363/mese. NON è il fatturato: la cascata gira sull'incassato.
+  // Il vecchio default (200.000 in cloud / 130.000 in DEF) era un placeholder,
+  // sostituito qui e via migrazione v7 dove ancora presente (migrate to:7).
+  incassato:136363,
   periodicita:'mensile',
   incassatoSettimanale:0,
   incassatoMode:'calc',
@@ -2089,6 +2094,24 @@ const DEF={
     {settimana:26,dal:'2026-06-22',al:'2026-06-28',incassato:45694.31},
     {settimana:27,dal:'2026-06-29',al:'2026-07-05',incassato:106774.81},
     {settimana:28,dal:'2026-07-06',al:'2026-07-12',incassato:72458.78},
+  ],
+
+  // Incassato reale mensile 2026 (§A, blocco finale) — dato critico: la cascata
+  // gira su QUESTO, non sul fatturato. 7 mesi gen-lug, somma 954.538 =
+  // 136.363/mese (= default incassato). Serve a: (1) precompilare l'incassato
+  // del mese con un dato vero (picker in Step 1), (2) mostrare in Dashboard lo
+  // scostamento fatturato-incassato (§A: liquidità reale sottile, ~2,6%, NON è
+  // un errore del modello — è il gap reale tra ciò che si fattura e ciò che si
+  // incassa; non va "corretto" per tornare al 23%). Editabile/creabile/
+  // eliminabile da Struttura & aree (nessun valore qui è hardcoded immutabile).
+  incassatoMensile2026:[
+    {mese:'Gennaio', anno:2026,incassato:122537},
+    {mese:'Febbraio',anno:2026,incassato:122615},
+    {mese:'Marzo',   anno:2026,incassato:101594},
+    {mese:'Aprile',  anno:2026,incassato:123420},
+    {mese:'Maggio',  anno:2026,incassato:161195},
+    {mese:'Giugno',  anno:2026,incassato:160782},
+    {mese:'Luglio',  anno:2026,incassato:162395},
   ],
 
   voci:[
@@ -3132,6 +3155,17 @@ const SCHEMA_MIGRATIONS=[
     if(!s.premi.aree)s.premi.aree={};
     if(s.premi.priorita===undefined)s.premi.priorita=3;
   }},
+  {to:7,migrate(s){
+    // §A blocco finale — incassato reale mensile + default corretto.
+    // Aggiunge la serie mensile reale se manca (mai sovrascrive una serie
+    // già editata dall'utente).
+    if(!s.incassatoMensile2026)s.incassatoMensile2026=JSON.parse(JSON.stringify(DEF.incassatoMensile2026));
+    // Il vecchio incassato di default era un PLACEHOLDER (200.000 in cloud,
+    // 130.000 in DEF): va portato alla media incassato reale 2026 (136.363).
+    // Sostituito SOLO se è ancora uno di quei placeholder — un valore diverso
+    // significa che qualcuno l'ha inserito a mano e non va toccato (dato reale).
+    if(s.incassato===200000||s.incassato===130000)s.incassato=136363;
+  }},
 ];
 function migrateSchema(s){
   let v=s.schemaVersion||0;
@@ -3403,6 +3437,48 @@ function applicaSettimanaReale(settimana){
   notify('incassatoSettimanale precompilato dalla sett. '+settimana+' ('+w.dal+'→'+w.al+'): '+fmt(w.incassato));
 }
 
+// ── §A blocco finale — INCASSATO REALE: medie e scostamento fatturato→incassato ─
+// La cascata gira sull'incassato; il fatturato è più alto. Questa differenza è
+// reale (crediti non ancora incassati) e va MOSTRATA, non nascosta correggendo
+// il modello. Media incassato reale 2026 = 136.363; media fatturato = 174.265.
+function incassatoMedioReale(){const a=S.incassatoMensile2026||[];return a.length?a.reduce((s,r)=>s+(r.incassato||0),0)/a.length:0;}
+function fatturatoMedioReale(){const a=S.storicoReale||[];return a.length?a.reduce((s,r)=>s+(r.fatturato||0),0)/a.length:0;}
+function scostamentoFattInc(){
+  const fatt=fatturatoMedioReale(), inc=incassatoMedioReale();
+  const gap=fatt-inc;
+  return{fatt,inc,gap,gapPct:fatt>0?(gap/fatt)*100:0,incassoSuFattPct:fatt>0?(inc/fatt)*100:0};
+}
+function applicaMeseRealeIncassato(mese,anno){
+  const m=(S.incassatoMensile2026||[]).find(r=>r.mese===mese&&r.anno===anno);
+  if(!m)return;
+  S.incassatoMode='diretto';           // usa l'incassato reale mensile così com'è
+  S.incassato=m.incassato;
+  renderAll();
+  notify('Incassato precompilato da '+mese+' '+anno+' (incassato REALE, non fatturato): '+fmt(m.incassato));
+}
+// Pannello Dashboard: scostamento fatturato-incassato + liquidità reale del
+// modello all'incassato corrente (§A). Non forza numeri: legge flow() live.
+function renderScostamento(f){
+  const el=document.getElementById('dash-scostamento');if(!el)return;
+  const sc=scostamentoFattInc();
+  const liqPct=f.inc>0?(f.liquidita/f.inc)*100:0;
+  return el.innerHTML=`<div style="background:var(--card);border:1px solid var(--amber-bd,var(--lift));border-left:4px solid var(--amber,#c98a00);border-radius:var(--rl);padding:14px 16px">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+      <span style="font-size:13px;font-weight:700">Scostamento fatturato → incassato</span>
+      <span style="font-size:11px;color:var(--ink3)">la cascata gira sull'incassato, non sul fatturato (§A)</span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
+      <div><div style="font-size:9px;color:var(--ink3);text-transform:uppercase">Fatturato medio 2026</div><div class="mono" style="font-size:16px;font-weight:600">${fmt(sc.fatt)}</div></div>
+      <div><div style="font-size:9px;color:var(--ink3);text-transform:uppercase">Incassato medio 2026</div><div class="mono" style="font-size:16px;font-weight:600;color:var(--green)">${fmt(sc.inc)}</div></div>
+      <div><div style="font-size:9px;color:var(--ink3);text-transform:uppercase">Gap (non incassato)</div><div class="mono" style="font-size:16px;font-weight:600;color:var(--red)">−${fmt(sc.gap)}</div><div style="font-size:10px;color:var(--ink3)">${sc.gapPct.toFixed(1)}% del fatturato · si incassa il ${sc.incassoSuFattPct.toFixed(1)}%</div></div>
+      <div><div style="font-size:9px;color:var(--ink3);text-transform:uppercase">Liquidità disponibile @ ${fmt(f.inc)}</div><div class="mono" style="font-size:16px;font-weight:600;color:${f.liquidita<0?'var(--red)':'var(--ink)'}">${fmt(f.liquidita)}</div><div style="font-size:10px;color:var(--ink3)">${liqPct.toFixed(1)}% dell'incassato (inc − GRFM − prioritari − garantito)</div></div>
+    </div>
+    <div style="font-size:11px;color:var(--ink3);margin-top:10px;line-height:1.5">
+      Questa liquidità sottile <strong>non è un errore del modello</strong>: è la differenza reale tra ciò che si <em>fattura</em> e ciò che si <em>incassa</em>. I costi sono dimensionati su un fatturato più alto (${fmt(sc.fatt)}), ma la cassa che arriva davvero è l'incassato (${fmt(sc.inc)}). Non va "corretta" per tornare al 23%.
+    </div>
+  </div>`;
+}
+
 // FLOW — cascata completa
 function flow(){
   const inc=S.incassato;
@@ -3672,6 +3748,26 @@ function renderStep1(){
         </select>
         <button class="btn xs prim" onclick="applicaSettimanaReale(parseInt(document.getElementById('s1-sett-sel').value))">Applica a incassatoSettimanale</button>
         <span style="color:var(--ink3)">Somma 6 settimane: <strong class="mono">${fmt(sw.reduce((s,w)=>s+w.incassato,0))}</strong></span>
+      </div>`;
+
+    // §A blocco finale — precompila dall'INCASSATO REALE mensile (non dal
+    // fatturato): è il dato su cui gira la cascata. Media = default 136.363.
+    let incPicker=document.getElementById('s1-inc-reale-picker');
+    if(!incPicker){
+      incPicker=document.createElement('div');
+      incPicker.id='s1-inc-reale-picker';
+      incPicker.style.cssText='margin-top:6px';
+      settPicker.insertAdjacentElement('afterend',incPicker);
+    }
+    const im=S.incassatoMensile2026||[];
+    const incMedio=incassatoMedioReale();
+    incPicker.innerHTML=`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 10px;background:var(--green-bg);border:1px solid var(--green);border-radius:var(--r);font-size:11px">
+        <span style="color:var(--green);font-weight:600">Incassato REALE mensile 2026 (la cascata gira su questo):</span>
+        <select id="s1-inc-reale-sel" class="inp" style="width:auto;display:inline-block">
+          ${im.map(r=>`<option value="${r.mese}|${r.anno}">${r.mese} ${r.anno} — ${fmt(r.incassato)}</option>`).join('')}
+        </select>
+        <button class="btn xs prim" onclick="const v=document.getElementById('s1-inc-reale-sel').value.split('|');applicaMeseRealeIncassato(v[0],parseInt(v[1]))">Applica</button>
+        <span style="margin-left:auto;color:var(--ink3)">Media 7 mesi: <strong class="mono">${fmt(incMedio)}</strong> (= default)</span>
       </div>`;
   }
 
@@ -6818,6 +6914,7 @@ function renderSemaforo(f){
 }
 function renderDash(f){
   if(!f)f=flow();
+  renderScostamento(f);
   renderSemaforo(f);
 }
 
