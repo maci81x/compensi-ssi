@@ -7132,11 +7132,24 @@ function renderAreaKPI(containerId, areaId){
 }
 
 function renderAreaKPIInto(el, areaId){
-  const a=S.aree.find(x=>x.id===areaId);if(!a||!a.micro?.length)return;
+  const a=S.aree.find(x=>x.id===areaId);
+  // §L L6 — Anche aree senza micro devono poter avere KPI custom.
+  // Se area non esiste, esci; se esiste ma senza micro, mostra comunque la
+  // sezione KPI custom (per aree tipo Amm/Mkt/Seg con solo datiArea).
+  if(!a) return;
   const ai=S.aree.indexOf(a);
   // Remove existing KPI section if any
   const existing=el.querySelector('.area-kpi-section');
   if(existing)existing.remove();
+  if(!a.micro||!a.micro.length){
+    // Solo sezione KPI custom
+    const wrap=document.createElement('div');
+    wrap.className='area-kpi-section';
+    wrap.style.cssText='margin-top:16px';
+    wrap.innerHTML=renderKpiCustomHTML(areaId);
+    el.appendChild(wrap);
+    return;
+  }
 
   const achieved=a.micro.filter(m=>m.kt>0&&Math.round((m.ke/m.kt)*100)>=S.soglia).length;
   const wrap=document.createElement('div');
@@ -7160,8 +7173,11 @@ function renderAreaKPIInto(el, areaId){
     const border=ok?'var(--green-bd)':'var(--lift)';
     html+='<div style="background:var(--card);border:1px solid '+border+';border-radius:var(--r);padding:9px 11px">'
       +'<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;margin-bottom:4px">'
-      +'<div style="font-size:11px;font-weight:500;flex:1">'+m.nome+'</div>'
-      +'<span style="font-size:10px;font-weight:700;color:'+(ok?'var(--green)':'var(--ink3)')+'">'+( km!==null?km+'%':'—')+'</span></div>'
+      +'<input value="'+m.nome+'" style="border:none;background:transparent;font-size:11px;font-weight:500;flex:1;outline:none;font-family:\'DM Sans\',sans-serif;color:var(--ink);padding:0" '
+      +' onblur="S.aree['+ai+'].micro['+mi+'].nome=this.value;renderAll()" onkeydown="if(event.keyCode===13)this.blur()" title="clic per rinominare">'
+      +'<span style="font-size:10px;font-weight:700;color:'+(ok?'var(--green)':'var(--ink3)')+'">'+( km!==null?km+'%':'—')+'</span>'
+      +'<button class="btn xs danger" style="font-size:9px;padding:1px 4px" title="Elimina KPI" onclick="if(confirm(\'Eliminare il KPI &quot;'+m.nome.replace(/\'/g,'&#39;').replace(/&/g,'&amp;')+'&quot;?\')){S.aree['+ai+'].micro.splice('+mi+',1);renderAll()}">✕</button>'
+      +'</div>'
       +'<div style="height:3px;background:var(--lift);border-radius:2px;overflow:hidden;margin-bottom:6px">'
       +'<div style="height:100%;width:'+pctBar+'%;background:'+barColor+';border-radius:2px"></div></div>'
       +'<div style="display:flex;gap:8px;align-items:center">'
@@ -7183,9 +7199,85 @@ function renderAreaKPIInto(el, areaId){
       +'</div></div>';
   });
 
-  html+='</div><button class="btn xs" style="margin-top:8px" onclick="S.aree['+ai+'].micro.push({nome:"Nuovo KPI",kt:101,ke:0,note:""});renderAll()">+ KPI</button>';
+  html+='</div><button class="btn xs" style="margin-top:8px" onclick="S.aree['+ai+'].micro.push({nome:\"Nuovo KPI\",kt:101,ke:0,note:\"\"});renderAll()">+ KPI</button>';
+  // §L L6 — Sezione KPI custom (S.kpiCustom[areaKey]): KPI aggiuntivi per
+  // area, indipendenti dai micro (che sono target-driven, ereditati dal
+  // seed). I custom si aggiungono/rinominano/eliminano liberamente.
+  html+=renderKpiCustomHTML(areaId);
   wrap.innerHTML=html;
   el.appendChild(wrap);
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// §L L6 — KPI custom per area (S.kpiCustom[areaKey]=[])
+// ══════════════════════════════════════════════════════════════════════════
+function ensureKpiCustom(areaKey){
+  if(!S.kpiCustom||typeof S.kpiCustom!=='object') S.kpiCustom={};
+  if(!Array.isArray(S.kpiCustom[areaKey])) S.kpiCustom[areaKey]=[];
+  return S.kpiCustom[areaKey];
+}
+function addKpiCustom(areaKey){
+  const nome=prompt('Nome KPI custom (es. Tempo medio risposta):');
+  if(!nome) return;
+  const t=nome.trim(); if(!t) return;
+  const arr=ensureKpiCustom(areaKey);
+  arr.push({id:'k'+Date.now(),nome:t,target:0,effettivo:0,unita:''});
+  renderAll();
+  notify('KPI custom aggiunto: '+t);
+}
+function renameKpiCustom(areaKey,id){
+  const arr=ensureKpiCustom(areaKey);
+  const k=arr.find(x=>x.id===id); if(!k) return;
+  const nome=prompt('Nome KPI:',k.nome);
+  if(nome===null) return;
+  const t=nome.trim(); if(!t) return;
+  k.nome=t; renderAll(); notify('Rinominato: '+t);
+}
+function deleteKpiCustom(areaKey,id){
+  const arr=ensureKpiCustom(areaKey);
+  const idx=arr.findIndex(x=>x.id===id); if(idx<0) return;
+  if(!confirm('Eliminare il KPI custom "'+arr[idx].nome+'"?')) return;
+  arr.splice(idx,1); renderAll(); notify('KPI eliminato');
+}
+function renderKpiCustomHTML(areaKey){
+  const arr=ensureKpiCustom(areaKey);
+  let html='<div style="margin-top:14px;padding-top:10px;border-top:1px dashed var(--lift)">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'
+    +'<span style="font-size:11px;font-weight:600;color:var(--ink3)">🎯 KPI custom ('+arr.length+')</span>'
+    +'<button class="btn xs prim" onclick="addKpiCustom(\''+areaKey+'\')">+ KPI custom</button>'
+    +'</div>';
+  if(!arr.length){
+    html+='<div style="font-size:10px;color:var(--ink3);font-style:italic">Nessun KPI custom. Usa "+ KPI custom" per aggiungerne uno (nome libero, target e effettivo modificabili).</div>';
+  } else {
+    html+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:6px">';
+    arr.forEach(function(k){
+      const pct=k.target>0?Math.round((k.effettivo/k.target)*100):null;
+      const okK=pct!==null&&pct>=100;
+      const nameEsc=k.nome.replace(/"/g,'&quot;');
+      const uniEsc=(k.unita||'').replace(/"/g,'&quot;');
+      html+='<div style="background:var(--card);border:1px solid var(--lift);border-radius:var(--r);padding:8px 10px">'
+        +'<div style="display:flex;align-items:center;gap:4px;margin-bottom:5px">'
+        +'<input value="'+nameEsc+'" style="border:none;background:transparent;flex:1;font-size:11px;font-weight:500;outline:none;font-family:\'DM Sans\',sans-serif;color:var(--ink);padding:0" '
+        +'onblur="const arr=ensureKpiCustom(\''+areaKey+'\');const k=arr.find(x=>x.id===\''+k.id+'\');if(k){k.nome=this.value;renderAll()}" onkeydown="if(event.keyCode===13)this.blur()">'
+        +'<span style="font-size:10px;font-weight:700;color:'+(okK?'var(--green)':'var(--ink3)')+'">'+(pct!==null?pct+'%':'—')+'</span>'
+        +'<button class="btn xs" style="font-size:9px;padding:1px 4px" title="Rinomina" onclick="renameKpiCustom(\''+areaKey+'\',\''+k.id+'\')">✏</button>'
+        +'<button class="btn xs danger" style="font-size:9px;padding:1px 4px" title="Elimina" onclick="deleteKpiCustom(\''+areaKey+'\',\''+k.id+'\')">✕</button>'
+        +'</div>'
+        +'<div style="display:flex;gap:6px;align-items:center;font-size:10px">'
+        +'<span style="color:var(--ink3)">Target</span>'
+        +'<input type="number" value="'+(k.target||0)+'" class="inp n" style="font-size:11px;padding:2px 5px;width:58px" '
+        +'onblur="const arr=ensureKpiCustom(\''+areaKey+'\');const k=arr.find(x=>x.id===\''+k.id+'\');if(k){k.target=parseFloat(this.value)||0;renderAll()}" onkeydown="if(event.keyCode===13)this.blur()">'
+        +'<span style="color:var(--ink3)">Effet.</span>'
+        +'<input type="number" value="'+(k.effettivo||0)+'" class="inp n" style="font-size:11px;padding:2px 5px;width:58px" '
+        +'onblur="const arr=ensureKpiCustom(\''+areaKey+'\');const k=arr.find(x=>x.id===\''+k.id+'\');if(k){k.effettivo=parseFloat(this.value)||0;renderAll()}" onkeydown="if(event.keyCode===13)this.blur()">'
+        +'<input value="'+uniEsc+'" placeholder="unità" style="width:44px;font-size:10px;padding:1px 4px;border:1px solid var(--lift);border-radius:var(--r);background:var(--sheet)" '
+        +'onblur="const arr=ensureKpiCustom(\''+areaKey+'\');const k=arr.find(x=>x.id===\''+k.id+'\');if(k){k.unita=this.value;renderAll()}" onkeydown="if(event.keyCode===13)this.blur()">'
+        +'</div>'
+        +'</div>';
+    });
+    html+='</div>';
+  }
+  return html+'</div>';
 }
 
 window.addEventListener('DOMContentLoaded',()=>{
