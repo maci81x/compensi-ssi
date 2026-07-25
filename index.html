@@ -5489,6 +5489,17 @@ const VOCI_TEC = [
   {k:'sorveglianza',lbl:'Sorv.San.',  unit:'€', pf:'pct_sorv',   def_pf:0.08, def_r:0},
 ];
 
+// §L L4 — Delete righe griglia Produzione: disattiva lo slot generato_tecnico
+// (non-distruttivo, reversibile dal pop persona). La riga sparisce dalla
+// griglia ma persona, slot, valori restano — così lo storico non si perde.
+function disattivaRigaTecnico(pi, si){
+  const p=S.personale[pi]; if(!p||!p.slots||!p.slots[si]) return;
+  const sl=p.slots[si]; if(!sl.comp||!sl.comp.generato_tecnico) return;
+  if(!confirm('Rimuovere '+p.nome+' dalla griglia Produzione tecnici?\n\nLo slot resta configurato (con i suoi valori) e può essere ri-attivato dal pop persona (⚙). Questa NON cancella la persona.')) return;
+  sl.comp.generato_tecnico.on=false;
+  renderAll();
+  notify('Rimosso dalla griglia: '+p.nome);
+}
 function renderProduzionePage(){
   const el=document.getElementById('prod-tec-grid');if(!el)return;
   // Solo tecnici con generato_tecnico attivo
@@ -5514,7 +5525,7 @@ function renderProduzionePage(){
     const pct=obj>0?Math.min((gen/obj)*100,100):0;
     const barColor=gen>=obj?'var(--green)':pct>60?'var(--amber)':'var(--red)';
 
-    html+=`<tr style="background:${rowBg}" id="tec-row-${pi}">       <td style="padding:7px 10px;font-weight:600;border-bottom:1px solid var(--lift)">         <div style="display:flex;align-items:center;gap:7px">           <div style="width:26px;height:26px;border-radius:50%;background:${bg};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0">${p.nome[0]}</div>           <div>             <div style="font-size:12px">${p.nome}</div>             ${obj>0?`<div style="width:60px;height:2px;background:var(--lift);border-radius:1px;margin-top:3px;overflow:hidden"><div style="height:100%;width:${pct.toFixed(0)}%;background:${barColor}"></div></div>`:''}           </div>         </div>       </td>       ${VOCI_TEC.map(v=>{         const raw=g[v.k]||0;         return `<td style="padding:4px 5px;border-bottom:1px solid var(--lift)">
+    html+=`<tr style="background:${rowBg}" id="tec-row-${pi}">       <td style="padding:7px 10px;font-weight:600;border-bottom:1px solid var(--lift)">         <div style="display:flex;align-items:center;gap:7px">           <div style="width:26px;height:26px;border-radius:50%;background:${bg};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0">${p.nome[0]}</div>           <div style="flex:1;min-width:0">             <div style="font-size:12px">${p.nome}</div>             ${obj>0?`<div style="width:60px;height:2px;background:var(--lift);border-radius:1px;margin-top:3px;overflow:hidden"><div style="height:100%;width:${pct.toFixed(0)}%;background:${barColor}"></div></div>`:''}           </div>           <button class="btn xs danger" style="font-size:9px;padding:2px 5px" title="Rimuovi dalla griglia (mantiene lo storico)" onclick="disattivaRigaTecnico(${pi},${si})">🗑</button>         </div>       </td>       ${VOCI_TEC.map(v=>{         const raw=g[v.k]||0;         return `<td style="padding:4px 5px;border-bottom:1px solid var(--lift)">
           <input type="number" value="${raw}" min="0"
             style="width:72px;padding:4px 6px;border:1px solid var(--lift);border-radius:var(--r);font-size:11px;font-family:'DM Mono',monospace;text-align:right;background:${raw>0?'var(--blue-bg)':'var(--card)'};color:${raw>0?'var(--blue)':'var(--ink)'}"
             onblur="S.personale[${pi}].slots[${si}].comp.generato_tecnico['${v.k}']=parseFloat(this.value)||0;this.style.background=this.value>0?'var(--blue-bg)':'var(--card)';this.style.color=this.value>0?'var(--blue)':'var(--ink)';renderAll();updateProdRow(${pi},${si})"
