@@ -3149,7 +3149,16 @@ function calcSlot(p, slot){
   }
 
   let generato_tec=0;
-  if(c.generato_tecnico?.on){const g=c.generato_tecnico;generato_tec=(g.documenti||0)*(g.pct_doc||0.22)+(g.ore_form_h||0)*(g.eur_h||25)+(g.analisi||0)*(g.pct_analisi||0.20)+(g.rspp||0)*(g.pct_rspp||0.20)+(g.pacchetti||0)*(g.pct_pac||0.20)+(g.laika_ore||0)*(g.eur_laika||150)+(g.cantieri||0)*(g.pct_cant||0.15)+(g.estintori||0)*(g.pct_est||0.02)+(g.sorveglianza||0)*(g.pct_sorv||0.08);}
+  if(c.generato_tecnico?.on){
+    // §L L5 — itera su S.produzioneVoci (dinamico). Ogni voce contribuisce
+    // g[k] × (g[pf] || def_pf). Aggiungere/togliere una colonna dall'UI
+    // aggiorna il calcolo senza toccare codice. Con VOCI_TEC_DEFAULT
+    // (seed iniziale) il risultato è IDENTICO alla vecchia formula
+    // hardcoded — invarianti preservati.
+    const g=c.generato_tecnico;
+    const voci=(typeof S!=='undefined'&&Array.isArray(S.produzioneVoci)&&S.produzioneVoci.length)?S.produzioneVoci:VOCI_TEC_DEFAULT;
+    generato_tec=voci.reduce((s,v)=>s+(g[v.k]||0)*(g[v.pf]||v.def_pf||0),0);
+  }
   let generato_rto=0;
   if(c.generato_rto?.on){const r=c.generato_rto;generato_rto=(r.documenti_gruppo||0)*(r.pct_doc||0.03)+(r.formazione_gruppo||0)*(r.pct_form||0.01)+(r.analisi_gruppo||0)*(r.pct_analisi||0.03)+(r.rspp_gruppo||0)*(r.pct_rspp||0.03)+(r.pacchetti_gruppo||0)*(r.pct_pac||0.03)+(r.sorveglianza_gr||0)*(r.pct_sorv||0.01)+(r.estintori_gr||0)*(r.pct_est||0.01)+(r.laika_gg||0)*(r.eur_laika||200)+(r.cantieri_gr||0)*(r.pct_cant||0.01);}
   let visite_mc=0;
@@ -3436,9 +3445,13 @@ const SCHEMA_MIGRATIONS=[
     if(!Array.isArray(s.areeCancellate))s.areeCancellate=[];
     // KPI custom per area (§L L6): array parallelo, non tocca i seed esistenti.
     if(!s.kpiCustom||typeof s.kpiCustom!=='object')s.kpiCustom={};
-    // Voci griglia Produzione tecnici dinamiche (§L L5): se manca, seedata a
-    // runtime dai default VOCI_TEC (fatto in ensureProduzioneVoci()).
-    if(!Array.isArray(s.produzioneVoci))s.produzioneVoci=[];
+    // Voci griglia Produzione tecnici dinamiche (§L L5): se manca o vuota,
+    // seed dai default (VOCI_TEC_DEFAULT: 9 voci storiche). Se l'utente le
+    // ha già personalizzate (aggiunte/rinominate/eliminate) e ha almeno una
+    // voce, non tocca nulla.
+    if(!Array.isArray(s.produzioneVoci)||!s.produzioneVoci.length){
+      s.produzioneVoci=JSON.parse(JSON.stringify(VOCI_TEC_DEFAULT));
+    }
   }},
 ];
 function migrateSchema(s){
@@ -4263,7 +4276,8 @@ function renderRRBody(p,pi,ctx){
       const g=c.generato_tecnico,gen=sr.generato_tec||0,obj=g.obiettivo||0;
       const pct=obj>0?Math.min((gen/obj)*100,100).toFixed(1):0;
       const vs=obj>0?(gen>=obj?'<span style="color:var(--green);font-weight:600;font-size:10px">✓ target</span>':'<span style="color:var(--amber);font-size:10px">'+fmt(Math.max(0,obj-gen))+' al target</span>'):'';
-      fields+=`<div style="background:var(--blue-bg);border:1px solid var(--blue-bd);border-radius:var(--r);padding:9px 11px;margin-bottom:4px">         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">           <span style="font-size:11px;font-weight:600;color:var(--blue)">📊 Generato produzione</span>           <div style="display:flex;align-items:center;gap:6px">${vs}<span class="mono" style="font-size:13px;font-weight:600;color:var(--blue)">${fmt(gen)}</span></div>         </div>         ${obj>0?'<div style="height:3px;background:rgba(15,68,153,.15);border-radius:2px;margin-bottom:6px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:'+(gen>=obj?'var(--green)':'var(--blue)')+';border-radius:2px"></div></div>':''}         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;font-size:11px">           ${[['Documenti €','documenti','pct_doc',0.22],['Form. ore','ore_form_h','eur_h',25],['Analisi €','analisi','pct_analisi',0.20],              ['RSPP €','rspp','pct_rspp',0.20],['Pacchetti €','pacchetti','pct_pac',0.20],['Laika ore','laika_ore','eur_laika',150],              ['Cantieri €','cantieri','pct_cant',0.15],['Estintori €','estintori','pct_est',0.02],['Sorv.San. €','sorveglianza','pct_sorv',0.08]           ].map(([lbl,field,pf,def_pf])=>{             const raw=g[field]||0,rate=g[pf]||def_pf,calc=field==='ore_form_h'?raw*rate:raw*rate;             return '<div><div style="font-size:9px;color:var(--ink3)">'+lbl+'</div>'+               '<input type="number" value="'+raw+'" class="inp n" style="font-size:11px;padding:3px 6px" '+               'onblur="S.personale['+pi+'].slots['+si+'].comp.generato_tecnico.'+field+'=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13)this.blur()">'+               '<div style="font-size:9px;color:var(--ink3)">= '+fmt(calc)+'</div></div>';           }).join('')}         </div>         <div style="display:flex;align-items:center;gap:6px;margin-top:6px;padding-top:5px;border-top:1px solid var(--blue-bd)">           <span style="font-size:10px;color:var(--blue)">Obiettivo €</span>           <input type="number" value="${obj}" class="inp n" style="width:80px;font-size:11px;padding:3px 6px"             onblur="S.personale[${pi}].slots[${si}].comp.generato_tecnico.obiettivo=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">         </div>       </div>`;
+      const _voci=(typeof ensureProduzioneVoci==='function')?ensureProduzioneVoci():VOCI_TEC_DEFAULT;
+      fields+=`<div style="background:var(--blue-bg);border:1px solid var(--blue-bd);border-radius:var(--r);padding:9px 11px;margin-bottom:4px">         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">           <span style="font-size:11px;font-weight:600;color:var(--blue)">📊 Generato produzione</span>           <div style="display:flex;align-items:center;gap:6px">${vs}<span class="mono" style="font-size:13px;font-weight:600;color:var(--blue)">${fmt(gen)}</span></div>         </div>         ${obj>0?'<div style="height:3px;background:rgba(15,68,153,.15);border-radius:2px;margin-bottom:6px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:'+(gen>=obj?'var(--green)':'var(--blue)')+';border-radius:2px"></div></div>':''}         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;font-size:11px">           ${_voci.map(v=>{             const lbl=v.lbl+' '+v.unit,field=v.k,pf=v.pf,def_pf=v.def_pf;             const raw=g[field]||0,rate=g[pf]||def_pf,calc=raw*rate;             return '<div><div style="font-size:9px;color:var(--ink3)">'+lbl+'</div>'+               '<input type="number" value="'+raw+'" class="inp n" style="font-size:11px;padding:3px 6px" '+               'onblur="S.personale['+pi+'].slots['+si+'].comp.generato_tecnico[\''+field+'\']=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13)this.blur()">'+               '<div style="font-size:9px;color:var(--ink3)">= '+fmt(calc)+'</div></div>';           }).join('')}         </div>         <div style="display:flex;align-items:center;gap:6px;margin-top:6px;padding-top:5px;border-top:1px solid var(--blue-bd)">           <span style="font-size:10px;color:var(--blue)">Obiettivo €</span>           <input type="number" value="${obj}" class="inp n" style="width:80px;font-size:11px;padding:3px 6px"             onblur="S.personale[${pi}].slots[${si}].comp.generato_tecnico.obiettivo=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">         </div>       </div>`;
     }
     // ── GENERATO RTO ────────────────────────────────────────────────────
     if(c.generato_rto?.on){
@@ -5477,7 +5491,12 @@ function addPersona(){
 
 // ── INIT ──────────────────────────────────
 // ── PAGINA PRODUZIONE TECNICI ─────────────────────────────────────────────
-const VOCI_TEC = [
+// §L L5 — Voci griglia Produzione tecnici: seed default. La lista viva è
+// in S.produzioneVoci (dinamica, CRUD dall'UI). Se manca, viene seedata da
+// qui in ensureProduzioneVoci. calcSlot.generato_tec itera su S.produzioneVoci
+// così l'aggiunta/rimozione di una colonna è immediata e non richiede
+// modifiche al codice.
+const VOCI_TEC_DEFAULT = [
   {k:'documenti',   lbl:'Documenti',  unit:'€', pf:'pct_doc',    def_pf:0.22, def_r:0},
   {k:'ore_form_h',  lbl:'Formazione', unit:'h', pf:'eur_h',      def_pf:25,   def_r:0},
   {k:'analisi',     lbl:'Analisi',    unit:'€', pf:'pct_analisi',def_pf:0.20, def_r:0},
@@ -5488,6 +5507,57 @@ const VOCI_TEC = [
   {k:'estintori',   lbl:'Estintori',  unit:'€', pf:'pct_est',    def_pf:0.02, def_r:0},
   {k:'sorveglianza',lbl:'Sorv.San.',  unit:'€', pf:'pct_sorv',   def_pf:0.08, def_r:0},
 ];
+function ensureProduzioneVoci(){
+  if(!Array.isArray(S.produzioneVoci)||!S.produzioneVoci.length){
+    S.produzioneVoci=JSON.parse(JSON.stringify(VOCI_TEC_DEFAULT));
+  }
+  return S.produzioneVoci;
+}
+function VOCI_TEC(){ return ensureProduzioneVoci(); }
+// Aggiungi una nuova voce alla griglia (chiave auto-generata, moltiplicatore
+// di default 0.20 = 20%, unità €). L'utente rinomina + regola dopo.
+function addVoceTec(){
+  const nome=prompt('Nome voce (es. Consulenze):');
+  if(!nome) return;
+  const t=nome.trim(); if(!t) return;
+  const voci=ensureProduzioneVoci();
+  const k='v_'+Date.now();
+  voci.push({k,lbl:t,unit:'€',pf:'pct_'+k,def_pf:0.20,def_r:0});
+  renderAll();
+  notify('Voce aggiunta: '+t);
+}
+function renameVoceTec(k){
+  const voci=ensureProduzioneVoci();
+  const v=voci.find(x=>x.k===k); if(!v) return;
+  const nome=prompt('Nome voce:',v.lbl);
+  if(nome===null) return;
+  const t=nome.trim(); if(!t) return;
+  v.lbl=t;
+  renderAll();
+  notify('Voce rinominata: '+t);
+}
+function deleteVoceTec(k){
+  const voci=ensureProduzioneVoci();
+  const idx=voci.findIndex(x=>x.k===k); if(idx<0) return;
+  const v=voci[idx];
+  // Conta quante persone hanno un valore non-zero su questa voce
+  let inUso=0;
+  S.personale.forEach(p=>(p.slots||[]).forEach(sl=>{
+    if(sl.comp&&sl.comp.generato_tecnico&&(sl.comp.generato_tecnico[k]||0)>0) inUso++;
+  }));
+  let msg='Eliminare la voce "'+v.lbl+'" dalla griglia Produzione tecnici?';
+  if(inUso) msg+='\n\n⚠ '+inUso+' persone hanno valori non-zero su questa voce. Verranno esclusi dal calcolo del generato_tec (i valori restano nello stato, ma la colonna sparisce).';
+  if(!confirm(msg)) return;
+  voci.splice(idx,1);
+  renderAll();
+  notify('Voce eliminata: '+v.lbl);
+}
+function toggleVoceUnita(k){
+  const voci=ensureProduzioneVoci();
+  const v=voci.find(x=>x.k===k); if(!v) return;
+  v.unit=(v.unit==='€')?'h':'€';
+  renderAll();
+}
 
 // §L L4 — Delete righe griglia Produzione: disattiva lo slot generato_tecnico
 // (non-distruttivo, reversibile dal pop persona). La riga sparisce dalla
@@ -5502,11 +5572,26 @@ function disattivaRigaTecnico(pi, si){
 }
 function renderProduzionePage(){
   const el=document.getElementById('prod-tec-grid');if(!el)return;
+  ensureProduzioneVoci();
+  const voci=S.produzioneVoci;
   // Solo tecnici con generato_tecnico attivo
   const tecs=S.personale.filter(p=>(p.slots||[]).some(sl=>sl.comp?.generato_tecnico?.on));
-  if(!tecs.length){el.innerHTML='<div class="empty">Nessun tecnico con generato attivo.</div>';return;}
 
-  let html=`<div style="overflow-x:auto">     <table style="width:100%;border-collapse:collapse;font-size:12px">     <thead>       <tr style="background:var(--ink);color:#fff">         <th style="padding:8px 10px;text-align:left;font-size:11px;font-weight:600;white-space:nowrap;border-radius:var(--r) 0 0 0;min-width:110px">Tecnico</th>         ${VOCI_TEC.map(v=>`<th style="padding:8px 8px;text-align:right;font-size:10px;font-weight:500;white-space:nowrap;min-width:80px">${v.lbl}<br><span style="opacity:.55;font-weight:400">${v.unit}</span></th>`).join('')}         <th style="padding:8px 10px;text-align:right;font-size:11px;font-weight:600;min-width:90px;border-radius:0 var(--r) 0 0">Generato</th>         <th style="padding:8px 8px;text-align:right;font-size:10px;font-weight:500;min-width:80px">Obiettivo</th>         <th style="padding:8px 8px;text-align:right;font-size:10px;font-weight:500;min-width:70px">Diff.</th>       </tr>     </thead>     <tbody>`;
+  // §L L5 — Toolbar CRUD voci (sempre visibile, anche se griglia vuota)
+  const toolbar=`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;padding:8px 10px;background:var(--sheet);border:1px dashed var(--lift);border-radius:var(--r)">
+    <span style="font-size:11px;color:var(--ink3);margin-right:4px">Colonne (${voci.length}):</span>
+    ${voci.map(v=>`<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 6px;background:var(--card);border:1px solid var(--lift);border-radius:var(--r);font-size:11px">
+      <span>${v.lbl}<span style="color:var(--ink3)">·${v.unit}</span></span>
+      <button class="btn xs" style="font-size:9px;padding:1px 4px" title="Rinomina" onclick="renameVoceTec('${v.k}')">✏</button>
+      <button class="btn xs" style="font-size:9px;padding:1px 4px" title="Cambia unità (€↔h)" onclick="toggleVoceUnita('${v.k}')">⇄</button>
+      <button class="btn xs danger" style="font-size:9px;padding:1px 4px" title="Elimina colonna" onclick="deleteVoceTec('${v.k}')">✕</button>
+    </span>`).join('')}
+    <button class="btn xs prim" style="margin-left:auto" onclick="addVoceTec()">+ Nuova voce</button>
+  </div>`;
+
+  if(!tecs.length){el.innerHTML=toolbar+'<div class="empty">Nessun tecnico con generato attivo.</div>';return;}
+
+  let html=toolbar+`<div style="overflow-x:auto">     <table style="width:100%;border-collapse:collapse;font-size:12px">     <thead>       <tr style="background:var(--ink);color:#fff">         <th style="padding:8px 10px;text-align:left;font-size:11px;font-weight:600;white-space:nowrap;border-radius:var(--r) 0 0 0;min-width:110px">Tecnico</th>         ${voci.map(v=>`<th style="padding:8px 8px;text-align:right;font-size:10px;font-weight:500;white-space:nowrap;min-width:80px">${v.lbl}<br><span style="opacity:.55;font-weight:400">${v.unit}</span></th>`).join('')}         <th style="padding:8px 10px;text-align:right;font-size:11px;font-weight:600;min-width:90px;border-radius:0 var(--r) 0 0">Generato</th>         <th style="padding:8px 8px;text-align:right;font-size:10px;font-weight:500;min-width:80px">Obiettivo</th>         <th style="padding:8px 8px;text-align:right;font-size:10px;font-weight:500;min-width:70px">Diff.</th>       </tr>     </thead>     <tbody>`;
 
   let tot_gen=0;
   tecs.forEach((p,rowIdx)=>{
@@ -5525,7 +5610,7 @@ function renderProduzionePage(){
     const pct=obj>0?Math.min((gen/obj)*100,100):0;
     const barColor=gen>=obj?'var(--green)':pct>60?'var(--amber)':'var(--red)';
 
-    html+=`<tr style="background:${rowBg}" id="tec-row-${pi}">       <td style="padding:7px 10px;font-weight:600;border-bottom:1px solid var(--lift)">         <div style="display:flex;align-items:center;gap:7px">           <div style="width:26px;height:26px;border-radius:50%;background:${bg};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0">${p.nome[0]}</div>           <div style="flex:1;min-width:0">             <div style="font-size:12px">${p.nome}</div>             ${obj>0?`<div style="width:60px;height:2px;background:var(--lift);border-radius:1px;margin-top:3px;overflow:hidden"><div style="height:100%;width:${pct.toFixed(0)}%;background:${barColor}"></div></div>`:''}           </div>           <button class="btn xs danger" style="font-size:9px;padding:2px 5px" title="Rimuovi dalla griglia (mantiene lo storico)" onclick="disattivaRigaTecnico(${pi},${si})">🗑</button>         </div>       </td>       ${VOCI_TEC.map(v=>{         const raw=g[v.k]||0;         return `<td style="padding:4px 5px;border-bottom:1px solid var(--lift)">
+    html+=`<tr style="background:${rowBg}" id="tec-row-${pi}">       <td style="padding:7px 10px;font-weight:600;border-bottom:1px solid var(--lift)">         <div style="display:flex;align-items:center;gap:7px">           <div style="width:26px;height:26px;border-radius:50%;background:${bg};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0">${p.nome[0]}</div>           <div style="flex:1;min-width:0">             <div style="font-size:12px">${p.nome}</div>             ${obj>0?`<div style="width:60px;height:2px;background:var(--lift);border-radius:1px;margin-top:3px;overflow:hidden"><div style="height:100%;width:${pct.toFixed(0)}%;background:${barColor}"></div></div>`:''}           </div>           <button class="btn xs danger" style="font-size:9px;padding:2px 5px" title="Rimuovi dalla griglia (mantiene lo storico)" onclick="disattivaRigaTecnico(${pi},${si})">🗑</button>         </div>       </td>       ${voci.map(v=>{         const raw=g[v.k]||0;         return `<td style="padding:4px 5px;border-bottom:1px solid var(--lift)">
           <input type="number" value="${raw}" min="0"
             style="width:72px;padding:4px 6px;border:1px solid var(--lift);border-radius:var(--r);font-size:11px;font-family:'DM Mono',monospace;text-align:right;background:${raw>0?'var(--blue-bg)':'var(--card)'};color:${raw>0?'var(--blue)':'var(--ink)'}"
             onblur="S.personale[${pi}].slots[${si}].comp.generato_tecnico['${v.k}']=parseFloat(this.value)||0;this.style.background=this.value>0?'var(--blue-bg)':'var(--card)';this.style.color=this.value>0?'var(--blue)':'var(--ink)';renderAll();updateProdRow(${pi},${si})"
@@ -5534,7 +5619,7 @@ function renderProduzionePage(){
   });
 
   // Totali
-  html+=`<tr style="background:var(--ink);color:#fff;font-weight:600">     <td style="padding:8px 10px;border-radius:0 0 0 var(--r)">TOTALE GRUPPO</td>     ${VOCI_TEC.map(v=>{       const tot=tecs.reduce((s,p)=>{const si=p.slots.findIndex(sl=>sl.comp?.generato_tecnico?.on);return si>=0?s+(p.slots[si].comp.generato_tecnico[v.k]||0):s;},0);       return `<td style="padding:8px 5px;text-align:right;font-family:'DM Mono',monospace;font-size:11px;opacity:.8">${tot>0?fnum(tot):'—'}</td>`;     }).join('')}     <td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace;font-size:14px" id="tec-tot">${fmt(tot_gen)}</td>     <td colspan="2" style="padding:8px 10px;text-align:right;font-size:11px;opacity:.7;border-radius:0 0 var(--r) 0">${tecs.length} tecnici</td>   </tr></tbody></table></div>`;
+  html+=`<tr style="background:var(--ink);color:#fff;font-weight:600">     <td style="padding:8px 10px;border-radius:0 0 0 var(--r)">TOTALE GRUPPO</td>     ${voci.map(v=>{       const tot=tecs.reduce((s,p)=>{const si=p.slots.findIndex(sl=>sl.comp?.generato_tecnico?.on);return si>=0?s+(p.slots[si].comp.generato_tecnico[v.k]||0):s;},0);       return `<td style="padding:8px 5px;text-align:right;font-family:'DM Mono',monospace;font-size:11px;opacity:.8">${tot>0?fnum(tot):'—'}</td>`;     }).join('')}     <td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace;font-size:14px" id="tec-tot">${fmt(tot_gen)}</td>     <td colspan="2" style="padding:8px 10px;text-align:right;font-size:11px;opacity:.7;border-radius:0 0 var(--r) 0">${tecs.length} tecnici</td>   </tr></tbody></table></div>`;
 
   el.innerHTML=html;
   renderProduzioneRiepilogo(tecs);
