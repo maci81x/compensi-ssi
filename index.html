@@ -2222,10 +2222,13 @@ const EREDITA_FORNITORI_D=[
 //  2) ri-genitorizza i 6 centri tecnici storici sotto ASF;
 //  3) sposta i fornitori del padre nel figlio (Medici Competenti, Docenti)
 //     UNA SOLA VOLTA — se il figlio ha già fornitori non tocca nulla.
+// §L L2/L3: rispetta S.areeCancellate — se l'utente ha eliminato a mano
+// un'area ufficiale, non la ri-crea (l'eliminazione è persistente).
 function normalizzaOrgUfficiale(s){
   if(!s.aree)return s;
   const byId=id=>s.aree.find(a=>a.id===id);
-  AREE_UFFICIALI_D.forEach(def=>{ if(!byId(def.id))s.aree.push(JSON.parse(JSON.stringify(def))); });
+  const blacklist=new Set(Array.isArray(s.areeCancellate)?s.areeCancellate:[]);
+  AREE_UFFICIALI_D.forEach(def=>{ if(!byId(def.id)&&!blacklist.has(def.id))s.aree.push(JSON.parse(JSON.stringify(def))); });
   // §D (validazione) — "Incendio" = "Antincendio": rimuovi il nodo Incendio se
   // presente ed è vuoto (nessun fornitore, nessuna sotto-area). Antincendio
   // conserva i suoi fornitori.
@@ -4993,14 +4996,96 @@ function renderStruttura(){
               <td style="padding:5px 6px;border-bottom:1px solid rgba(0,0,0,.04);text-align:right"><input type="number" value="${m.ke}" class="ki" onblur="S.aree[${ai}].micro[${mi}].ke=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()"></td>
               <td style="padding:5px 6px;border-bottom:1px solid rgba(0,0,0,.04);text-align:right" class="${kpiCls(km)}">${km!==null?km+'%':'—'}</td>
               <td style="padding:5px 6px;border-bottom:1px solid rgba(0,0,0,.04)"><button class="btn xs danger" onclick="S.aree[${ai}].micro.splice(${mi},1);renderAll()">✕</button></td>
-            </tr>`;}).join('')}</tbody>         </table>         <div style="display:flex;gap:6px;margin-top:8px">           <button class="btn xs prim" onclick="S.aree[${ai}].micro.push({nome:'Nuova micro area',fisso:0,bonus:0,kt:101,ke:0,note:''});renderAll()">+ Micro area</button>           <button class="btn xs" onclick="addArea('${a.id}')">+ Sotto-area / centro di costo</button>           <button class="btn xs danger" onclick="if(confirm('Eliminare area ${a.nome}?')){S.aree.splice(${ai},1);renderAll()}">Elimina area</button>         </div>       </div>`;
+            </tr>`;}).join('')}</tbody>         </table>         <div style="display:flex;gap:6px;margin-top:8px">           <button class="btn xs prim" onclick="S.aree[${ai}].micro.push({nome:'Nuova micro area',fisso:0,bonus:0,kt:101,ke:0,note:''});renderAll()">+ Micro area</button>           <button class="btn xs" onclick="addArea('${a.id}')">+ Sotto-area / centro di costo</button>           <button class="btn xs" onclick="renameArea('${a.id}')">✏ Rinomina</button>           <button class="btn xs danger" onclick="deleteArea('${a.id}')">🗑 Elimina area</button>         </div>       </div>`;
     cont.appendChild(sec);
   });
+  // §L L3 — Pannello "Aree ufficiali cancellate" (ripristino)
+  const blacklist=Array.isArray(S.areeCancellate)?S.areeCancellate:[];
+  if(blacklist.length){
+    const box=document.createElement('div');
+    box.style.cssText='background:var(--sheet);border:1px dashed var(--lift);border-radius:var(--r);padding:10px 14px;margin-top:12px';
+    box.innerHTML='<div style="font-size:11px;color:var(--ink3);margin-bottom:6px">'
+      +'🗑 Aree ufficiali cancellate ('+blacklist.length+') — non verranno ri-create dai reload. Ripristina se serve:</div>'
+      +'<div style="display:flex;gap:6px;flex-wrap:wrap">'
+      +blacklist.map(id=>{
+        const def=AREE_UFFICIALI_D.find(a=>a.id===id)||DEF.aree.find(a=>a.id===id);
+        const nome=def?def.nome:id;
+        return '<button class="btn xs" onclick="ripristinaAreaUfficiale(\''+id+'\')">↺ '+nome+'</button>';
+      }).join('')
+      +'</div>';
+    cont.appendChild(box);
+  }
 }
 function addArea(parentId){
   S.aree.push({id:'a'+Date.now(),nome:parentId?'Nuovo centro di costo':'Nuova area',tipo:'SUP',desc:'',incPct:0,resp:'',
     parentId:parentId||null,natura:parentId?'produttiva':'costo',priorita:2,budget:{fisso:0,variabilePct:0},chiusa:false,fornitoreFisso:0,micro:[]});
   renderAll();goPage('struttura');
+}
+// ══════════════════════════════════════════════════════════════════════════
+// §L L2/L3 — CRUD Aree/Centri: helper unificati.
+// renameArea(id): prompt rapido; aggiorna e ricalcola tutto.
+// deleteArea(id): chiede conferma; gestisce i figli (opzione: cascata o
+//   ri-genitorizza al parent); pulisce area/areaResp/slots.area delle
+//   persone assegnate; se l'area è ufficiale (AREE_UFFICIALI_D o CENTRI_IDS)
+//   la aggiunge a S.areeCancellate così normalizzaOrgUfficiale non la
+//   ri-crea al prossimo reload.
+// ══════════════════════════════════════════════════════════════════════════
+function _isAreaUfficiale(id){
+  if(CENTRI_IDS.includes(id))return true;
+  if(Array.isArray(AREE_UFFICIALI_D)&&AREE_UFFICIALI_D.some(a=>a.id===id))return true;
+  // Aree seed principali (macro) — non definite in AREE_UFFICIALI_D ma seedate
+  // da DEF.aree; usiamo l'euristica: id senza timestamp e presente nel DEF.
+  const isTs=/^a\d{10,}$/.test(id);
+  if(isTs)return false;
+  return DEF.aree.some(a=>a.id===id);
+}
+function renameArea(id){
+  const a=S.aree.find(x=>x.id===id); if(!a) return;
+  const n=prompt('Nome area:',a.nome);
+  if(n===null) return;
+  const t=n.trim(); if(!t) return;
+  a.nome=t;
+  renderAll();
+  notify('Rinominata: '+t);
+}
+function deleteArea(id){
+  const a=S.aree.find(x=>x.id===id); if(!a) return false;
+  const figli=S.aree.filter(x=>x.parentId===id);
+  const nPers=S.personale.filter(p=>p.area===id||p.areaResp===id||(p.slots||[]).some(s=>s.area===id)).length;
+  const ufficiale=_isAreaUfficiale(id);
+  let msg='Eliminare l\'area "'+a.nome+'"?';
+  if(figli.length)   msg+='\n\n→ Ha '+figli.length+' sotto-aree: verranno spostate al genitore ("'+(S.aree.find(x=>x.id===a.parentId)?.nome||'radice')+'"), non eliminate.';
+  if(nPers)          msg+='\n→ '+nPers+' persone ci fanno riferimento (area / areaResp / slot): il riferimento verrà azzerato ma le persone restano.';
+  if(ufficiale)      msg+='\n\n⚠ Questa è un\'area UFFICIALE (dell\'organigramma seed). Verrà aggiunta a S.areeCancellate — non verrà più ri-creata dai reload/migrazioni. Se cambi idea, rimuovila da lì.';
+  if(!confirm(msg)) return false;
+  // Ri-genitorizza i figli al parent dell'area cancellata (evita orfani)
+  figli.forEach(c=>{ c.parentId=a.parentId||null; });
+  // Pulisci riferimenti nelle persone
+  S.personale.forEach(p=>{
+    if(p.area===id) p.area='';
+    if(p.areaResp===id) p.areaResp='';
+    if(Array.isArray(p.slots)) p.slots.forEach(s=>{ if(s.area===id) s.area=''; });
+  });
+  // Blacklist per aree ufficiali (evita ri-creazione)
+  if(ufficiale){
+    if(!Array.isArray(S.areeCancellate)) S.areeCancellate=[];
+    if(!S.areeCancellate.includes(id)) S.areeCancellate.push(id);
+  }
+  // Splice
+  const idx=S.aree.indexOf(a);
+  if(idx>=0) S.aree.splice(idx,1);
+  renderAll();
+  notify('Eliminata: '+a.nome);
+  return true;
+}
+// Ripristina un'area ufficiale precedentemente cancellata (usata dal pannello
+// "Aree cancellate" in Struttura).
+function ripristinaAreaUfficiale(id){
+  if(!Array.isArray(S.areeCancellate)) return;
+  S.areeCancellate=S.areeCancellate.filter(x=>x!==id);
+  normalizzaOrgUfficiale(S);
+  renderAll();
+  notify('Area ripristinata');
 }
 
 // ── SISTEMA PAGE ─────────────────────────
@@ -5602,7 +5687,13 @@ function renderCentriCostoPage(){
           </tr>`
         :`<tr><td colspan="7" style="padding:0 8px 8px 8px"><button class="btn xs" onclick="S.aree[${ci}].fornitori=S.aree[${ci}].fornitori||[];S.aree[${ci}].fornitori.push({nome:'Nuovo fornitore',valMensile:0});renderAll()">+ Fornitore</button></td></tr>`;
       return`<tr style="border-top:1px solid var(--lift)">
-        <td style="padding:5px 8px;font-weight:600">${c.nome}</td>
+        <td style="padding:5px 8px;font-weight:600">
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="flex:1">${c.nome}</span>
+            <button class="btn xs" style="font-size:9px;padding:2px 5px" title="Rinomina" onclick="renameArea('${c.id}')">✏</button>
+            <button class="btn xs danger" style="font-size:9px;padding:2px 5px" title="Elimina centro" onclick="deleteArea('${c.id}')">🗑</button>
+          </div>
+        </td>
         <td style="padding:5px 8px;white-space:nowrap">${modoSelect}${modoInput}</td>
         <td style="padding:5px 8px" class="mono">${fmt(v)}</td>
         <td style="padding:5px 8px" class="mono">${fmt(cf)}</td>
@@ -5612,7 +5703,11 @@ function renderCentriCostoPage(){
       </tr>${fiDetail}`;
     }).join('')}
     </tbody>
-  </table></div>`;
+  </table></div>
+  <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+    <button class="btn sm prim" onclick="addArea('asf')">+ Nuovo centro di costo (sotto ASF)</button>
+    <span style="font-size:11px;color:var(--ink3)">Il nuovo centro nasce con budget 0 → cascata invariata (invarianti preservati).</span>
+  </div>`;
   el.innerHTML=html;
 }
 
