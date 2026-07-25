@@ -4201,7 +4201,7 @@ function renderStep4(){
     const hasSlots=(p.slots||[]).length>0;
 
     const rr=document.createElement('div');
-    rr.innerHTML=`<div class="rr ${isOpen?'open':''}" onclick="toggleRR(${pi},'s4')">       <div class="rr-av" style="background:${bg};color:${fg}">${initials(p.nome)}</div>       <div style="flex:1;min-width:0">         <div class="rr-name">${p.nome}           ${p.isResp?'<span class="badge" style="background:var(--purple-bg);color:var(--purple);font-size:9px;margin-left:4px">RESP</span>':''}           ${p.isCapoArea?'<span class="badge" style="background:var(--green-bg);color:var(--green);font-size:9px;margin-left:3px">CA</span>':''}         </div>         <div class="rr-role">${hasSlots?(p.slots||[]).map(s=>s.label).join(' · '):p.ruolo_principale}</div>       </div>       <div class="rr-slots">         ${(p.slots||[]).map(s=>`<span class="slot-pill ${SLOT_PILL[s.tipo]||'sp-altro'}">${SLOT_ICON[s.tipo]} ${s.label}</span>`).join('')}       </div>       <div class="rr-vals">         <div class="rv"><div class="rl">garantito</div><div class="rv-v">${fmt(cp.garantito)}</div></div>         <div class="rv"><div class="rl">variabile</div><div class="rv-v" style="color:var(--green)">${fmt(cp.variabile+cp.condizionale+cp.commissioni)}</div></div>         <div class="rv"><div class="rl">totale</div><div class="rv-v" style="color:var(--blue)">${fmt(cp.totale)}</div></div>       </div>       <div class="rr-acts">         <button class="btn xs" onclick="event.stopPropagation();openPersonaPop(${pi})" title="Configura">⚙️</button>         <button class="btn xs danger" onclick="event.stopPropagation();if(confirm('Eliminare ${p.nome.replace(/'/g,'&#39;')}?')){S.personale.splice(${pi},1);renderAll()}" title="Elimina">✕</button>       </div>     </div>     <div class="rr-body ${isOpen?'open':''}" id="rrb_${pi}_s4">       ${renderRRBody(p,pi,'s4')}     </div>`;
+    rr.innerHTML=`<div class="rr ${isOpen?'open':''}" onclick="toggleRR(${pi},'s4')">       <div class="rr-av" style="background:${bg};color:${fg}">${initials(p.nome)}</div>       <div style="flex:1;min-width:0">         <div class="rr-name">${p.nome}           ${p.isResp?'<span class="badge" style="background:var(--purple-bg);color:var(--purple);font-size:9px;margin-left:4px">RESP</span>':''}           ${p.isCapoArea?'<span class="badge" style="background:var(--green-bg);color:var(--green);font-size:9px;margin-left:3px">CA</span>':''}         </div>         <div class="rr-role">${hasSlots?(p.slots||[]).map(s=>s.label).join(' · '):p.ruolo_principale}</div>       </div>       <div class="rr-slots">         ${(p.slots||[]).map(s=>`<span class="slot-pill ${SLOT_PILL[s.tipo]||'sp-altro'}">${SLOT_ICON[s.tipo]} ${s.label}</span>`).join('')}       </div>       <div class="rr-vals">         <div class="rv"><div class="rl">garantito</div><div class="rv-v">${fmt(cp.garantito)}</div></div>         <div class="rv"><div class="rl">variabile</div><div class="rv-v" style="color:var(--green)">${fmt(cp.variabile+cp.condizionale+cp.commissioni)}</div></div>         <div class="rv"><div class="rl">totale</div><div class="rv-v" style="color:var(--blue)">${fmt(cp.totale)}</div></div>       </div>       <div class="rr-acts">         <button class="btn xs" onclick="event.stopPropagation();renamePersona(${pi})" title="Rinomina">✏</button>         <button class="btn xs" onclick="event.stopPropagation();openPersonaPop(${pi})" title="Configura">⚙️</button>         <button class="btn xs danger" onclick="event.stopPropagation();deletePersona(${pi})" title="Elimina">✕</button>       </div>     </div>     <div class="rr-body ${isOpen?'open':''}" id="rrb_${pi}_s4">       ${renderRRBody(p,pi,'s4')}     </div>`;
     cont.appendChild(rr);
   });
   // Add button
@@ -4779,6 +4779,42 @@ function addPersonaFromOrg(areaId){
 }
 
 // ── POPOVER HELPERS ───────────────────────
+// ══════════════════════════════════════════════════════════════════════════
+// §L L1 — CRUD Persone: helper unificati usati da OGNI contesto.
+// deletePersona: chiede conferma, ripulisce i riferimenti sparsi (areeCA,
+//   datiArea.comm.agenti, datiArea.form._per) prima dello splice, così le
+//   viste non mostrano righe orfane. Ritorna true se cancellata.
+// renamePersona: prompt rapido per rinominare senza aprire il pop pesante.
+// ══════════════════════════════════════════════════════════════════════════
+function deletePersona(pi){
+  const p=S.personale[pi]; if(!p) return false;
+  if(!confirm('Eliminare la persona "'+p.nome+'"?\n\nQuesta azione rimuove la persona da ogni contesto (organigramma, aree, dati mese) e non è reversibile senza restore.')) return false;
+  const pid=p.id;
+  // Pulisci S.areeCA: rimuovi come agente dovunque; se era caId, azzeralo.
+  (S.areeCA||[]).forEach(ca=>{
+    if(Array.isArray(ca.agentiIds)) ca.agentiIds=ca.agentiIds.filter(x=>x!==pid);
+    if(ca.caId===pid) ca.caId='';
+  });
+  // Pulisci datiArea.comm.agenti[pid]
+  if(S.datiArea&&S.datiArea.comm&&S.datiArea.comm.agenti) delete S.datiArea.comm.agenti[pid];
+  // Pulisci datiArea.form._per[pid]
+  if(S.datiArea&&S.datiArea.form&&S.datiArea.form._per) delete S.datiArea.form._per[pid];
+  // Splice
+  S.personale.splice(pi,1);
+  closePop();
+  renderAll();
+  notify('Eliminata: '+p.nome);
+  return true;
+}
+function renamePersona(pi){
+  const p=S.personale[pi]; if(!p) return;
+  const n=prompt('Nome persona:',p.nome);
+  if(n===null) return;
+  const t=n.trim(); if(!t) return;
+  p.nome=t;
+  renderAll();
+  notify('Rinominata: '+t);
+}
 function openPersonaPop(pi){
   const p=S.personale[pi];if(!p)return;
   document.getElementById('pop-title').textContent='Configura: '+p.nome;
@@ -4819,7 +4855,7 @@ function openPersonaPop(pi){
           </div>
         </div>
         <div style="font-size:10px;color:var(--ink3);margin-top:5px">Componenti attivi: ${Object.entries(sl.comp||{}).filter(([k,v])=>v.on).map(([k])=>k).join(', ')||'nessuno'}</div>
-      </div>`).join('')}     <button class="btn xs prim" style="margin-top:4px" onclick="closePop();addSlot(${pi});renderAll()">+ Aggiungi ruolo secondario</button>     ${p.ripartizioneCentri?renderRipartizioneCentriEditor(p,pi):''}     <div class="pop-div"></div>     <button class="btn danger sm" onclick="if(confirm('Eliminare ${p.nome.replace(/'/g,"'")}?')){S.personale.splice(${pi},1);closePop();renderAll()}">Elimina risorsa</button>`;
+      </div>`).join('')}     <button class="btn xs prim" style="margin-top:4px" onclick="closePop();addSlot(${pi});renderAll()">+ Aggiungi ruolo secondario</button>     ${p.ripartizioneCentri?renderRipartizioneCentriEditor(p,pi):''}     <div class="pop-div"></div>     <button class="btn danger sm" onclick="deletePersona(${pi})">Elimina risorsa</button>`;
   popCb=()=>{
     p.nome=document.getElementById('pp-nome').value;
     p.ruolo_principale=document.getElementById('pp-ruolo').value;
@@ -6085,7 +6121,7 @@ function buildAgentRow(p, dat, totVend, incArea, bg, badge){
   const pesoVend = pct(vend, totVend);
   const pesoArea = pct(vend, incArea);
   const areaCA = (S.areeCA||[]).find(ca=>ca.agentiIds.includes(p.id)||ca.caId===p.id);
-  return `<tr style="background:${bg}">     <td style="${tdStyle('font-weight:500;padding:6px 10px;position:sticky;left:0;background:'+bg+';z-index:1;box-shadow:2px 0 4px rgba(0,0,0,.06)')}">       <div style="display:flex;align-items:center;gap:6px">         <div style="width:24px;height:24px;border-radius:50%;background:${avc(pi)[0]};           display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;flex-shrink:0">${p.nome[0]}</div>         <div>           <div style="font-size:11px">${p.nome}</div>           ${badge?`<span style="font-size:9px;padding:1px 4px;background:var(--green-bg);color:var(--green);border-radius:8px">${badge}</span>`:''}         </div>       </div>     </td>     <td style="${tdStyle('text-align:center;font-size:10px;color:var(--ink3)')}">       ${areaCA?`<span style="font-size:9px;padding:1px 5px;background:var(--blue-bg);color:var(--blue);border-radius:8px">${areaCA.nome}</span>`:'—'}     </td>     <td style="${tdStyle('text-align:right')}">${inpN(vend, 'S.datiArea.comm.agenti[\''+p.id+'\'].venduto=parseFloat(this.value)||0')}</td>     <td style="${tdStyle('text-align:right')}">${inpN(inc, 'S.datiArea.comm.agenti[\''+p.id+'\'].incassato=parseFloat(this.value)||0')}</td>     <td style="${tdStyle('text-align:right')}">${inpN(dat.provvigioni||0, 'S.datiArea.comm.agenti[\''+p.id+'\'].provvigioni=parseFloat(this.value)||0')}</td>     <td style="${tdStyle('text-align:right')}">${inpN(dat.premi||0, 'S.datiArea.comm.agenti[\''+p.id+'\'].premi=parseFloat(this.value)||0')}</td>     <td style="${tdStyle('text-align:right')}">${inpN(dat.clientiNuovi||0, 'S.datiArea.comm.agenti[\''+p.id+'\'].clientiNuovi=parseFloat(this.value)||0', 50)}</td>     <td style="${tdStyle('text-align:right')}">${inpN(dat.sinergie||0, 'S.datiArea.comm.agenti[\''+p.id+'\'].sinergie=parseFloat(this.value)||0', 50)}</td>     <td style="${tdStyle('text-align:right;font-size:10px;color:var(--ink3)')}">       ${pesoVend} vend.<br><span style="color:var(--ink4)">${pesoArea} area</span>     </td>   </tr>`;
+  return `<tr style="background:${bg}">     <td style="${tdStyle('font-weight:500;padding:6px 10px;position:sticky;left:0;background:'+bg+';z-index:1;box-shadow:2px 0 4px rgba(0,0,0,.06)')}">       <div style="display:flex;align-items:center;gap:6px">         <div style="width:24px;height:24px;border-radius:50%;background:${avc(pi)[0]};           display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;flex-shrink:0">${p.nome[0]}</div>         <div style="flex:1;min-width:0">           <div style="font-size:11px">${p.nome}</div>           ${badge?`<span style="font-size:9px;padding:1px 4px;background:var(--green-bg);color:var(--green);border-radius:8px">${badge}</span>`:''}         </div>         <button class="btn xs" style="font-size:9px;padding:2px 5px" onclick="renamePersona(${pi})" title="Rinomina">✏</button>         <button class="btn xs" style="font-size:9px;padding:2px 5px" onclick="openPersonaPop(${pi})" title="Configura">⚙</button>         <button class="btn xs danger" style="font-size:9px;padding:2px 5px" onclick="deletePersona(${pi})" title="Elimina">✕</button>       </div>     </td>     <td style="${tdStyle('text-align:center;font-size:10px;color:var(--ink3)')}">       ${areaCA?`<span style="font-size:9px;padding:1px 5px;background:var(--blue-bg);color:var(--blue);border-radius:8px">${areaCA.nome}</span>`:'—'}     </td>     <td style="${tdStyle('text-align:right')}">${inpN(vend, 'S.datiArea.comm.agenti[\''+p.id+'\'].venduto=parseFloat(this.value)||0')}</td>     <td style="${tdStyle('text-align:right')}">${inpN(inc, 'S.datiArea.comm.agenti[\''+p.id+'\'].incassato=parseFloat(this.value)||0')}</td>     <td style="${tdStyle('text-align:right')}">${inpN(dat.provvigioni||0, 'S.datiArea.comm.agenti[\''+p.id+'\'].provvigioni=parseFloat(this.value)||0')}</td>     <td style="${tdStyle('text-align:right')}">${inpN(dat.premi||0, 'S.datiArea.comm.agenti[\''+p.id+'\'].premi=parseFloat(this.value)||0')}</td>     <td style="${tdStyle('text-align:right')}">${inpN(dat.clientiNuovi||0, 'S.datiArea.comm.agenti[\''+p.id+'\'].clientiNuovi=parseFloat(this.value)||0', 50)}</td>     <td style="${tdStyle('text-align:right')}">${inpN(dat.sinergie||0, 'S.datiArea.comm.agenti[\''+p.id+'\'].sinergie=parseFloat(this.value)||0', 50)}</td>     <td style="${tdStyle('text-align:right;font-size:10px;color:var(--ink3)')}">       ${pesoVend} vend.<br><span style="color:var(--ink4)">${pesoArea} area</span>     </td>   </tr>`;
 }
 
 function editCAArea(caId){
@@ -6214,7 +6250,7 @@ function renderAreaForm(el){
     var tr=document.createElement('tr');
     tr.style.background=idx%2===0?'var(--card)':'var(--sheet)';
 
-    // Name cell
+    // Name cell (con CRUD §L L1: ✏ rinomina · ⚙ configura · ✕ elimina)
     var td0=document.createElement('td');
     td0.style.cssText='padding:7px 10px;border-bottom:1px solid var(--lift)';
     var av=document.createElement('div');
@@ -6223,9 +6259,15 @@ function renderAreaForm(el){
     dot.style.cssText='width:22px;height:22px;border-radius:50%;background:'+col+';color:#fff;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;flex-shrink:0';
     dot.textContent=(p.nome||'?')[0].toUpperCase();
     var nm=document.createElement('span');
-    nm.style.cssText='font-size:12px';
+    nm.style.cssText='font-size:12px;flex:1;min-width:0';
     nm.textContent=p.nome.split(' ')[0];
-    av.appendChild(dot); av.appendChild(nm); td0.appendChild(av); tr.appendChild(td0);
+    var pi=S.personale.indexOf(p);
+    var acts=document.createElement('span');
+    acts.style.cssText='display:inline-flex;gap:3px';
+    acts.innerHTML='<button class="btn xs" style="font-size:9px;padding:2px 5px" title="Rinomina" onclick="renamePersona('+pi+')">✏</button>'+
+                   '<button class="btn xs" style="font-size:9px;padding:2px 5px" title="Configura" onclick="openPersonaPop('+pi+')">⚙</button>'+
+                   '<button class="btn xs danger" style="font-size:9px;padding:2px 5px" title="Elimina" onclick="deletePersona('+pi+')">✕</button>';
+    av.appendChild(dot); av.appendChild(nm); av.appendChild(acts); td0.appendChild(av); tr.appendChild(td0);
 
     // Input cells
     var formFields=[['ore','',''],['persone','',''],['corsi','',''],['attestati','',''],['valore','','']];
