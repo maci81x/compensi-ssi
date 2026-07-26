@@ -1,0 +1,14 @@
+{
+  "name": "compensi-ssi-tests",
+  "version": "1.0.0",
+  "description": "Smoke test Playwright per compensi-ssi — verifica invarianti dopo ogni sotto-blocco (A-L)",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "invariants": "node invariants.mjs",
+    "smoke": "for f in smoke-*.mjs; do echo \"=== $f ===\"; node $f || exit 1; done; echo \"=== invariants.mjs ===\"; node invariants.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.62.0"
+  }
+}
