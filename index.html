@@ -2171,7 +2171,7 @@ const CAT_ICONS={affitto:'🏢',utenze:'⚡',software:'💻',assicurazione:'🛡
 // stato non ha). Vedi SCHEMA_MIGRATIONS più sotto per la logica di
 // migrazione — root cause del problema "una scheda vecchia sovrascrive dati
 // più recenti", non un cerotto sul sintomo.
-const CURRENT_SCHEMA_VERSION=9;
+const CURRENT_SCHEMA_VERSION=10;
 
 // ══════════════════════════════════════════════════════════════════════════
 // §D blocco finale — ORGANIGRAMMA UFFICIALE
@@ -2609,6 +2609,10 @@ const DEF={
     // ── COMMERCIALE ───────────────────────────────────────────────────────
     {id:'comm',nome:'Commerciale',tipo:'RIC',desc:'Vendite, rinnovi, CRM, agenti',incPct:17.25,
      resp:'Roberto Macinai',
+     // §H FIX 1/2 (schema v10): responsabili designati per la scheda AREA
+     // e input al futuro §F (compensi). NON tocca p.isResp.
+     responsabiliIds:['p01','p05'],  // Roberto Macinai + Alessandro Raia
+     capiAreaIds:['p05'],            // Raia è anche Capo Area
      parentId:null,natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:17.25},chiusa:false,
      // Provvigioni agenti (PF SI 2026.xlsx, cat "Commerciali") — dato reale già
      // importato in S.sistemaFissi (areaId:'comm'), riportato qui in dettaglio
@@ -2637,6 +2641,7 @@ const DEF={
     // ── PRODUZIONE ────────────────────────────────────────────────────────
     {id:'prod',nome:'Produzione',tipo:'RIC',desc:'Erogazione servizi sicurezza, sopralluoghi, DVR, sorveglianza sanitaria',incPct:11.31,
      resp:'Giovanna Panti',
+     responsabiliIds:['p03','p07'], capiAreaIds:[],  // §H: Giovanna + Samuele (RTO)
      parentId:null,natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:11.31},chiusa:false,fornitoreFisso:0,
      micro:[
        {nome:'Produzione mensile tot. €',              fisso:0,bonus:0,kt:0,ke:0,note:'Somma generato tutti i tecnici. Disponibile in pagina Produzione tecnici.'},
@@ -2654,6 +2659,7 @@ const DEF={
     // ── AMMINISTRAZIONE ───────────────────────────────────────────────────
     {id:'amm',nome:'Amministrazione',tipo:'SUP',desc:'Amministrazione, contabilità, acquisti, cash flow',incPct:10.46,
      resp:'Francesco Martini',
+     responsabiliIds:['p04'], capiAreaIds:[],  // §H: Francesco Martini
      parentId:null,natura:'costo',priorita:2,budget:{fisso:0,variabilePct:10.46},chiusa:false,
      micro:[
        {nome:'Cash flow crescente (conto banca) €', fisso:0,bonus:0,kt:0,ke:0,note:'Saldo conto corrente a fine mese. Inserire importo.'},
@@ -2670,6 +2676,7 @@ const DEF={
     // ── MARKETING (ex "HR & MKT" — HR eliminata come area, SPEC-v10 §3) ────
     {id:'mkt',nome:'Marketing',tipo:'SUP',desc:'Marketing, comunicazione, campagne, fornitori esterni',incPct:5.77,
      resp:'Marco Macinai',
+     responsabiliIds:[], capiAreaIds:[],  // §H: da designare (Marco è socio, non ancora nominato)
      parentId:'comm',natura:'supporto',priorita:2,budget:{fisso:0,variabilePct:5.77},chiusa:false,
      micro:[
        {nome:'Costo per lead €',                fisso:0,bonus:0,kt:0,ke:0,note:'Spesa ads+agenzia del mese / nr lead generati.'},
@@ -2680,6 +2687,7 @@ const DEF={
     // ── FORMAZIONE ────────────────────────────────────────────────────────
     {id:'form',nome:'Formazione',tipo:'RIC',desc:'Corsi sicurezza, docenze, attestati, registro presenze',incPct:8.5,
      resp:'Niccolò',
+     responsabiliIds:[], capiAreaIds:[],  // §H: da designare
      parentId:'prod',natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:8.5},chiusa:false,
      // 14 docenti esterni con costo reale (PF SI 2026.xlsx, cat "Formazione") — §A seed costi centri.
      fornitoreFisso:1703.52,
@@ -2715,6 +2723,7 @@ const DEF={
     // ── SORVEGLIANZA SANITARIA (nuova, sotto Produzione — SPEC-v10 §3) ─────
     {id:'sorvsan',nome:'Sorveglianza Sanitaria',tipo:'RIC',desc:'Visite mediche, medici competenti, gestione protocolli sanitari',incPct:0,
      resp:'',
+     responsabiliIds:[], capiAreaIds:[],  // §H: da designare
      parentId:'prod',natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:0},chiusa:false,
      // Fornitori/medici reali (PF SI 2026.xlsx, cat "Sorveglianza Sanitaria") — §A seed costi centri.
      fornitoreFisso:7201.77,
@@ -2738,6 +2747,7 @@ const DEF={
     // ── SEGRETERIA — staff a lato del CDA (SPEC-v10 §3) ────────────────────
     {id:'sis',nome:'Segreteria',tipo:'SUP',desc:'Segreteria direzione, backoffice, supporto trasversale',incPct:3.92,
      resp:'',
+     responsabiliIds:[], capiAreaIds:[],  // §H: da designare
      parentId:null,natura:'staff',priorita:2,budget:{fisso:0,variabilePct:3.92},chiusa:false,
      micro:[
        {nome:'Scadenze aziendali rispettate %',       fisso:0,bonus:0,kt:101,ke:0,note:'Scadenze rispettate / scadenze totali del mese × 100.'},
@@ -3463,6 +3473,26 @@ const SCHEMA_MIGRATIONS=[
     if(!Array.isArray(s.produzioneVoci)||!s.produzioneVoci.length){
       s.produzioneVoci=JSON.parse(JSON.stringify(VOCI_TEC_DEFAULT));
     }
+  }},
+  {to:10,migrate(s){
+    // §H FIX 1/2 — Responsabili designati per area, distinti dall'elenco
+    // "persone di quell'area". Nuovi campi per ogni area:
+    //   responsabiliIds[]  — persone designate responsabili (input futuro §F)
+    //   capiAreaIds[]      — sottoinsieme che è anche "Capo Area" (comm)
+    // Il flag persona.isResp NON viene toccato (alimenta comp.ore_resp).
+    // Seed dei responsabili confermati da Roberto (2026-07-26):
+    //   amm  → [p04]         Francesco Martini
+    //   comm → [p01, p05]    Roberto Macinai + Alessandro Raia (Capo Area)
+    //   prod → [p03, p07]    Giovanna Panti + Samuele (RTO)
+    // Le altre aree partono a [] — la designazione la fa l'utente dalla
+    // scheda AREA. Se il campo esiste già valorizzato non viene toccato.
+    if(!Array.isArray(s.aree)) return;
+    const seedResp={ amm:['p04'], comm:['p01','p05'], prod:['p03','p07'] };
+    const seedCapi={ comm:['p05'] };
+    s.aree.forEach(a=>{
+      if(!Array.isArray(a.responsabiliIds)) a.responsabiliIds=seedResp[a.id]?seedResp[a.id].slice():[];
+      if(!Array.isArray(a.capiAreaIds))    a.capiAreaIds   =seedCapi[a.id]?seedCapi[a.id].slice():[];
+    });
   }},
 ];
 function migrateSchema(s){
@@ -4486,6 +4516,24 @@ function renderOrg(){
   }
   topLevel.forEach(a=>walkArea(a,null,false));
 
+  // ── §H FIX 3 — Nodi persona espliciti nell'organigramma ────────────────
+  // Samuele (p07, RTO) sotto Produzione, Alessandro Raia (p05, Capo Area)
+  // sotto Commerciale. Pattern simile a Gaia (cda_staff) ma con nuovo
+  // type 'org_person' e badge PERSONA. lnk PRIMA di posT → entrano nel
+  // layout ricorsivo come primi figli della propria macro area.
+  const _mkOrgPerson=(pid,sub,parentNode,color)=>{
+    const p=S.personale.find(x=>x.id===pid);
+    if(!p||!parentNode) return null;
+    const n=mkN({type:'org_person',label:p.nome.split(' ')[0]||p.nome,
+      sub:sub,pct:parentNode.label||'',
+      color:color,bg:'#F7F5EE',bd:'#D5D1C4',
+      pi:S.personale.indexOf(p)});
+    lnk(parentNode,n,'v');
+    return n;
+  };
+  _mkOrgPerson('p07','RTO',nProd,'#0F4499');
+  _mkOrgPerson('p05','Capo Area',nComm,'#1A6B3C');
+
   // ── LAYOUT ──────────────────────────────────────────────────────────────
   function stW(n){
     if(!n.children.length)return n.w;
@@ -4599,18 +4647,18 @@ function renderOrg(){
       rx.setAttribute('stroke','#1A6B3C');rx.setAttribute('stroke-width','3');
     }
 
-    if(['area','ca','cda_staff'].includes(n.type)){
+    if(['area','ca','cda_staff','org_person'].includes(n.type)){
       const bar=document.createElementNS(NS,'rect');
       bar.setAttribute('width','3');bar.setAttribute('height',n.h-10);
       bar.setAttribute('x','0');bar.setAttribute('y','5');bar.setAttribute('rx','1.5');
       bar.setAttribute('fill',n.color);fg.appendChild(bar);
     }
 
-    const isL=['area','cda_staff'].includes(n.type);
+    const isL=['area','cda_staff','org_person'].includes(n.type);
     const tx=isL?9:n.w/2, ta=isL?'start':'middle';
 
     const bmap={hold:'HOLDING',root:'AZIENDA',gov:'CDA',utili:'PROPRIETÀ',
-      area:'AREA',cda_staff:'DIRETTO CDA'};
+      area:'AREA',cda_staff:'DIRETTO CDA',org_person:'PERSONA'};
     const bt=document.createElementNS(NS,'text');
     bt.setAttribute('x',tx);bt.setAttribute('y',13);bt.setAttribute('text-anchor',ta);
     bt.setAttribute('font-size','8');bt.setAttribute('fill','#9A9890');
@@ -4938,6 +4986,53 @@ function openOrgPop(type,pi){
   else if(type==='edit'&&pi>=0)openPersonaPop(pi);
 }
 // ══════════════════════════════════════════════════════════════════════════
+// §H FIX 2 — Helper globali per l'editor responsabili nella scheda AREA.
+// Modificano solo area.responsabiliIds / area.capiAreaIds e chiamano
+// renderAll (che salva su LS + cloud). NON toccano persona.isResp,
+// persona.isCapoArea, persona.capoAreaDi (quelli restano dominio del pop
+// persona/Step 4 e alimentano il motore comp.ore_resp/capo_agenti).
+// La designazione qui è pura — nessun compenso calcolato. Il futuro §F
+// leggerà queste liste come input per calibrare i flussi.
+// ══════════════════════════════════════════════════════════════════════════
+function _ensureRespArrays(a){
+  if(!Array.isArray(a.responsabiliIds)) a.responsabiliIds=[];
+  if(!Array.isArray(a.capiAreaIds))    a.capiAreaIds=[];
+}
+function addResponsabileFromSelect(areaId){
+  const a=S.aree.find(x=>x.id===areaId); if(!a) return;
+  _ensureRespArrays(a);
+  const sel=document.getElementById('sch-add-resp-'+areaId);
+  const pid=sel?sel.value:'';
+  if(!pid){ notify('Seleziona una persona prima di aggiungere'); return; }
+  if(a.responsabiliIds.includes(pid)){ notify('Già responsabile'); return; }
+  a.responsabiliIds.push(pid);
+  renderAll();
+  openSchedaArea(areaId); // ri-apre il popover aggiornato
+  notify('Responsabile aggiunto');
+}
+function removeResponsabile(areaId,pid){
+  const a=S.aree.find(x=>x.id===areaId); if(!a) return;
+  _ensureRespArrays(a);
+  const p=S.personale.find(x=>x.id===pid);
+  if(!confirm('Rimuovere "'+(p?p.nome:pid)+'" dai responsabili di '+a.nome+'?\n(La persona non viene toccata: resta nel personale e nell\'area.)')) return;
+  a.responsabiliIds=a.responsabiliIds.filter(x=>x!==pid);
+  a.capiAreaIds=a.capiAreaIds.filter(x=>x!==pid);
+  renderAll();
+  openSchedaArea(areaId);
+  notify('Responsabile rimosso');
+}
+function toggleCapoArea(areaId,pid){
+  const a=S.aree.find(x=>x.id===areaId); if(!a) return;
+  _ensureRespArrays(a);
+  // Un Capo Area deve essere anche responsabile — altrimenti la promozione
+  // implicita lo aggiunge.
+  if(!a.responsabiliIds.includes(pid)) a.responsabiliIds.push(pid);
+  if(a.capiAreaIds.includes(pid))      a.capiAreaIds=a.capiAreaIds.filter(x=>x!==pid);
+  else                                  a.capiAreaIds.push(pid);
+  renderAll();
+  openSchedaArea(areaId);
+}
+// ══════════════════════════════════════════════════════════════════════════
 // §H — Scheda AREA aperta dal click su una card nell'organigramma.
 // Sostituisce l'apertura del popover "Configura persona" (che apriva il
 // pannello del responsabile invece della scheda area). Dati aggregati:
@@ -4953,7 +5048,13 @@ function openSchedaArea(areaId){
   const margine=bud-cost, marginePct=bud>0?(margine/bud)*100:null;
   const roll=(typeof areaRollup==='function')?areaRollup(a):null;
   const ka=(typeof kpiA==='function')?kpiA(a):null;
-  const respAll=S.personale.filter(p=>p.areaResp===areaId);
+  // §H FIX 1 — Responsabili designati: leggi area.responsabiliIds (nuovo
+  // campo introdotto in schema v10), NON l'elenco filtrato per areaResp
+  // (che coincideva con "persone dell'area" e rendeva la sezione inutile).
+  // Il futuro §F userà responsabiliIds/capiAreaIds come input calibratore.
+  if(!Array.isArray(a.responsabiliIds)) a.responsabiliIds=[];
+  if(!Array.isArray(a.capiAreaIds))    a.capiAreaIds=[];
+  const respAll=a.responsabiliIds.map(id=>S.personale.find(p=>p.id===id)).filter(Boolean);
   const persArea=S.personale.filter(p=>p.area===areaId||(p.slots||[]).some(s=>s.area===areaId));
   const parent=a.parentId?S.aree.find(x=>x.id===a.parentId):null;
   const figli=S.aree.filter(x=>x.parentId===areaId);
@@ -4973,10 +5074,32 @@ function openSchedaArea(areaId){
       <td style="padding:3px 6px;text-align:right;font-size:11px" class="${km!==null?kpiCls(km):''}">${km!==null?km.toFixed(1)+'%':'—'}</td>
     </tr>`;
   }).join('');
+  // §H FIX 2 — Editor responsabili: per ogni responsabile mostra badge nome
+  // + toggle Capo Area + ✕ rimuovi; sotto, select per aggiungere una nuova
+  // persona (tra le persArea non già designate). Modifica in-place
+  // a.responsabiliIds / a.capiAreaIds; renderAll() salva su LS + cloud.
+  // NON tocca p.isResp (che alimenta comp.ore_resp) — è pura designazione.
+  const respIdSet=new Set(a.responsabiliIds);
+  const capiSet=new Set(a.capiAreaIds);
+  const disponibili=persArea.filter(p=>!respIdSet.has(p.id));
   const respLine=respAll.length?respAll.map(p=>{
     const pi=S.personale.indexOf(p);
-    return `<button class="btn xs" onclick="closePop();openPersonaPop(${pi})" style="margin:2px 3px 0 0">${p.nome}</button>`;
-  }).join(''):'<span style="font-size:11px;color:var(--ink3)">— nessun responsabile —</span>';
+    const isCapo=capiSet.has(p.id);
+    return `<span style="display:inline-flex;align-items:center;gap:3px;margin:2px 4px 2px 0;padding:3px 6px;background:${isCapo?'var(--green-bg)':'var(--sheet)'};border:1px solid ${isCapo?'var(--green-bd)':'var(--lift)'};border-radius:var(--r);font-size:11px">
+      <button class="btn xs" style="font-size:10px;padding:1px 4px;background:transparent;border:none;color:var(--ink)" onclick="closePop();openPersonaPop(${pi})" title="Apri persona">${p.nome}</button>
+      ${isCapo?'<span style="font-size:9px;color:var(--green);font-weight:700" title="Capo Area">CA</span>':''}
+      <button class="btn xs" style="font-size:9px;padding:1px 4px" title="${isCapo?'Rimuovi ruolo Capo Area':'Segna come Capo Area'}" onclick="toggleCapoArea('${areaId}','${p.id}')">${isCapo?'✕CA':'+CA'}</button>
+      <button class="btn xs danger" style="font-size:9px;padding:1px 4px" title="Rimuovi responsabile" onclick="removeResponsabile('${areaId}','${p.id}')">✕</button>
+    </span>`;
+  }).join(''):'<span style="font-size:11px;color:var(--ink3)">— nessun responsabile designato —</span>';
+  const respAdder=disponibili.length?`<div style="margin-top:4px;display:flex;gap:4px;align-items:center;flex-wrap:wrap">
+    <span style="font-size:10px;color:var(--ink3)">Aggiungi:</span>
+    <select id="sch-add-resp-${areaId}" style="font-size:11px;padding:2px 5px;border:1px solid var(--lift);border-radius:var(--r);background:var(--sheet);max-width:220px">
+      <option value="">— scegli persona —</option>
+      ${disponibili.map(p=>`<option value="${p.id}">${p.nome}${p.ruolo_principale?' — '+p.ruolo_principale:''}</option>`).join('')}
+    </select>
+    <button class="btn xs prim" onclick="addResponsabileFromSelect('${areaId}')">+ resp.</button>
+  </div>`:(respAll.length?'':'<div style="font-size:10px;color:var(--ink3);margin-top:4px;font-style:italic">Nessuna persona ancora assegnata a quest\'area. Vai in Struttura o assegna qualcuno prima.</div>');
   body.innerHTML=`
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:10px">
       <div style="background:var(--sheet);border-radius:var(--r);padding:8px 10px">
@@ -5008,8 +5131,9 @@ function openSchedaArea(areaId){
       <div>${parent?`<strong>Sotto:</strong> ${parent.nome}`:'<em style="color:var(--ink3)">Macro area top-level</em>'}</div>
     </div>
     <div style="margin-bottom:10px">
-      <div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">Responsabili</div>
-      ${respLine}
+      <div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">Responsabili designati</div>
+      <div>${respLine}</div>
+      ${respAdder}
     </div>
     ${persArea.length?`<div style="margin-bottom:10px">
       <div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">${persArea.length} persone</div>

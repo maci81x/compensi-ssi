@@ -158,11 +158,51 @@ personale 40.916,15 · liquidità 3.537 · fornitori totali 20.356,43).
   `goPage(areaPageMap[...])` — la navigazione alla pagina resta come pulsante
   esplicito dentro la scheda.
 
-Smoke test: `tests/smoke-g.mjs` (verifica no `%%`, 4 macro renderizzate,
-espansione mostra i figli con `macro`/`tot`), `tests/smoke-h.mjs` (verifica
-titolo "Area: X" invece di "Configura", dati aggregati presenti, "Vai a
-pagina" solo per macro con page, apertura corretta su centro senza page,
-su area senza responsabile).
+### ✅ H FIX 1/2/3 — Responsabili corretti + editor + nodi persona (2026-07-26)
+
+Schema portato a **v10**. Sempre puro rendering/dato di display: motore
+`flow()` / `areaBudget` / `areaCosto` / `garantitoNatura` intatto.
+Invarianti confermati identici (Sistema 43.994,28 · garantito personale
+40.916,15 · liquidità 3.537 · fornitori totali 20.356,43).
+
+- **FIX 1 — Responsabili designati distinti dalle persone**: la sezione
+  "Responsabili" della scheda AREA mostrava tutte le persone dell'area
+  (`p.areaResp===id` → identico a "N persone"). Nuovi campi per ogni area:
+  - `area.responsabiliIds[]` — designazione responsabili (input futuro §F)
+  - `area.capiAreaIds[]` — subset che è anche Capo Area (rilevante per comm)
+  Seed nel DEF + migrazione v10 (idempotente):
+  - `amm.responsabiliIds = ['p04']` (Francesco Martini)
+  - `comm.responsabiliIds = ['p01','p05']`, `capiAreaIds = ['p05']` (Roberto
+    Macinai + Alessandro Raia con distinzione CA)
+  - `prod.responsabiliIds = ['p03','p07']` (Giovanna Panti + Samuele/RTO)
+  - `form/mkt/sorvsan/sis.responsabiliIds = []` (da designare da UI)
+  `openSchedaArea` ora legge questi array. Il flag `persona.isResp` NON è
+  toccato (alimenta ancora `comp.ore_resp`). Nessun compenso calcolato —
+  pura designazione.
+- **FIX 2 — Editor responsabili nel pannello AREA**: nella scheda AREA
+  ogni responsabile mostra un badge cliccabile con: nome (apre pop persona),
+  toggle `+CA/✕CA` (Capo Area), `✕` rimuovi. Sotto: select "Aggiungi" con
+  le persone dell'area non ancora designate + pulsante `+ resp.` Helper
+  globali `addResponsabileFromSelect(areaId)`, `removeResponsabile(areaId,
+  pid)`, `toggleCapoArea(areaId, pid)`. Ogni azione fa `renderAll()` che
+  salva su LS + Supabase (autosave).
+- **FIX 3 — Nodi persona esplicti nell'organigramma**: aggiunti nodi
+  `type:'org_person'` (badge PERSONA) per **Samuele** (p07, sub "RTO") sotto
+  Produzione e **Alessandro Raia** (p05, sub "Capo Area") sotto Commerciale.
+  Non creano nuove risorse: usano persone esistenti nel personale. Pattern
+  simile a Gaia (`cda_staff`) ma agganciati via `lnk(nProd, nSamuele)` e
+  `lnk(nComm, nRaia)` prima di `posT` → entrano nel layout ricorsivo come
+  primi figli. Il click apre `openPersonaPop` (listener esistente gestisce
+  `n.pi>=0 && n.type!=='area'`).
+
+Smoke test:
+ - `tests/smoke-g.mjs` (verifica no `%%`, macro renderizzate, espansione
+   sotto con doppia %)
+ - `tests/smoke-h.mjs` **esteso**: 5 verifiche in una — seed schema v10,
+   responsabili corretti in scheda amm (Francesco sì, Mattia solo in select
+   "aggiungi"), badge CA su Raia in comm, editor add/remove/toggle non tocca
+   `p.isResp`, nodi Samuele/Raia presenti nell'SVG organigramma con badge
+   PERSONA, regressione H originale (Area:X invece di Configura, ecc.)
 
 ### ⏳ ANCORA DA FARE — blocchi E, F, I
 
@@ -186,7 +226,7 @@ su area senza responsabile).
 
 ### Note tecniche per continuare
 
-- Schema attuale **v9**. Ogni bump di `CURRENT_SCHEMA_VERSION` richiede un nuovo
+- Schema attuale **v10**. Ogni bump di `CURRENT_SCHEMA_VERSION` richiede un nuovo
   step in `SCHEMA_MIGRATIONS` (migra aggiungendo solo ciò che manca, mai
   sovrascrive dati reali).
 - Verifica rapida senza toccare il cloud condiviso: Playwright con rete Supabase
