@@ -1,7 +1,7 @@
 # HANDOVER — Compensi SSI
 
-Stato del lavoro al **2026-07-26** (blocco finale A–D e L completati e validati),
-per continuare su un altro portatile.
+Stato del lavoro al **2026-07-26** (blocco finale A–D, L, G, H completati
+e validati), per continuare su un altro portatile.
 
 ## Come ripartire
 
@@ -127,7 +127,44 @@ commit (`/tmp/ssi-check/invariants.mjs`):
 Invarianti tenuti in ogni commit: Sistema 43.994,28 · garantito personale
 40.916,15 · liquidità 3.537 · fornitori totali 20.356,43.
 
-### ⏳ ANCORA DA FARE — blocchi E, F, G, H, I
+### ✅ G+H — Incidenza aree a 2 livelli + scheda AREA (2026-07-26)
+
+Solo rendering, motore di calcolo intatto (`flow()`/`areaBudget`/`areaCosto`
+non toccati). Invarianti confermati identici (Sistema 43.994,28 · garantito
+personale 40.916,15 · liquidità 3.537 · fornitori totali 20.356,43).
+
+- **G — Dashboard incidenza a 2 livelli**: `renderSimAree` refattorizzata
+  (pagina Simulatore, sezione "Incidenza aree"). Ora mostra SOLO le macro
+  top-level (aree con `parentId` nullo/vuoto) con % sul totale; click sulla
+  card → esplode le sotto-voci figlie con doppia percentuale "macro" e "tot".
+  Helper `_sumSubtree(areaId)` aggrega ricorsivamente budget/costo del
+  sottoalbero, così una macro che contiene N centri chiusi mostra il vero
+  peso. **Bug `0.00%%` fixato** (line 7361 vecchia): `${P(a.incPct)}%`
+  produceva doppio simbolo — `P()` già ritorna una stringa con `%`
+  inclusa. Ora tutte le percentuali usano solo `P(...)` senza il `+'%'`
+  di troppo. Aggiunto CSS `.sim-sub-grid`/`.sim-sub-item` per la vista
+  espansa. Torta doughnut allineata: ora mostra solo le macro (prima le 30
+  aree).
+- **H — Click su area organigramma apre scheda AREA**: nuovo
+  `openSchedaArea(areaId)` che apre il popover esistente con dati aggregati
+  dell'area (budget/costo/margine %, KPI area con dettaglio micro, rollup
+  discendenti se presenti, responsabili, sotto-aree cliccabili, elenco
+  persone) + bottoni "▶ Vai a pagina X" (se l'area ha una page dedicata:
+  comm/prod/form/amm/mkt/sorvsan/sis), "⚙ Struttura", "👤 Configura resp"
+  se c'è un solo responsabile. Il click nell'organigramma non fa più
+  partire il popover "Configura persona" del responsabile (bug: l'`if(n.pi
+  >=0) fg.addEventListener('click', openPersonaPop)` a line 4720 ora esclude
+  `type==='area'`). L'`endDrag` chiama `openSchedaArea(n.areaId)` anziché
+  `goPage(areaPageMap[...])` — la navigazione alla pagina resta come pulsante
+  esplicito dentro la scheda.
+
+Smoke test: `tests/smoke-g.mjs` (verifica no `%%`, 4 macro renderizzate,
+espansione mostra i figli con `macro`/`tot`), `tests/smoke-h.mjs` (verifica
+titolo "Area: X" invece di "Configura", dati aggregati presenti, "Vai a
+pagina" solo per macro con page, apertura corretta su centro senza page,
+su area senza responsabile).
+
+### ⏳ ANCORA DA FARE — blocchi E, F, I
 
 - **E — KPI**: precaricare la proposta KPI per ogni area (marcati calcolabili vs
   manuali), tutti creabili/modificabili/monitorabili/eliminabili; **pannello
@@ -142,12 +179,6 @@ Invarianti tenuti in ogni commit: Sistema 43.994,28 · garantito personale
   incremento 0,05%, cap) modificabili dal CDA. Vincolo: somma = 100% incassato;
   totale premi ≤ liquidità (già c'è la compressione §8). Responsabili intermedi
   (RTO/ASF/micro) prendono sul LORO ramo. *(GRFM 2% già fatto nel fix flusso.)*
-- **G — Dashboard incidenza a 2 livelli**: "Incidenza aree" mostra SOLO le macro;
-  click → esplode le sotto-aree. "i" cliccabile per spiegare i numeri. **Fix bug
-  `0.00%%`** (doppio simbolo percentuale).
-- **H — Click su area = scheda AREA** (erogato/tipologia/costi/tempi/margine/
-  incidenza), non "Configura Giovanna Panti". Il responsabile è un campo della
-  scheda. Stesso comportamento per tutte le aree.
 - **I — Erogato per servizio**: inserimento manuale per centro (tempi, valore
   erogato, tipologia, centro di costo), modificabile/eliminabile. Margine col
   metodo "Marginalità" del PF: prezzo vendita netto − var. commerciali − var.

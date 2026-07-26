@@ -517,9 +517,20 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
 .sim-card.neg .sv{color:var(--red)}
 .sim-area-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
 .sim-area-item{background:var(--sheet);border-radius:var(--r);padding:7px 8px;border:1px solid var(--lift);text-align:center}
-.sim-area-item .an{font-size:9px;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px;font-weight:500}
+.sim-area-item.is-open{grid-column:1/-1;text-align:left}
+.sim-area-item .sim-area-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:2px 0}
+.sim-area-item.is-open .sim-area-head{border-bottom:1px solid var(--lift);padding-bottom:6px;margin-bottom:6px}
+.sim-area-item:not(.is-open) .sim-area-head{flex-direction:column;text-align:center;gap:2px}
+.sim-area-item .an{font-size:9px;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em;font-weight:500}
+.sim-area-item.is-open .an{flex:1;font-size:11px;color:var(--ink);text-transform:none;letter-spacing:0}
 .sim-area-item .av{font-size:12px;font-family:'DM Mono',monospace;font-weight:500}
-.sim-area-item .ap{font-size:9px;color:var(--ink3);margin-top:1px}
+.sim-area-item .ap{font-size:9px;color:var(--ink3)}
+.sim-sub-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:4px}
+.sim-sub-item{background:var(--card);border:1px solid var(--lift);border-radius:var(--r);padding:5px 7px;display:grid;grid-template-columns:1fr auto;grid-template-rows:auto auto;column-gap:6px;row-gap:2px}
+.sim-sub-item .ssn{grid-column:1/-1;font-size:10px;color:var(--ink);font-weight:500}
+.sim-sub-item .ssv{grid-row:2;grid-column:1;font-size:11px;font-family:'DM Mono',monospace;color:var(--ink2)}
+.sim-sub-item .ssp{grid-row:2;grid-column:2;font-size:9px;color:var(--ink3);text-align:right}
+.sim-sub-item .ssp+.ssp{grid-row:3;grid-column:2}
 .sim-waterfall{margin-top:12px}
 .wf-row{display:flex;align-items:center;gap:6px;margin-bottom:3px;font-size:11px}
 .wf-label{min-width:160px;color:var(--ink2)}
@@ -4710,13 +4721,19 @@ function renderOrg(){
         });
         orgDragState=null;
         if(wasDrag&&overId)applyReparent(n.areaId,overId);
-        else if(!wasDrag)goPage(areaPageMap[n.areaId]||n.areaId);
+        // §H — click su area = scheda AREA (dati aggregati + navigazione),
+        // NON il popover "Configura persona" del responsabile.
+        else if(!wasDrag)openSchedaArea(n.areaId);
       };
       fg.addEventListener('pointerup',endDrag);
       fg.addEventListener('pointercancel',endDrag);
     }
 
-    if(n.pi>=0){
+    // §H — il listener click→openPersonaPop resta per i nodi persona
+    // (cda_staff Gaia, ecc.), MA NON per le aree: se un'area ha un
+    // responsabile (n.pi>=0), il click deve aprire la scheda area, non
+    // sovrapporre il popover della persona.
+    if(n.pi>=0 && n.type!=='area'){
       fg.addEventListener('click',()=>openPersonaPop(n.pi));
       fg.style.cursor='pointer';
     }
@@ -4919,6 +4936,111 @@ function openOrgPopFlow(f){
 function openOrgPop(type,pi){
   if(type==='persona'&&pi>=0)openPersonaPop(pi);
   else if(type==='edit'&&pi>=0)openPersonaPop(pi);
+}
+// ══════════════════════════════════════════════════════════════════════════
+// §H — Scheda AREA aperta dal click su una card nell'organigramma.
+// Sostituisce l'apertura del popover "Configura persona" (che apriva il
+// pannello del responsabile invece della scheda area). Dati aggregati:
+// budget, costo, margine %, rollup discendenti, KPI area, incidenza sul
+// totale, elenco persone. Solo render — nessun ricalcolo del motore.
+// ══════════════════════════════════════════════════════════════════════════
+function openSchedaArea(areaId){
+  const a=S.aree.find(x=>x.id===areaId); if(!a) return;
+  const f=flow();
+  const inc=Math.max(1,f.inc);
+  const bud=areaBudget(a), cost=areaCosto(a);
+  const ratio=bud>0?(cost/bud)*100:0;
+  const margine=bud-cost, marginePct=bud>0?(margine/bud)*100:null;
+  const roll=(typeof areaRollup==='function')?areaRollup(a):null;
+  const ka=(typeof kpiA==='function')?kpiA(a):null;
+  const respAll=S.personale.filter(p=>p.areaResp===areaId);
+  const persArea=S.personale.filter(p=>p.area===areaId||(p.slots||[]).some(s=>s.area===areaId));
+  const parent=a.parentId?S.aree.find(x=>x.id===a.parentId):null;
+  const figli=S.aree.filter(x=>x.parentId===areaId);
+  // Mappa aree con pagina dedicata (identica a quella di renderOrg).
+  const AREA_PAGE_MAP={comm:'comm_page',prod:'produzione',form:'form_page',
+                       amm:'amm_page',mkt:'mkt_page',sorvsan:'sorvsan_page',sis:'seg_page'};
+  const pageId=AREA_PAGE_MAP[areaId];
+  document.getElementById('pop-title').textContent='Area: '+a.nome;
+  document.getElementById('pop-act').style.display='none'; // scheda read-only
+  const body=document.getElementById('pop-body');
+  const kpiRows=(a.micro||[]).map(m=>{
+    const km=(typeof kpiM==='function')?kpiM(m):null;
+    return `<tr>
+      <td style="padding:3px 6px;font-size:11px">${m.nome}</td>
+      <td style="padding:3px 6px;text-align:right;font-size:11px" class="mono">${m.kt}</td>
+      <td style="padding:3px 6px;text-align:right;font-size:11px" class="mono">${m.ke}</td>
+      <td style="padding:3px 6px;text-align:right;font-size:11px" class="${km!==null?kpiCls(km):''}">${km!==null?km.toFixed(1)+'%':'—'}</td>
+    </tr>`;
+  }).join('');
+  const respLine=respAll.length?respAll.map(p=>{
+    const pi=S.personale.indexOf(p);
+    return `<button class="btn xs" onclick="closePop();openPersonaPop(${pi})" style="margin:2px 3px 0 0">${p.nome}</button>`;
+  }).join(''):'<span style="font-size:11px;color:var(--ink3)">— nessun responsabile —</span>';
+  body.innerHTML=`
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:10px">
+      <div style="background:var(--sheet);border-radius:var(--r);padding:8px 10px">
+        <div style="font-size:9px;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em">Budget</div>
+        <div class="mono" style="font-size:15px;font-weight:500">${fmt(bud)}</div>
+        <div style="font-size:10px;color:var(--ink3)">${P((bud/inc)*100)} incassato</div>
+      </div>
+      <div style="background:var(--sheet);border-radius:var(--r);padding:8px 10px">
+        <div style="font-size:9px;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em">Costo</div>
+        <div class="mono" style="font-size:15px;font-weight:500;color:${ratio>100?'var(--red)':'var(--ink)'}">${fmt(cost)}</div>
+        <div style="font-size:10px;color:${ratio>100?'var(--red)':ratio>80?'var(--amber)':'var(--green)'}">${ratio>100?'OVER':P(ratio)+' del budget'}</div>
+      </div>
+      <div style="background:var(--sheet);border-radius:var(--r);padding:8px 10px">
+        <div style="font-size:9px;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em">Margine</div>
+        <div class="mono" style="font-size:15px;font-weight:500;color:${margine>=0?'var(--green)':'var(--red)'}">${fmt(margine)}</div>
+        <div style="font-size:10px;color:var(--ink3)">${marginePct!==null?marginePct.toFixed(1)+'%':'—'}</div>
+      </div>
+      <div style="background:var(--sheet);border-radius:var(--r);padding:8px 10px">
+        <div style="font-size:9px;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em">KPI area</div>
+        <div class="mono" style="font-size:15px;font-weight:500">${ka!==null?ka+'%':'—'}</div>
+        <div style="font-size:10px;color:var(--ink3)">${a.micro?.length||0} indicatori</div>
+      </div>
+    </div>
+    ${roll&&roll.nFigli?`<div style="background:var(--blue-bg);border:1px solid var(--blue-bd);border-radius:var(--r);padding:8px 10px;margin-bottom:10px;font-size:11px">
+      <strong>Rollup (${roll.nFigli} sotto):</strong> valore <span class="mono">${fmt(roll.valore)}</span> · costo <span class="mono">${fmt(roll.costo)}</span> · margine <span class="mono" style="color:${roll.margine>=0?'var(--green)':'var(--red)'}">${fmt(roll.margine)}</span> ${roll.marginePct!==null?'('+roll.marginePct.toFixed(1)+'%)':''}
+    </div>`:''}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;font-size:11px">
+      <div><strong>Natura:</strong> ${a.natura||'—'} · <strong>Priorità:</strong> ${a.priorita||2}</div>
+      <div>${parent?`<strong>Sotto:</strong> ${parent.nome}`:'<em style="color:var(--ink3)">Macro area top-level</em>'}</div>
+    </div>
+    <div style="margin-bottom:10px">
+      <div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">Responsabili</div>
+      ${respLine}
+    </div>
+    ${persArea.length?`<div style="margin-bottom:10px">
+      <div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">${persArea.length} persone</div>
+      <div style="display:flex;flex-wrap:wrap;gap:3px">
+        ${persArea.map(p=>`<button class="btn xs" onclick="closePop();openPersonaPop(${S.personale.indexOf(p)})" style="font-size:10px">${p.nome}</button>`).join('')}
+      </div>
+    </div>`:''}
+    ${figli.length?`<div style="margin-bottom:10px">
+      <div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">${figli.length} sotto-aree</div>
+      <div style="display:flex;flex-wrap:wrap;gap:3px">
+        ${figli.map(c=>`<button class="btn xs" onclick="openSchedaArea('${c.id}')" style="font-size:10px">${c.nome}</button>`).join('')}
+      </div>
+    </div>`:''}
+    ${kpiRows?`<div style="margin-bottom:10px">
+      <div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">KPI dettaglio</div>
+      <table style="width:100%;border-collapse:collapse;font-size:11px">
+        <thead><tr style="color:var(--ink3);font-size:9px;text-transform:uppercase">
+          <th style="text-align:left;padding:3px 6px">Micro area</th>
+          <th style="text-align:right;padding:3px 6px">Target</th>
+          <th style="text-align:right;padding:3px 6px">Effettivo</th>
+          <th style="text-align:right;padding:3px 6px">%</th>
+        </tr></thead>
+        <tbody>${kpiRows}</tbody>
+      </table>
+    </div>`:''}
+    <div style="display:flex;gap:6px;flex-wrap:wrap;padding-top:8px;border-top:1px solid var(--lift)">
+      ${pageId?`<button class="btn sm prim" onclick="closePop();goPage('${pageId}')">▶ Vai a pagina ${a.nome}</button>`:''}
+      <button class="btn sm" onclick="closePop();goPage('struttura')">⚙ Struttura & aree</button>
+      ${respAll.length===1?`<button class="btn sm" onclick="closePop();openPersonaPop(${S.personale.indexOf(respAll[0])})">👤 Configura ${respAll[0].nome.split(' ')[0]}</button>`:''}
+    </div>`;
+  openPopover();
 }
 function openPopover(){
   document.getElementById('pop-ov').classList.add('show');
@@ -7352,21 +7474,75 @@ function renderSimWaterfall(f){
   el.innerHTML = items.map(r => `<div class="wf-row">     <span class="wf-label">${r.l}</span>     <div class="wf-bar-wrap">       <div class="wf-bar" style="width:${Math.min(Math.abs(r.bar),100).toFixed(1)}%;background:${r.color};opacity:${r.l==='= Utili'?1:.75}"></div>     </div>     <span class="wf-val">${fmt(r.v)}</span>     <span class="wf-pct">${P((r.v/Math.max(1,f.inc))*100)}</span>   </div>`).join('');
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+// §G — Dashboard incidenza a 2 livelli: mostra SOLO le macro area
+// (top-level: parentId nullo/vuoto), con % sul totale simulato. Click su
+// una macro → esplode/collassa le sotto-voci discendenti, con % sulla
+// macro e % sul totale. Il bug "0.00%%" (P(x) già ritorna "%") è fixato
+// eliminando il "%" duplicato dopo il template.
+// Il calcolo (areaBudget/areaCosto/flow) NON è toccato: puro render.
+// ══════════════════════════════════════════════════════════════════════════
+if(typeof simIncidenzaOpen==='undefined') var simIncidenzaOpen={};
+function toggleSimIncidenza(areaId){
+  simIncidenzaOpen[areaId]=!simIncidenzaOpen[areaId];
+  const f=flow(); renderSimAree(f);
+}
+// Somma budget/costo di un'area e tutti i suoi discendenti (rollup ai fini
+// del "peso" macro, così includiamo eventuali sotto-aree e centri chiusi).
+function _sumSubtree(areaId){
+  let bud=0,cost=0,n=0;
+  const walk=(id)=>{
+    const a=S.aree.find(x=>x.id===id); if(!a) return;
+    bud+=areaBudget(a); cost+=areaCosto(a); n++;
+    S.aree.filter(x=>x.parentId===id).forEach(c=>walk(c.id));
+  };
+  walk(areaId);
+  return {bud,cost,n};
+}
 function renderSimAree(f){
   const el = document.getElementById('sim-aree-grid'); if(!el) return;
-  el.innerHTML = S.aree.map(a => {
-    const bud = areaBudget(a);
-    const cost = areaCosto(a);
+  const totInc = Math.max(1, f.inc);
+  // Macro area = area senza parentId (top-level). Fallback: se manca la
+  // proprietà parentId in stati vecchi, cade in questo insieme.
+  const macros = S.aree.filter(a => !a.parentId);
+  el.innerHTML = macros.map(a => {
+    const roll = _sumSubtree(a.id);
+    const bud = roll.bud, cost = roll.cost;
     const ratio = bud > 0 ? (cost/bud)*100 : 0;
-    return `<div class="sim-area-item" style="border-color:${ratio>100?'var(--red-bd)':ratio>80?'var(--amber-bd)':'var(--lift)'}">       <div class="an">${a.nome}</div>       <div class="av">${fmt(bud)}</div>       <div class="ap">${P(a.incPct)}%</div>       <div class="ap" style="color:${ratio>100?'var(--red)':ratio>80?'var(--amber)':'var(--green)'}">${ratio>100?'OVER':P(ratio)}</div>     </div>`;
+    const incPctMacro = (bud/totInc)*100;
+    const open = !!simIncidenzaOpen[a.id];
+    const figli = S.aree.filter(x=>x.parentId===a.id);
+    // Nota: usiamo (${P(...)}) senza aggiungere '%' — P() già lo include.
+    const subRows = figli.map(sub => {
+      const sroll = _sumSubtree(sub.id);
+      const sBud = sroll.bud;
+      const pesoMacro = bud>0 ? (sBud/bud)*100 : 0;
+      const pesoTot   = (sBud/totInc)*100;
+      const sRatio    = sroll.bud>0 ? (sroll.cost/sroll.bud)*100 : 0;
+      return `<div class="sim-sub-item" style="border-color:${sRatio>100?'var(--red-bd)':sRatio>80?'var(--amber-bd)':'var(--lift)'}">
+        <div class="ssn">${sub.nome}${sroll.n>1?` <span style="color:var(--ink3);font-weight:400">(+${sroll.n-1} sotto)</span>`:''}</div>
+        <div class="ssv">${fmt(sBud)}</div>
+        <div class="ssp" title="Peso sulla macro area">${P(pesoMacro)} <span style="color:var(--ink4)">macro</span></div>
+        <div class="ssp" title="Peso sul totale incassato">${P(pesoTot)} <span style="color:var(--ink4)">tot</span></div>
+      </div>`;
+    }).join('');
+    return `<div class="sim-area-item ${open?'is-open':''}" style="border-color:${ratio>100?'var(--red-bd)':ratio>80?'var(--amber-bd)':'var(--lift)'}">
+      <div class="sim-area-head" onclick="toggleSimIncidenza('${a.id}')" style="cursor:pointer">
+        <div class="an">${a.nome} ${figli.length?`<span style="color:var(--ink3);font-weight:400">${open?'▾':'▸'} ${figli.length} sotto</span>`:''}</div>
+        <div class="av">${fmt(bud)}</div>
+        <div class="ap" title="% sul totale incassato">${P(incPctMacro)} <span style="color:var(--ink4)">tot</span></div>
+        <div class="ap" style="color:${ratio>100?'var(--red)':ratio>80?'var(--amber)':'var(--green)'}" title="Costo vs budget">${ratio>100?'OVER':P(ratio)}</div>
+      </div>
+      ${open && figli.length ? `<div class="sim-sub-grid">${subRows}</div>` : ''}
+    </div>`;
   }).join('');
-  // Grafico torta aree
+  // Grafico torta aree: solo macro, coerente con il grid a 2 livelli.
   const ctx = document.getElementById('sim-area-chart');
   if(!ctx) return;
   if(simAreaChart) simAreaChart.destroy();
-  const labels = S.aree.map(a => a.nome);
-  const data = S.aree.map(a => Math.round(areaBudget(a)));
-  const colors = ['#4A38B0','#1A6B3C','#0F4499','#7A4A08','#A32020','#5A5850'];
+  const labels = macros.map(a => a.nome);
+  const data = macros.map(a => Math.round(_sumSubtree(a.id).bud));
+  const colors = ['#4A38B0','#1A6B3C','#0F4499','#7A4A08','#A32020','#5A5850','#2AA198'];
   simAreaChart = new Chart(ctx, {
     type: 'doughnut',
     data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth: 2, borderColor: '#fff' }] },
