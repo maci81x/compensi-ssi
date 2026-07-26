@@ -1,6 +1,6 @@
 # HANDOVER — Compensi SSI
 
-Stato del lavoro al **2026-07-26** (blocco finale A–D, L, G, H completati
+Stato del lavoro al **2026-07-26** (blocco finale A–D, L, G, H, F completati
 e validati), per continuare su un altro portatile.
 
 ## Come ripartire
@@ -204,7 +204,66 @@ Smoke test:
    `p.isResp`, nodi Samuele/Raia presenti nell'SVG organigramma con badge
    PERSONA, regressione H originale (Area:X invece di Configura, ecc.)
 
-### ⏳ ANCORA DA FARE — blocchi E, F, I
+### ✅ F — Compensi responsabili macro-area (2026-07-26)
+
+Schema portato a **v11**. Regola confermata: F applica ai responsabili
+designati di aree con budget proprio (`variabilePct>0 || fisso>0`), NON
+in `capiAreaIds`. Esclusi automaticamente: Raia (CA), Samuele (spostato
+a rto — area senza budget proprio), Gaia (non responsabile).
+
+**5 responsabili in F (mappatura definitiva)**:
+| id | Persona | Area |
+|---|---|---|
+| p01 | Roberto Macinai | comm (Commerciale) |
+| p02 | Marco Macinai | mkt (Marketing) |
+| p03 | Giovanna Panti | prod (Produzione) |
+| p04 | Francesco Martini | amm (Amministrazione) |
+| p11 | Niccolò | form (Formazione) |
+
+**Formula (parametri modificabili dal pannello CDA)**:
+```
+K < 80        → r = 0
+80 ≤ K < 100  → r = 1,0% × (K − 80) / 20        (0 → 1,0% linearmente)
+100 ≤ K < 130 → r = 1,0% + 0,05% × (K − 100)    (1,0% → 2,5% linearmente)
+K ≥ 130       → r = 2,5%                         (cap)
+
+Compenso F = r × margine diretto area (0 se margine ≤ 0)
+```
+
+**Base = margine DIRETTO** (bud area − costo area del solo nodo), non
+il roll: il responsabile macro governa il proprio nodo, non i margini
+dei centri interni chiusi (che sono responsabilità dei sub-manager).
+Esempio: Giovanna prende F sul +12.622 diretto di Produzione, non su
+−39.469 del roll con 16 centri.
+
+**Natura = VARIABILE, priorità 2 nel pool comprimibile**: F entra in
+`flow().pool2e3` come voce `{nome:'Compensi F', val:totCompensoFRichiesto,
+priorita:S.compensiF.priorita||2}`. Se la liquidità non basta viene
+compresso insieme al budget aree (default P2). Non tocca il garantito
+personale (40.916,15 resta invariato).
+
+**Integrazione**: `calcCompensoF(p)` è chiamata SOLO da `flow()` e dalla
+UI (openSchedaArea). NON è dentro `calcPersona.totale` → evita loop
+circolare (areaCosto→calcPersona→calcCompensoF→areaCosto).
+
+**Invarianti al K attuale=0% (tutti i micro non compilati)**: identici
+al pre-F (Sistema 43.994,28 · Garantito 40.916,15 · Liquidità 3.537 ·
+Fornitori 20.356,43). F si attiverà quando si compilerà `micro[i].ke`
+per portare i KPI area sopra 80%.
+
+**UI**:
+- `openSchedaArea` mostra sezione "💰 Compenso §F responsabili" con
+  riga per ogni resp: K, r, margine, importo richiesto. Bottone "⚙
+  formula" per aprire `openCompensiFParams()` (soglia/base/inc/cap/
+  priorità + preview aliquote sui bordi + toggle enabled).
+- `S.compensiF.enabled=false` disattiva tutto (utile per stress test).
+
+Smoke test `tests/smoke-f.mjs` verifica: schema v11, seed mappature,
+isRespF discrimina correttamente (5 in F, 4 esclusi), aliquotaF su
+bordi (0, 79, 80, 90, 100, 115, 130, 200), K=0% → F=0 e invarianti
+identici, simulazione K=100% su Commerciale → Roberto prende 198,52.
+
+### ⏳ ANCORA DA FARE — blocchi E, I
 
 - **E — KPI**: precaricare la proposta KPI per ogni area (marcati calcolabili vs
   manuali), tutti creabili/modificabili/monitorabili/eliminabili; **pannello
@@ -212,13 +271,6 @@ Smoke test:
   stagionalità applicato in automatico (§C già pronta). *(§L L6 minimale copre
   già create/rename/delete di micro-KPI e KPI custom; §E completa questo
   rendendoli pre-caricati per area e con pannello target unico.)*
-- **F — Compensi responsabili**: fisso a mano modificabile (riproporziona tutto
-  in tempo reale); variabile con **crescita continua** (no scaglioni): KPI<80→0;
-  80–100 → aliquota 1,0%×(KPI−80)/20; ≥100 → 1,0%+0,05%×(KPI−100); cap 2,5% a
-  130%. Aliquota sull'incassato dell'area. Parametri (soglia 80, base 1,0%,
-  incremento 0,05%, cap) modificabili dal CDA. Vincolo: somma = 100% incassato;
-  totale premi ≤ liquidità (già c'è la compressione §8). Responsabili intermedi
-  (RTO/ASF/micro) prendono sul LORO ramo. *(GRFM 2% già fatto nel fix flusso.)*
 - **I — Erogato per servizio**: inserimento manuale per centro (tempi, valore
   erogato, tipologia, centro di costo), modificabile/eliminabile. Margine col
   metodo "Marginalità" del PF: prezzo vendita netto − var. commerciali − var.
@@ -226,7 +278,7 @@ Smoke test:
 
 ### Note tecniche per continuare
 
-- Schema attuale **v10**. Ogni bump di `CURRENT_SCHEMA_VERSION` richiede un nuovo
+- Schema attuale **v11**. Ogni bump di `CURRENT_SCHEMA_VERSION` richiede un nuovo
   step in `SCHEMA_MIGRATIONS` (migra aggiungendo solo ciò che manca, mai
   sovrascrive dati reali).
 - Verifica rapida senza toccare il cloud condiviso: Playwright con rete Supabase

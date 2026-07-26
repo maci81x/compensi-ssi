@@ -67,6 +67,9 @@ node tests/smoke-l2l3.mjs                # CRUD Aree/Centri + blacklist
 node tests/smoke-l4.mjs                  # delete riga griglia Produzione
 node tests/smoke-l5.mjs                  # VOCI_TEC dinamico
 node tests/smoke-l6.mjs                  # CRUD KPI custom
+node tests/smoke-g.mjs                   # incidenza aree 2 livelli
+node tests/smoke-h.mjs                   # scheda AREA + resp designati
+node tests/smoke-f.mjs                   # §F compensi responsabili
 ```
 
 Oppure tutti in sequenza via `npm run smoke` da dentro `tests/`:

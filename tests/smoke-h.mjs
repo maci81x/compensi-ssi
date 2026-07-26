@@ -141,12 +141,13 @@ const regressione = await p.evaluate(`(() => {
 console.log('regressione H:', regressione);
 
 const ok =
-  seed.schemaVersion === 10 &&
+  // Schema v11: Samuele spostato da prod a rto per §F; form/mkt popolati.
+  seed.schemaVersion === 11 &&
   JSON.stringify(seed.ammResp) === '["p04"]' &&
   JSON.stringify(seed.commResp) === '["p01","p05"]' &&
   JSON.stringify(seed.commCapi) === '["p05"]' &&
-  JSON.stringify(seed.prodResp) === '["p03","p07"]' &&
-  JSON.stringify(seed.formResp) === '[]' &&
+  JSON.stringify(seed.prodResp) === '["p03"]' &&
+  JSON.stringify(seed.formResp) === '["p11"]' &&
   macroAmm.designati.length === 1 && macroAmm.designati[0].includes('Francesco Martini') &&
   !macroAmm.designati.some(x => x.includes('Mattia Guardiani')) &&
   macroAmm.optionsAdder.some(o => o.includes('Mattia Guardiani')) &&

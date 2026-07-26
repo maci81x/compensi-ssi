@@ -2171,7 +2171,7 @@ const CAT_ICONS={affitto:'🏢',utenze:'⚡',software:'💻',assicurazione:'🛡
 // stato non ha). Vedi SCHEMA_MIGRATIONS più sotto per la logica di
 // migrazione — root cause del problema "una scheda vecchia sovrascrive dati
 // più recenti", non un cerotto sul sintomo.
-const CURRENT_SCHEMA_VERSION=10;
+const CURRENT_SCHEMA_VERSION=11;
 
 // ══════════════════════════════════════════════════════════════════════════
 // §D blocco finale — ORGANIGRAMMA UFFICIALE
@@ -2195,7 +2195,7 @@ function _areaD(o){return Object.assign({
 // Docenti ereditano i loro spostandoli dal padre a runtime — vedi normalizza).
 const AREE_UFFICIALI_D=[
   // Ramo produzione: RTO → ASF (nodi con KPI/premio propri)
-  _areaD({id:'rto',nome:'RTO',parentId:'prod',chiusa:false,desc:'Nodo RTO — conteggi/KPI/premio propri (Resp. Tecnico Organizzativo)'}),
+  _areaD({id:'rto',nome:'RTO',parentId:'prod',chiusa:false,desc:'Nodo RTO — conteggi/KPI/premio propri (Resp. Tecnico Organizzativo)',responsabiliIds:['p07'],capiAreaIds:[]}),
   _areaD({id:'asf',nome:'ASF',parentId:'rto',chiusa:false,desc:'Nodo ASF — conteggi/KPI/premio propri'}),
   // Centri tecnici sotto ASF (i 6 esistenti vengono ri-genitorizzati qui)
   _areaD({id:'c_sicurezza',nome:'Sicurezza',parentId:'asf',chiusa:false,desc:'Sicurezza — nodo con sotto-aree'}),
@@ -2268,6 +2268,13 @@ function normalizzaOrgUfficiale(s){
 
 const DEF={
   schemaVersion:CURRENT_SCHEMA_VERSION,
+  // §F — Compensi responsabili di macro area (non capo area).
+  // Formula continua a 2 tratti, cap 2,5% sul margine diretto dell'area.
+  //   r(K<80)=0; r(80..100)=base×(K-80)/20; r(100..130)=base+incremento×(K-100);
+  //   r(K>=130)=cap; compenso = r × margine_diretto (0 se margine≤0).
+  // F è VARIABILE: entra nel pool comprimibile P2 (default), non tocca il
+  // garantito personale. Parametri modificabili dal pannello CDA.
+  compensiF:{ enabled:true, soglia:80, base:0.01, incremento:0.0005, cap:0.025, priorita:2 },
   // Default = media incassato reale 2026 (§A, blocco finale): 954.538 su 7 mesi
   // (gen-lug) = 136.363/mese. NON è il fatturato: la cascata gira sull'incassato.
   // Il vecchio default (200.000 in cloud / 130.000 in DEF) era un placeholder,
@@ -2641,7 +2648,7 @@ const DEF={
     // ── PRODUZIONE ────────────────────────────────────────────────────────
     {id:'prod',nome:'Produzione',tipo:'RIC',desc:'Erogazione servizi sicurezza, sopralluoghi, DVR, sorveglianza sanitaria',incPct:11.31,
      resp:'Giovanna Panti',
-     responsabiliIds:['p03','p07'], capiAreaIds:[],  // §H: Giovanna + Samuele (RTO)
+     responsabiliIds:['p03'], capiAreaIds:[],  // §F: solo Giovanna (Samuele va sotto rto)
      parentId:null,natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:11.31},chiusa:false,fornitoreFisso:0,
      micro:[
        {nome:'Produzione mensile tot. €',              fisso:0,bonus:0,kt:0,ke:0,note:'Somma generato tutti i tecnici. Disponibile in pagina Produzione tecnici.'},
@@ -2676,7 +2683,7 @@ const DEF={
     // ── MARKETING (ex "HR & MKT" — HR eliminata come area, SPEC-v10 §3) ────
     {id:'mkt',nome:'Marketing',tipo:'SUP',desc:'Marketing, comunicazione, campagne, fornitori esterni',incPct:5.77,
      resp:'Marco Macinai',
-     responsabiliIds:[], capiAreaIds:[],  // §H: da designare (Marco è socio, non ancora nominato)
+     responsabiliIds:['p02'], capiAreaIds:[],  // §F: Marco Macinai
      parentId:'comm',natura:'supporto',priorita:2,budget:{fisso:0,variabilePct:5.77},chiusa:false,
      micro:[
        {nome:'Costo per lead €',                fisso:0,bonus:0,kt:0,ke:0,note:'Spesa ads+agenzia del mese / nr lead generati.'},
@@ -2687,7 +2694,7 @@ const DEF={
     // ── FORMAZIONE ────────────────────────────────────────────────────────
     {id:'form',nome:'Formazione',tipo:'RIC',desc:'Corsi sicurezza, docenze, attestati, registro presenze',incPct:8.5,
      resp:'Niccolò',
-     responsabiliIds:[], capiAreaIds:[],  // §H: da designare
+     responsabiliIds:['p11'], capiAreaIds:[],  // §F: Niccolò
      parentId:'prod',natura:'produttiva',priorita:2,budget:{fisso:0,variabilePct:8.5},chiusa:false,
      // 14 docenti esterni con costo reale (PF SI 2026.xlsx, cat "Formazione") — §A seed costi centri.
      fornitoreFisso:1703.52,
@@ -3494,6 +3501,38 @@ const SCHEMA_MIGRATIONS=[
       if(!Array.isArray(a.capiAreaIds))    a.capiAreaIds   =seedCapi[a.id]?seedCapi[a.id].slice():[];
     });
   }},
+  {to:11,migrate(s){
+    // §F — Compensi responsabili di macro area (non capo area).
+    // 1) Rimappa responsabili: F si applica alle 5 persone confermate
+    //    (Roberto/Marco/Giovanna/Francesco/Niccolò), quindi:
+    //    - mkt.responsabiliIds aggiunge 'p02' (Marco) se manca
+    //    - form.responsabiliIds aggiunge 'p11' (Niccolò) se manca
+    //    - Samuele (p07) è responsabile RTO, NON di Produzione macro:
+    //      rimosso da prod, aggiunto a rto se rto esiste
+    // 2) S.compensiF — parametri globali della formula (modificabili CDA).
+    if(!Array.isArray(s.aree)) return;
+    const mkt=s.aree.find(a=>a.id==='mkt');
+    if(mkt){ if(!Array.isArray(mkt.responsabiliIds)) mkt.responsabiliIds=[];
+             if(!mkt.responsabiliIds.includes('p02')) mkt.responsabiliIds.push('p02'); }
+    const form=s.aree.find(a=>a.id==='form');
+    if(form){ if(!Array.isArray(form.responsabiliIds)) form.responsabiliIds=[];
+              if(!form.responsabiliIds.includes('p11')) form.responsabiliIds.push('p11'); }
+    const prod=s.aree.find(a=>a.id==='prod');
+    if(prod && Array.isArray(prod.responsabiliIds)){
+      prod.responsabiliIds=prod.responsabiliIds.filter(x=>x!=='p07');
+    }
+    const rto=s.aree.find(a=>a.id==='rto');
+    if(rto){ if(!Array.isArray(rto.responsabiliIds)) rto.responsabiliIds=[];
+             if(!rto.responsabiliIds.includes('p07')) rto.responsabiliIds.push('p07');
+             if(!Array.isArray(rto.capiAreaIds)) rto.capiAreaIds=[]; }
+    // Parametri globali formula F (§F): curva continua a 2 tratti.
+    // r(K<80)=0; r(80..100)=1,0%×(K-80)/20; r(100..130)=1,0%+0,05%×(K-100);
+    // r(K>=130)=2,5% (cap). Compenso = r × margine diretto (0 se margine<=0).
+    // Priorità nel pool comprimibile (default 2, come budget aree).
+    if(!s.compensiF||typeof s.compensiF!=='object'){
+      s.compensiF={ enabled:true, soglia:80, base:0.01, incremento:0.0005, cap:0.025, priorita:2 };
+    }
+  }},
 ];
 function migrateSchema(s){
   let v=s.schemaVersion||0;
@@ -3663,6 +3702,62 @@ function totTasse(){return S.tasse.reduce((s,g)=>s+g.voci.reduce((ss,v)=>ss+(v.v
 function totSistema(){return(S.sistemaFissi||[]).reduce((s,v)=>s+(v.val||0),0);}
 function totPersonale(){return S.personale.reduce((s,p)=>s+calcPersona(p).totale,0);}
 function totCommCRM(){return S.personale.reduce((s,p)=>s+calcPersona(p).commissioni,0);}
+
+// ══════════════════════════════════════════════════════════════════════════
+// §F — Compensi responsabili di macro area (non capo area).
+// isRespF(p): p è responsabile designato di un'area MACRO (parentId nullo/
+//   vuoto) e NON è in capiAreaIds di quell'area. Ritorna la prima area
+//   corrispondente (una persona può essere in più aree, ma per F prendiamo
+//   la prima macro dove è responsabile-non-CA).
+// aliquotaF(K): curva continua a due tratti coi parametri di S.compensiF.
+// calcCompensoF(p): {area, K, r, margine, importo} — importo=0 se non
+//   applicabile / KPI insufficiente / margine ≤ 0. È il valore RICHIESTO;
+//   se il pool P2/P3 comprime, il liquidato reale è < importo (mostrato
+//   nella UI). Non tocca il motore della cascata: contribuisce come nuova
+//   voce comprimibile in flow() (vedi patch a pool2e3).
+// ══════════════════════════════════════════════════════════════════════════
+function isRespF(p){
+  if(!p||!Array.isArray(S.aree)) return null;
+  // "Macro area" nel senso funzionale = area con budget proprio (variabilePct
+  // o fisso > 0). Include comm/prod/amm/mkt/form/sis (top-level e sotto).
+  // Esclude rto/asf/centri (budget 0, sono nodi tecnici) → Samuele (RTO)
+  // resta fuori. Regola verificata sul seed 2026: le 5 persone confermate
+  // (Roberto/Marco/Giovanna/Francesco/Niccolò) sono le sole a soddisfare
+  // "responsabile + area con budget + non CA".
+  for(const a of S.aree){
+    const bv=(a.budget&&a.budget.variabilePct)||0;
+    const bf=(a.budget&&a.budget.fisso)||0;
+    if(bv<=0 && bf<=0) continue; // aree senza budget proprio: fuori da F
+    const resp=Array.isArray(a.responsabiliIds)?a.responsabiliIds:[];
+    const capi=Array.isArray(a.capiAreaIds)?a.capiAreaIds:[];
+    if(resp.includes(p.id)&&!capi.includes(p.id)) return a;
+  }
+  return null;
+}
+function aliquotaF(K){
+  const cf=S.compensiF||{};
+  const soglia=cf.soglia||80, base=cf.base||0.01, inc=cf.incremento||0.0005, cap=cf.cap||0.025;
+  if(K<soglia) return 0;
+  if(K<100)    return base*(K-soglia)/(100-soglia); // 0 → base linearmente
+  const r=base+inc*(K-100);
+  return Math.min(r,cap);
+}
+function calcCompensoF(p){
+  const cf=S.compensiF||{};
+  if(!cf.enabled) return {area:null,K:null,r:0,margine:0,importo:0};
+  const a=isRespF(p);
+  if(!a) return {area:null,K:null,r:0,margine:0,importo:0};
+  const K=(typeof kpiA==='function')?kpiA(a):null;
+  const kNum=(K==null?0:K);
+  const r=aliquotaF(kNum);
+  const bud=areaBudget(a), cost=areaCosto(a);
+  const margine=bud-cost;
+  const importo=(margine>0&&r>0)?margine*r:0;
+  return {area:a,K:kNum,r,margine,importo};
+}
+function totCompensoFRichiesto(){
+  return S.personale.reduce((s,p)=>s+calcCompensoF(p).importo,0);
+}
 
 // areaBudget è usata anche da calcSlot — deve stare qui
 function areaBudget(a){return(a.incPct/100)*S.incassato;}
@@ -3894,13 +3989,17 @@ function flow(){
 
   // Pool comprimibile (§8): voci prioritarie NON a priorità 1 (demote a 2/3 da
   // Roberto) + budget di ogni area (fisso+variabile%, bucket sulla priorità
-  // propria dell'area, default 2) + premi (voce residuale semplice, default 3).
+  // propria dell'area, default 2) + premi (voce residuale semplice, default 3)
+  // + §F compensi responsabili (KPI-driven, default P2, cap 2,5% margine).
+  const compFRich=(typeof totCompensoFRichiesto==='function')?totCompensoFRichiesto():0;
+  const compFPrio=(S.compensiF&&S.compensiF.priorita)||2;
   const pool2e3=[
     ...prioritariBase.filter(v=>v.priorita!==1),
     ...S.aree.map(a=>({nome:a.nome,
       val:((a.budget&&a.budget.fisso)||0)+(((a.budget&&a.budget.variabilePct)||0)/100)*inc,
       priorita:a.priorita||2})),
     {nome:'Premi',val:premiTotaleRichiesto(),priorita:(S.premi&&S.premi.priorita)||3},
+    {nome:'Compensi F (responsabili)',val:compFRich,priorita:compFPrio},
   ];
   const poolP1=pool2e3.filter(v=>v.priorita===1).reduce((s,v)=>s+v.val,0); // "protetta" dentro il pool
   const poolP2Rich=pool2e3.filter(v=>v.priorita===2).reduce((s,v)=>s+v.val,0);
@@ -3918,7 +4017,7 @@ function flow(){
          garantito,garantitoPersonale,prioritariP1,liquidita,
          budgetAreeFisso:S.aree.reduce((s,a)=>s+((a.budget&&a.budget.fisso)||0),0),
          budgetAreeVar:S.aree.reduce((s,a)=>s+(((a.budget&&a.budget.variabilePct)||0)/100)*inc,0),
-         premi:premiTotaleRichiesto(),poolP2Rich,poolP3Rich,poolP2Eff,poolP3Eff,poolP1};
+         premi:premiTotaleRichiesto(),compensiFRich:compFRich,poolP2Rich,poolP3Rich,poolP2Eff,poolP3Eff,poolP1};
 }
 
 
@@ -5032,6 +5131,49 @@ function toggleCapoArea(areaId,pid){
   renderAll();
   openSchedaArea(areaId);
 }
+// §F — Pannello parametri formula compensi responsabili (CDA).
+function openCompensiFParams(){
+  if(!S.compensiF) S.compensiF={ enabled:true, soglia:80, base:0.01, incremento:0.0005, cap:0.025, priorita:2 };
+  const cf=S.compensiF;
+  document.getElementById('pop-title').textContent='§F — Parametri compenso responsabili';
+  document.getElementById('pop-act').style.display='none';
+  document.getElementById('pop-body').innerHTML=`
+    <div style="font-size:12px;color:var(--ink3);margin-bottom:10px;line-height:1.5">
+      Formula continua a due tratti sul <strong>margine diretto</strong> di macro area (budget − costo del solo nodo). Applicata ai responsabili macro NON flaggati Capo Area. §F entra nel <strong>pool comprimibile P${cf.priorita||2}</strong>: se la liquidità non basta, viene compresso insieme al budget aree.
+    </div>
+    <div class="pf"><label>Soglia KPI di attivazione (%)</label><input type="number" id="cf-soglia" value="${cf.soglia}" min="0" max="100" step="1"></div>
+    <div class="pf"><label>Aliquota base al 100% KPI (%)</label><input type="number" id="cf-base" value="${(cf.base*100).toFixed(3)}" step="0.001"></div>
+    <div class="pf"><label>Incremento per 1 punto KPI oltre 100 (%)</label><input type="number" id="cf-inc" value="${(cf.incremento*100).toFixed(4)}" step="0.001"></div>
+    <div class="pf"><label>Cap aliquota (%)</label><input type="number" id="cf-cap" value="${(cf.cap*100).toFixed(3)}" step="0.001"></div>
+    <div class="pf"><label>Priorità pool (1..3)</label>
+      <select id="cf-prio">
+        <option value="1" ${cf.priorita===1?'selected':''}>1 (mai compresso)</option>
+        <option value="2" ${(cf.priorita||2)===2?'selected':''}>2 (default)</option>
+        <option value="3" ${cf.priorita===3?'selected':''}>3 (primo a comprimersi)</option>
+      </select>
+    </div>
+    <div style="display:flex;gap:10px;font-size:12px;flex-wrap:wrap;margin-top:8px">
+      <label><input type="checkbox" ${cf.enabled?'checked':''} id="cf-en"> §F attivo</label>
+    </div>
+    <div style="margin-top:12px;padding:8px 10px;background:var(--sheet);border-radius:var(--r);font-size:11px">
+      <strong>Preview aliquota:</strong> K=80%→${(aliquotaF(80)*100).toFixed(2)}% · K=100%→${(aliquotaF(100)*100).toFixed(2)}% · K=115%→${(aliquotaF(115)*100).toFixed(2)}% · K=130%→${(aliquotaF(130)*100).toFixed(2)}% · K=200%→${(aliquotaF(200)*100).toFixed(2)}%
+    </div>
+    <div style="margin-top:12px;display:flex;gap:6px">
+      <button class="btn sm prim" onclick="_saveCompensiFParams()">Salva parametri</button>
+      <button class="btn sm" onclick="closePop()">Chiudi</button>
+    </div>`;
+  openPopover();
+}
+function _saveCompensiFParams(){
+  const g=id=>document.getElementById(id);
+  S.compensiF.soglia=parseFloat(g('cf-soglia').value)||80;
+  S.compensiF.base=(parseFloat(g('cf-base').value)||1)/100;
+  S.compensiF.incremento=(parseFloat(g('cf-inc').value)||0.05)/100;
+  S.compensiF.cap=(parseFloat(g('cf-cap').value)||2.5)/100;
+  S.compensiF.priorita=parseInt(g('cf-prio').value)||2;
+  S.compensiF.enabled=g('cf-en').checked;
+  closePop(); renderAll(); notify('Parametri §F salvati');
+}
 // ══════════════════════════════════════════════════════════════════════════
 // §H — Scheda AREA aperta dal click su una card nell'organigramma.
 // Sostituisce l'apertura del popover "Configura persona" (che apriva il
@@ -5135,6 +5277,37 @@ function openSchedaArea(areaId){
       <div>${respLine}</div>
       ${respAdder}
     </div>
+    ${(()=>{
+      // §F — Compensi responsabili (curva continua KPI-driven, cap 2,5%).
+      // Mostra solo per aree macro con almeno un responsabile non-CA.
+      if(a.parentId||!respAll.length) return '';
+      const respF=respAll.filter(p=>{
+        const capi=Array.isArray(a.capiAreaIds)?a.capiAreaIds:[];
+        return !capi.includes(p.id);
+      });
+      if(!respF.length) return '';
+      const cf=S.compensiF||{};
+      if(!cf.enabled) return '<div style="margin-bottom:10px;padding:6px 10px;background:var(--sheet);border-radius:var(--r);font-size:11px;color:var(--ink3)">§F disattivo (S.compensiF.enabled=false)</div>';
+      const rows=respF.map(p=>{
+        const F=calcCompensoF(p);
+        const badge=F.importo>0?'var(--green)':'var(--ink3)';
+        return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid rgba(0,0,0,.03);font-size:11px">
+          <span style="flex:1">${p.nome}</span>
+          <span style="color:var(--ink3)">K=${(F.K||0).toFixed(0)}%</span>
+          <span style="color:var(--ink3)">r=${(F.r*100).toFixed(3)}%</span>
+          <span style="color:var(--ink3)">margine ${fmt(F.margine)}</span>
+          <span class="mono" style="min-width:80px;text-align:right;color:${badge};font-weight:600">${fmt(F.importo)}</span>
+        </div>`;
+      }).join('');
+      return `<div style="margin-bottom:10px;padding:8px 10px;background:var(--sheet);border-radius:var(--r);border:1px dashed var(--lift)">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <span style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em">💰 Compenso §F responsabili — richiesto/mese</span>
+          <button class="btn xs" onclick="openCompensiFParams()" title="Parametri formula §F">⚙ formula</button>
+        </div>
+        ${rows}
+        <div style="font-size:10px;color:var(--ink3);margin-top:5px">Formula: r(K&lt;${cf.soglia}%)=0; r(${cf.soglia}–100%)=${(cf.base*100).toFixed(1)}%×(K−${cf.soglia})/${100-cf.soglia}; r(100–130%)=${(cf.base*100).toFixed(1)}%+${(cf.incremento*100).toFixed(3)}%×(K−100); cap ${(cf.cap*100).toFixed(1)}%. Base = margine diretto area.</div>
+      </div>`;
+    })()}
     ${persArea.length?`<div style="margin-bottom:10px">
       <div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">${persArea.length} persone</div>
       <div style="display:flex;flex-wrap:wrap;gap:3px">
