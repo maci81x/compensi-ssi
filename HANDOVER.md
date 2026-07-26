@@ -1,6 +1,6 @@
 # HANDOVER — Compensi SSI
 
-Stato del lavoro al **2026-07-24** (blocco finale A–D completati e validati),
+Stato del lavoro al **2026-07-26** (blocco finale A–D e L completati e validati),
 per continuare su un altro portatile.
 
 ## Come ripartire
@@ -85,12 +85,56 @@ Branch **`blocco-finale`**. Commit in ordine: A → fix flusso → B → C → D
    confini "chiusa".
 5. Persone ed erogato per le nuove aree arrivano con **E** e **I**.
 
-### ⏳ DA FARE — blocchi E, F, G, H, I, L
+### ✅ L — CRUD ovunque + fix KPI Commerciale (2026-07-26)
+
+Schema portato a **v9**. Fix e sei sotto-blocchi, ciascuno con smoke test
+Playwright (`/tmp/ssi-check/smoke-l*.mjs`) e verifica invarianti dopo ogni
+commit (`/tmp/ssi-check/invariants.mjs`):
+
+- **Fix (7aeb4bf)** — Il KPI Commerciale aveva default `DVR da chiudere`
+  (era da tecnici). Ora default vuoto con placeholder "es. Preventivi in
+  trattativa da chiudere"; migrazione azzera lo stato esistente solo se
+  ancora sul vecchio placeholder.
+- **L1 (c83054e)** — Persone: helper globali `deletePersona`/`renamePersona`
+  con pulizia riferimenti (`S.areeCA.agentiIds`, `caId`, `datiArea.comm.
+  agenti`, `datiArea.form._per`) prima dello splice. Bottoni ✏/⚙/✕ affiancati
+  al nome in Step 4 Risorse, tabella agenti Commerciale (`buildAgentRow`),
+  formatori Formazione, pop persona. Amm/Mkt/SorvSan/Seg non elencano
+  persone individualmente — CRUD accessibile via Step 4 o organigramma.
+- **L2/L3 (f7e366d)** — Aree + Centri di costo: `renameArea`/`deleteArea`
+  con ri-genitorializzazione dei figli al parent (no orfani), pulizia
+  area/areaResp/slots.area delle persone, e **blacklist S.areeCancellate**
+  per aree ufficiali eliminate (rispettata da `normalizzaOrgUfficiale`, così
+  la delete è persistente). Pannello "Aree ufficiali cancellate" in
+  Struttura con bottone ↺ ripristino. Bottoni ✏/🗑 su ogni riga Struttura
+  e Centri di costo + "+ Nuovo centro (sotto ASF)".
+- **L4 (989a5f9)** — Griglia Produzione tecnici: bottone 🗑 per riga tecnico
+  che disattiva lo slot (`comp.generato_tecnico.on=false`) — la riga
+  sparisce dalla griglia ma slot/valori/storico restano. Ri-attivabile
+  dal pop persona. Non-distruttivo.
+- **L5 (87679dd)** — Colonne griglia dinamiche: `VOCI_TEC` era hardcoded,
+  ora è seed default `VOCI_TEC_DEFAULT` che alimenta **S.produzioneVoci**
+  in migrazione v9. Toolbar CRUD sopra la griglia (✏ rinomina · ⇄ unità
+  €↔h · ✕ elimina · + Nuova voce). `calcSlot.generato_tec` itera sulla
+  lista dinamica — con seed default il risultato è identico al vecchio
+  hardcoded (verificato: 1000·0,22 + 10·25 + 5·150 = 1220 prima e dopo).
+- **L6 (acfe765)** — KPI per area (scope minimale): sui micro-KPI esistenti
+  aggiunti ✕ delete + rename inline sul nome; nuovo array parallelo
+  **S.kpiCustom[areaKey]=[]** con card CRUD (nome/target/effettivo/unità)
+  esposte anche nelle aree senza micro. `S.datiArea`/`S.kpiObiettivi`
+  non toccati (rifattorizzazione completa lasciata a §E).
+
+Invarianti tenuti in ogni commit: Sistema 43.994,28 · garantito personale
+40.916,15 · liquidità 3.537 · fornitori totali 20.356,43.
+
+### ⏳ ANCORA DA FARE — blocchi E, F, G, H, I
 
 - **E — KPI**: precaricare la proposta KPI per ogni area (marcati calcolabili vs
   manuali), tutti creabili/modificabili/monitorabili/eliminabili; **pannello
   target unico** dove il CDA imposta i target per tutte le aree con peso di
-  stagionalità applicato in automatico (§C già pronta).
+  stagionalità applicato in automatico (§C già pronta). *(§L L6 minimale copre
+  già create/rename/delete di micro-KPI e KPI custom; §E completa questo
+  rendendoli pre-caricati per area e con pannello target unico.)*
 - **F — Compensi responsabili**: fisso a mano modificabile (riproporziona tutto
   in tempo reale); variabile con **crescita continua** (no scaglioni): KPI<80→0;
   80–100 → aliquota 1,0%×(KPI−80)/20; ≥100 → 1,0%+0,05%×(KPI−100); cap 2,5% a
@@ -108,13 +152,10 @@ Branch **`blocco-finale`**. Commit in ordine: A → fix flusso → B → C → D
   erogato, tipologia, centro di costo), modificabile/eliminabile. Margine col
   metodo "Marginalità" del PF: prezzo vendita netto − var. commerciali − var.
   interni − incidenza costi fissi.
-- **L — CRUD ovunque**: modificare/eliminare nomi dipendenti e collaboratori in
-  OGNI contesto; oggi la card Segreteria non è modificabile — rendere coerente
-  ovunque.
 
 ### Note tecniche per continuare
 
-- Schema attuale **v8**. Ogni bump di `CURRENT_SCHEMA_VERSION` richiede un nuovo
+- Schema attuale **v9**. Ogni bump di `CURRENT_SCHEMA_VERSION` richiede un nuovo
   step in `SCHEMA_MIGRATIONS` (migra aggiungendo solo ciò che manca, mai
   sovrascrive dati reali).
 - Verifica rapida senza toccare il cloud condiviso: Playwright con rete Supabase
