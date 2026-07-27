@@ -1,101 +1,477 @@
 # HANDOVER — Compensi SSI
 
-**Stato finale al 2026-07-24 — Fasi 1-12 chiuse, app in produzione, consegnata al team SSI.**
+Stato del lavoro al **2026-07-27** — **BLOCCO FINALE COMPLETO + BATCH2 UX**.
+Completati e validati: A, B, C, D, L, G, H, F, E1, I; E2 rinviato con nota;
+audit universale eseguito; batch2 UX (P1-P5) integrato per rifiniture pre-
+merge (KPI risultato + catalogo servizi + fix bug erogato + modelli import
++ guide in-page). Regression 12/12 verde.
 
-Live: **https://maci81x.github.io/compensi-ssi/**
-Repo: **https://github.com/maci81x/compensi-ssi**
-Branch attivo: **`main`**.
+## 🎯 Stato finale del branch `blocco-finale`
 
----
+**Il branch è pronto per il merge su `main`, ma il merge NON è stato
+eseguito e va fatto solo dopo un test manuale end-to-end.** Il sito
+GitHub Pages (`maci81x.github.io/compensi-ssi`) resta sul `main`
+precedente finché non si decide di pubblicare.
 
-## Numeri chiave validati (QA finale headless, Playwright)
+Regression finale automatizzata: **12/12 verdi** — invariants + smoke
+L1..L6 + G + H + F + E1 + I + batch2. Invarianti confermati IDENTICI
+dal blocco D (2026-07-24): **Sistema 43.994,28 · Garantito personale
+40.916,15 · Liquidità 3.537 · Fornitori totali 20.356,43**.
 
-| Voce | Valore |
-|---|---:|
-| Garantito personale (dipendenti + soci) | **€ 40.916,15 / mese** |
-| Sistema (costi fissi + overhead) | **€ 43.994,28** |
-| Voci prioritarie (leasing/F24/IVA/rateizzi/TFR) | **€ 6.088,56** |
-| Tasse (IRES/IRAP/IVA acconto/INPS titolari) | **€ 10.500** |
-| Altri costi operativi (STIMA, editabile) | **€ 15.000** |
-| CDA | **€ 13.600** |
-| Dipendenti agganciati (match import ↔ personale) | **13 / 13** |
-| Schema version corrente | **10** |
-| Cascata somma 100% dell'incassato | ✓ |
-| Semaforo X/Y/Z coerente Dashboard ↔ Simulatore | ✓ (stessa `flow()`) |
-| Pagine navigate senza errore console | **17 / 17** |
-| **Margine modello a inc 174.265 (media reale 2026)** | **20,34 %** |
-| **Margine reale YTD (foglio Controllo di gestione)** | **23,41 %** |
-| **Δ modello vs reale** | **3,07 pt** ✅ entro tolleranza ±5 pt |
+## 🆕 Batch2 UX (2026-07-27) — 5 rifiniture pre-merge
 
----
+Solo UI/dato di display + estensione motore KPI (che al default a KPI=0
+non muove nulla). Invarianti confermati IDENTICI.
 
-## Struttura aree definitiva (13 aree, tassonomia v10)
+- **P1 — KPI risultato mensile + toggle "considera"** (sblocca §F):
+  Rinominata la colonna "Effettivo" → "Risultato mese" nel pannello 🎯
+  KPI & target. Aggiunta colonna "Considera" per i KPI custom (default
+  true; se OFF il KPI non concorre a `kpiA(a)`). Esteso `kpiA(a)` per
+  includere anche `S.kpiCustom[a.id]` (prima solo `a.micro`). Verifica:
+  portando i micro-KPI di comm a K=100%, Roberto passa da F=0 a F=198,52;
+  azzerando torna a 0. Nuovo helper `kpiRaggiungimentoCustom(k)`.
+- **P2 — Catalogo servizi centro + select servizio/tipologia + fix bug
+  erogato**: `S.cataloghiServizi[centroId]=[{id,nome,tipologia}]` con
+  seed lazy: (1) centri tecnici → VOCI_TEC_DEFAULT (Documenti/Analisi/
+  RSPP/…); (2) altri centri con micro/fornitori → derivazione; (3)
+  fallback 3 placeholder etichettati "Servizio A/B/C (placeholder —
+  rinomina)". `TIPOLOGIE_EROGATO_DEFAULT` = ['Standard','Extra',
+  'Ricorrente','Una tantum','Straordinario']. Helper add/rename/delete
+  + `importCatalogoServiziFile`. In `renderErogatoPage` "Servizio" e
+  "Tipologia" ora sono `<select>` popolati dal catalogo del centro
+  (mai testo libero); sezione collassabile "📚 Catalogo servizi di
+  questo centro" con warning se contiene placeholder. **Fix bug**
+  del valore=10000 non committato: aggiunto `oninput` (oltre a
+  `onchange`) sull'input number → il valore atterra in S al primo
+  carattere. Verifica: digitando 10000 e cliccando toggle senza tab,
+  attivo passa correttamente da 0 a 10000.
+- **P3 — Checkbox "Ignora persona" visibile**: era in linea con isResp/
+  isCapoArea (spesso tagliata dal flex-wrap). Ora è in un box dedicato
+  con background che cambia (amber se attiva) e testo esplicativo
+  dinamico che conferma lo stato.
+- **P4 — Modelli scaricabili accanto a ogni import**: `_downloadCSV(name,
+  rows)` genera CSV con BOM per Excel IT (delimiter `;`). Tre template
+  attuali:
+  - `downloadTemplateErogato(areaId)`: intestazioni + esempio +
+    LEGENDA con servizi ammessi del centro + tipologie ammesse
+  - `downloadTemplateCatalogoServizi()`: nome/tipologia + legenda
+  - `downloadTemplateKpiCustom()`: area/nome/target/effettivo/unita/
+    note + elenco aree disponibili
+  Pulsante "📄 Modello" affiancato a ogni pulsante "📥 Import" nelle
+  pagine Erogato, KPI targets, e nella sezione catalogo servizi.
+- **P5 — Guide "come funziona" in ogni pagina**: componente CSS
+  `.guida-box` (`<details>` collassabile) aggiunto in cima a: Erogato,
+  KPI targets, Struttura, Sistema, Produzione, Centri di costo, e le
+  6 pagine area (Comm/Form/Amm/Mkt/SorvSan/Seg). Contenuti brevi,
+  operativi, in italiano: cosa fa la pagina, come inserire manuale/
+  import, significato di toggle e delete, soglia 80 per §F dove
+  pertinente.
 
-```
-CDA (Utili)  ── Segreteria (staff, a lato)
- └─ SSI srl  (− GRFM 5 %)
-     ├─ AMMINISTRAZIONE                 (costo)
-     ├─ COMMERCIALE (17,25 %)
-     │    └─ MARKETING (5,77 %)         (autonomo sotto Commerciale)
-     └─ PRODUZIONE (11,31 %)
-          ├─ FORMAZIONE (8,5 %)          — sotto-area con budget/KPI/fornitori propri
-          ├─ SORVEGLIANZA SANITARIA      — sotto-area con fornitori (10 medici)
-          └─ CENTRI DI COSTO (chiusa=true, rollup su Produzione):
-              · Antincendio  · Ambiente  · Cantieri
-              · RSPP  · Verifiche Terra  · Documenti
-              + eventuali centri custom aggiunti runtime dalla pagina "Centri di costo"
-```
+Nuovo smoke `tests/smoke-batch2.mjs` verifica in un colpo:
+ - P1: kpiA include kpiCustom (17% quando aggiungi un KPI custom
+   100/100); Roberto F=198,52 al K=100%; torna a 0 al reset
+ - P2a: seed catalogo corretto (c_ambiente=12 voci da VOCI_TEC,
+   c_privacy=3 placeholder, rto=3, tipologie=5)
+ - P2b: CRUD catalogo idempotente (add + dedup + delete)
+ - P2c: bug erogato fixato (10000 + toggle = attivo 10000)
+ - P3: checkbox `pp-escl` esistente, visibile, box con background
+ - P4: 4 funzioni download definite
+ - P5: guide presenti su 12 pagine principali
+ - INVARIANTI IDENTICI al default
 
-**Ripartizione STIMA % del fatturato** sulle 8 unità produttive (somma = 100):
-Sorveglianza Sanitaria 20 · Antincendio 18 · Documenti 15 · Formazione 15 · RSPP 12 · Ambiente 10 · Cantieri 8 · Verifiche Terra 2.
+## 📋 Matrice CRUD dopo audit universale (2026-07-27)
 
-Ogni area ha un **KPI macro** (`a.macro`) modo auto (media pesata dei micro) o manuale, che fa da cancello per i premi area.
+Per ogni contesto dati: (M) manuale · (I) import · (X) ignora · (D) elimina.
 
----
+| Contesto | M | I | X | D | Note |
+|---|:-:|:-:|:-:|:-:|---|
+| Persone (S.personale) | ✔ | ✔ | ✔ *new* | ✔ | Toggle 👁 "Ignora nel calcolo" (`p.escludiDaCalcolo`) nel pop persona, default OFF. Import dipendenti Excel già presente. |
+| Aree/Organigramma (S.aree) | ✔ | ✗ | ✔ | ✔ | `chiusa` flag + blacklist `S.areeCancellate` per ufficiali. Import batch aree non pertinente (config statica). |
+| Centri di costo | ✔ | ✗ | ✔ | ✔ | Come aree; `chiusa:true` esclude dal rollup. |
+| KPI base (a.micro) | ✔ | ✔ | ✔ *batch2* | ✔ | Sempre inclusi in `kpiA(a)` (fonte DEF, i micro sono la baseline). "Considera" nel pannello 🎯 dice "sempre" — non escludibili. Per escludere: eliminare o azzerare target. |
+| KPI custom (S.kpiCustom) | ✔ | ✔ | ✔ *batch2* | ✔ | Nuovo toggle "Considera" (default true): se OFF il KPI custom NON entra in `kpiA(a)` senza cancellarlo. Il **risultato mese** è il campo `effettivo` (rinominato in UI "Risultato mese"). |
+| Catalogo servizi centro (S.cataloghiServizi) *batch2* | ✔ | ✔ | ✗ | ✔ | Nuovo modello: `{[centroId]:[{id,nome,tipologia}]}`. Seed lazy dai VOCI_TEC per centri tecnici, placeholder per gli altri. Alimenta i `<select>` "Servizio" nella pagina Erogato. Import con dedup case-insensitive. |
+| Tipologie erogato (S.tipologieErogato) *batch2* | ✔ | ✗ | ✗ | ✔ | Lista fissa (default 5 valori). Alimenta `<select>` "Tipologia" delle righe erogato. |
+| Catalogo proposte KPI (§E1a) | ✔ | — | — | — | Sorgente dati statica (KPI_PROPOSTE); ogni proposta si "promuove" a KPI custom con click. |
+| Target KPI | ✔ | ✔ | — | — | Pannello unico §E1b + import batch KPI include target. |
+| Responsabili (responsabiliIds/capiAreaIds) | ✔ | ✗ | ✔ | ✔ | Editor nella scheda AREA (§H). Import non necessario (configurazione statica). "Ignora" = rimuovi resp. |
+| Erogato per servizio (S.erogatoServizi) | ✔ *new* | ✔ *new* | ✔ *new* | ✔ *new* | §I completo: manuale + import Excel/CSV additivo con dedup + toggle "considera" per riga + delete. |
+| Voci sistema (S.sistemaFissi) | ✔ | ✔ | ✔ *new* | ✔ | Toggle 👁 sulla riga in pagina Sistema (`v.escludi`), default OFF. Import PF già presente. |
+| Fornitori area | ✔ | ✔ | ✔ *new* | ✔ | Toggle 👁 sulla riga in Centri di costo (`f.escludi`), default OFF. Import PF popola fornitori. |
+| Dati mensili per area | ✔ | ✗ | — | ✔ | Editor per area + resetAreaDati. Import non pertinente (dati mese ≠ import batch). |
+| Snapshot mensili (S.snaps) | ✔ | — | — | ✔ | Snap automatico + delete cloud/local. |
+| Prioritari (S.prioritari) | ✔ | — | — | ✔ | Editor in pagina Sistema. |
+| Voci griglia Produzione (S.produzioneVoci) | ✔ | ✗ | — | ✔ | Toolbar CRUD in Produzione (§L L5). |
 
-## Chi inserisce cosa (accountability)
+*Le voci contrassegnate `*new*` sono aggiunte del batch finale 2026-07-27.*
 
-| Chi | Cosa | Frequenza |
-|---|---|---|
-| **Roberto Macinai** (Direzione) | Incassato del mese, KPI commerciali area, validazione slider premi, snapshot mensile, simulatore what-if | **Mensile** (a inizio/fine mese) |
-| **Francesco Martini** (Amministrazione) | Sistema/Prioritari/Tasse quando cambia un contratto o una rata; personale (nuovi dip, cambio contratto); import Excel PF quando aggiornato; ricavo per servizio "Manuale €" quando arriva dalla contabilità | **All'occorrenza** + **mensile per aggiornare val singoli** |
-| **Giovanna** | Dati Produzione tecnici (9 colonne: Documenti €, Formazione h, Analisi €, RSPP €, Pacchetti €, Laika h, Cantieri €, Estintori €, Sorv.San. €), ripartizione ore tecnici sui centri | **Mensile** (metà mese o fine mese) |
-| **Samuele** | Coordinamento Produzione tecnici (validazione dati Giovanna, override ore effettive per centro dove serve) | **Mensile** |
-| **Niccolò** | KPI Formazione (ore erogate/pianificate, corsi completati, aule, attestati), lista docenti attivi, dati micro-KPI area Formazione | **Mensile** |
-| **Marco Macinai** (Dir. Marketing) | Costo per lead, ROI campagne, lead generati; fornitori Marketing (Google Ads, Facebook Ads, agenzie); KPI area Marketing | **Mensile** |
-| **Direttore d'area** (dove definito) | Distribuzione slider premi tra le persone della propria area a fine mese | **Mensile** (dopo che Roberto ha validato il pool) |
+**Regola comune audit**: tutti i toggle `escludi`/`escludiDaCalcolo`/
+`considera` hanno default sicuro (OFF/false) → gli invarianti seed
+restano identici. Ogni import è additivo con dedup — mai sovrascrittura
+in silenzio.
 
-**Ordine di inserimento suggerito ogni mese**:
-Import PF (se aggiornato) → aggiorna Sistema/Prioritari/Tasse cambiati → Incassato del mese → Produzione tecnici + ripartizione ore → Commerciale (venduto agenti) → Aree operative (KPI micro + macro) → Ricavo per centro (STIMA % o REALE se disponibile) → Compensi risorsa per risorsa → Premi/Direttori (slider + distribuzione) → **Snapshot** (📅 in alto a destra della pagina Storico).
+## 📜 Stato completo dei blocchi
 
-**Backup**: Esporta JSON periodicamente (es. dopo ogni snapshot mensile) come copia locale indipendente dal cloud.
+| Blocco | Stato | Commit | Note |
+|---|---|---|---|
+| A | ✅ | `a415de2` | Incassato reale |
+| Fix flusso | ✅ | `c975d9e` | altriCostiOperativi + GRFM 2% |
+| B | ✅ | `025097f` | Import storico vendite |
+| C | ✅ | `55b45e4` | Stagionalità (indici, non ancora applicati ai target — vedi E2 sotto) |
+| D | ✅ | `c219764`+`851ecd3` | Organigramma ufficiale |
+| L (L1..L6) | ✅ | `c83054e`..`acfe765` | CRUD ovunque + fix KPI Commerciale |
+| G | ✅ | `a95d751` | Incidenza aree 2 livelli + fix %% |
+| H | ✅ | `a95d751`+`5d53930` | Scheda AREA + responsabili distinti + nodi org |
+| F | ✅ | `6339b01` | Compensi responsabili macro (curva cap 2,5%) |
+| E1 | ✅ | `ed1bd3f` | Catalogo proposte + pannello target |
+| **I + audit** | ✅ | *(questo commit)* | Erogato per servizio + audit CRUD universale |
+| **E2** | ⏸ RINVIATO | — | Vedi nota sotto. |
 
----
+## ⏸ E2 (stagionalità sui target KPI) — RINVIATO
 
-## Cosa resta aperto (roadmap futura, out-of-scope Fasi 1-12)
+**Motivo**: mancano i dati storici sufficienti per costruire indici di
+stagionalità affidabili applicabili automaticamente ai target del mese
+corrente. Gli indici già in `S.stagionalita` (§C) coprono `venduto`/
+`incassato` sugli anni 2024-2025, ma per i KPI diversi da fatturato (es.
+"Nr visite mediche", "Nr corsi erogati", "Nr appuntamenti") non abbiamo
+storico storicizzato per KPI/area/mese.
 
-1. **Ricavi per servizio dal dato vero**: la ripartizione STIMA % del fatturato (SPEC §D, Fase 7) è il default sulle 8 unità produttive. Quando arriveranno i ricavi per servizio veri (dalla contabilità Odoo o dal gestionale), Francesco li inserisce nel campo **"Manuale €"** della pagina "Centri di costo" unità per unità: la stima viene sostituita automaticamente (badge REALE) senza cambiare modo.
+**Piano ripresa**: riprendere l'anno prossimo (2027) quando lo storico
+2026 mensile per KPI sarà disponibile:
+1. Aggiungere `S.storicoKPI[anno][areaId][kpiKey]=[12]` con seed dallo
+   snapshot mensile
+2. `ricalcolaStagionalitaKPI()` analogo a `ricalcolaStagionalita()` di §C
+3. Nel pannello target unico (§E1b): toggle "applica stagionalità" per
+   riga → target destagionalizzato = target medio × indice / 100
+4. Il compenso §F userà automaticamente il target destagionalizzato (K =
+   effettivo / target destagionalizzato × 100)
 
-2. **Spacchettamento "altri costi operativi" € 15.000/mese**: è una STIMA aggregata (SPEC §E, Fase 8) che copre ammortamenti hardware/software non in leasing, materiali di consumo, subappalti occasionali, provvigioni variabili agenti — voci del foglio Controllo di gestione non ancora catalogate puntualmente nel modello. Quando arriveranno le fatture per queste voci (materiali, subappalti, ammortamenti), spacchettarle in voci concrete di `sistemaFissi` con `areaId` corretto e portare `S.altriCostiOperativi` a 0. L'infrastruttura per farlo è già pronta nella pagina "Sistema" (blocchi Fissi/Variabili con filtri e CRUD per voce/area/natura).
+Nel frattempo l'utente inserisce i target manualmente nel pannello unico
+(§E1b) — che è già coerente col mese in corso.
 
-3. Nessun'altra pendenza tecnica: policy RLS su `compensi_snapshots` sistemate, realtime abilitato, cloud allineato allo schema corrente, popup di versione eliminato.
-
----
+## ⏭ Nessun blocco pendente
 
 ## Come ripartire
 
 ```bash
 git clone https://github.com/maci81x/compensi-ssi.git
 cd compensi-ssi
+git checkout blocco-finale        # branch del blocco finale (A–D fatti)
 python3 -m http.server 8791
 # poi apri http://localhost:8791/
 ```
 
-Nota: i tre file Excel sorgente (`PF SI 2026.xlsx`,
-`26_Dettaglio costi dipendenti.xlsx`, `26_Controllo di gestione.xlsx`) servono
-solo per **aggiornamenti futuri** dei dati — i dati veri di questi file sono
-già dentro `DEF` in `index.html`, non serve ricaricarli per continuare a
-lavorare.
+> **Percorso reale del repo su questa macchina: `~/Sites/compensi-ssi`**
+> (NON `~/Downloads/compensi-ssi` — quel path non esiste qui, anche se compare
+> negli appunti di avvio).
+
+Repo: **https://github.com/maci81x/compensi-ssi**
+Branch di lavoro attuale: **`blocco-finale`** (contiene A–D; parte da
+`ssi-compensi-import-phase`). **Non è mergiato su `main`, non toccare Pages** —
+il sito live resta quello attuale su `main`. Nessun merge finché il blocco
+finale non è validato tutto insieme.
+
+Server locale già attivo in dev su `http://localhost:8791/`.
+
+Nota: i tre file Excel sorgente (`PF SI 2026.xlsx`, `26_Dettaglio costi dipendenti.xlsx`, `26_Controllo di gestione.xlsx`) servono solo per **aggiornamenti futuri** dei dati — i dati veri di questi file sono già stati trascritti dentro `DEF` nel codice (`index.html`), non serve ricaricarli per continuare a lavorare. Il template `template_import_storico_vendite.xlsx` (§B) sta in `~/Desktop`.
+
+---
+
+## BLOCCO FINALE (A–L) — stato al 2026-07-24
+
+Branch **`blocco-finale`**. Commit in ordine: A → fix flusso → B → C → D → fix D.
+
+### ✅ FATTI E VALIDATI (numeri prima → dopo, verificati con Playwright)
+
+- **A — Incassato reale** (`a415de2`): default incassato **200.000 → 136.363**
+  (media incassato reale 2026, 954.538/7 mesi). Serie `incassatoMensile2026`
+  (gen–lug). Dashboard: pannello **scostamento fatturato→incassato**
+  (fatturato medio 174.265 vs incassato 136.363, gap −37.902 = 21,7%). Picker
+  "incassato reale mensile" in Step 1. Migrazione schema **v6→v7** (sostituisce
+  il placeholder solo se ancora 200.000/130.000; un valore digitato resta).
+- **Fix flusso** (`c975d9e`): **`altriCostiOperativi` mancava in `flow()`** —
+  costo reale (15.000/mese) che esce dall'azienda ma non era in sistema/tasse/
+  prioritari → aggiunto a **P1**. **GRFM 5% → 2%**. Effetto: liquidità §5 a
+  136.363 = **3.537 (2,59%)**, combacia col dato reale atteso. Editabile dal CDA
+  in Passo 3.
+- **B — Import storico vendite** (`025097f`): nuova card Import,
+  `template_import_storico_vendite.xlsx`. Parser blocchi ANNO/VENDUTO/TACITI
+  RINNOVI/INCASSATO × agente × 12 mesi. Anteprima con conteggio nuove/aggiornate,
+  **dedup per importKey = `anno|sezione|agente`**. Dati in
+  `S.storicoVendite[anno][sezione][agente]=[12]`. 2026 operativo, 2024/2025 solo
+  stagionalità. Verificato: reimport = 0 nuove, nessun duplicato.
+- **C — Stagionalità** (`55b45e4`): due indici **distinti** venduto/incassato in
+  `S.stagionalita`, ricalcolabili dallo storico 2024-2025
+  (`ricalcolaStagionalita`) — la formula riproduce **esatti** i valori attesi.
+  KPI: tag per micro (vendita/cassa) + selettore mese, mostra target grezzo E
+  destagionalizzato (target × indice/100). Editor indici in Struttura.
+- **D — Organigramma ufficiale** (`c219764` + fix `851ecd3`): RTO→ASF come
+  **nodi** con conteggi propri; 6 centri tecnici ri-genitorizzati sotto ASF;
+  aggiunte Sicurezza (+ Analisi acque/tamponi/alimenti, Edilizia, Tarature,
+  SSL CEM-ROA, Campionamento polveri), Privacy, Certificazioni/Accreditamenti;
+  Medici Competenti (sotto sorvsan), Segreteria Formativa + Docenti (sotto form),
+  Ufficio Acquisti (sotto amm), Senior/Junior Sales + Bandi e Gare (sotto comm).
+  **nAree 13 → 30.** Migrazione schema **v7→v8** (`normalizzaOrgUfficiale`,
+  idempotente). **Invarianti confermati**: Sistema **43.994,28**, garantito
+  **40.916,15**, liquidità **3.537**, budget aree var **78.013**, fornitori
+  totali **20.356,43** (spostati, non duplicati). Medici Competenti (7.201,77) e
+  Docenti (1.703,52) ereditano i costi **spostandoli** dal padre (no doppio
+  conteggio). `areaRollup` ora aggrega i discendenti chiusi fino a ogni confine.
+
+### Risposte di Roberto ai 5 punti aperti di D (validazione 2026-07-24)
+
+1. **Nesting RTO→ASF**: confermato. ASF sotto RTO, servizi sotto ASF.
+2. **Incendio vs Antincendio**: sono la stessa cosa → **unificati in
+   Antincendio** (conserva Barbagli 17.817, ESMA 9.137, Tavanti 6.808, GTA 4.936
+   annui = i suoi fornitori mensili ×12); nodo "Incendio" eliminato (fix
+   `851ecd3`).
+3. **Analisi**: due nodi Analisi **distinti** — uno sotto **Ambiente** (acustico
+   Gracci, fumi/polveri Ecogam) che **resta dov'è**; uno sotto **Sicurezza**
+   (acque/tamponi/alimenti) che **nasce vuoto** (nessun fornitore identificato
+   nel PF) e si popolerà quando arriveranno i costi. Confermato: lasciarla vuota.
+4. **Rollup Produzione**: confermato aggregare tutti i discendenti fermandosi ai
+   confini "chiusa".
+5. Persone ed erogato per le nuove aree arrivano con **E** e **I**.
+
+### ✅ L — CRUD ovunque + fix KPI Commerciale (2026-07-26)
+
+Schema portato a **v9**. Fix e sei sotto-blocchi, ciascuno con smoke test
+Playwright (`/tmp/ssi-check/smoke-l*.mjs`) e verifica invarianti dopo ogni
+commit (`/tmp/ssi-check/invariants.mjs`):
+
+- **Fix (7aeb4bf)** — Il KPI Commerciale aveva default `DVR da chiudere`
+  (era da tecnici). Ora default vuoto con placeholder "es. Preventivi in
+  trattativa da chiudere"; migrazione azzera lo stato esistente solo se
+  ancora sul vecchio placeholder.
+- **L1 (c83054e)** — Persone: helper globali `deletePersona`/`renamePersona`
+  con pulizia riferimenti (`S.areeCA.agentiIds`, `caId`, `datiArea.comm.
+  agenti`, `datiArea.form._per`) prima dello splice. Bottoni ✏/⚙/✕ affiancati
+  al nome in Step 4 Risorse, tabella agenti Commerciale (`buildAgentRow`),
+  formatori Formazione, pop persona. Amm/Mkt/SorvSan/Seg non elencano
+  persone individualmente — CRUD accessibile via Step 4 o organigramma.
+- **L2/L3 (f7e366d)** — Aree + Centri di costo: `renameArea`/`deleteArea`
+  con ri-genitorializzazione dei figli al parent (no orfani), pulizia
+  area/areaResp/slots.area delle persone, e **blacklist S.areeCancellate**
+  per aree ufficiali eliminate (rispettata da `normalizzaOrgUfficiale`, così
+  la delete è persistente). Pannello "Aree ufficiali cancellate" in
+  Struttura con bottone ↺ ripristino. Bottoni ✏/🗑 su ogni riga Struttura
+  e Centri di costo + "+ Nuovo centro (sotto ASF)".
+- **L4 (989a5f9)** — Griglia Produzione tecnici: bottone 🗑 per riga tecnico
+  che disattiva lo slot (`comp.generato_tecnico.on=false`) — la riga
+  sparisce dalla griglia ma slot/valori/storico restano. Ri-attivabile
+  dal pop persona. Non-distruttivo.
+- **L5 (87679dd)** — Colonne griglia dinamiche: `VOCI_TEC` era hardcoded,
+  ora è seed default `VOCI_TEC_DEFAULT` che alimenta **S.produzioneVoci**
+  in migrazione v9. Toolbar CRUD sopra la griglia (✏ rinomina · ⇄ unità
+  €↔h · ✕ elimina · + Nuova voce). `calcSlot.generato_tec` itera sulla
+  lista dinamica — con seed default il risultato è identico al vecchio
+  hardcoded (verificato: 1000·0,22 + 10·25 + 5·150 = 1220 prima e dopo).
+- **L6 (acfe765)** — KPI per area (scope minimale): sui micro-KPI esistenti
+  aggiunti ✕ delete + rename inline sul nome; nuovo array parallelo
+  **S.kpiCustom[areaKey]=[]** con card CRUD (nome/target/effettivo/unità)
+  esposte anche nelle aree senza micro. `S.datiArea`/`S.kpiObiettivi`
+  non toccati (rifattorizzazione completa lasciata a §E).
+
+Invarianti tenuti in ogni commit: Sistema 43.994,28 · garantito personale
+40.916,15 · liquidità 3.537 · fornitori totali 20.356,43.
+
+### ✅ G+H — Incidenza aree a 2 livelli + scheda AREA (2026-07-26)
+
+Solo rendering, motore di calcolo intatto (`flow()`/`areaBudget`/`areaCosto`
+non toccati). Invarianti confermati identici (Sistema 43.994,28 · garantito
+personale 40.916,15 · liquidità 3.537 · fornitori totali 20.356,43).
+
+- **G — Dashboard incidenza a 2 livelli**: `renderSimAree` refattorizzata
+  (pagina Simulatore, sezione "Incidenza aree"). Ora mostra SOLO le macro
+  top-level (aree con `parentId` nullo/vuoto) con % sul totale; click sulla
+  card → esplode le sotto-voci figlie con doppia percentuale "macro" e "tot".
+  Helper `_sumSubtree(areaId)` aggrega ricorsivamente budget/costo del
+  sottoalbero, così una macro che contiene N centri chiusi mostra il vero
+  peso. **Bug `0.00%%` fixato** (line 7361 vecchia): `${P(a.incPct)}%`
+  produceva doppio simbolo — `P()` già ritorna una stringa con `%`
+  inclusa. Ora tutte le percentuali usano solo `P(...)` senza il `+'%'`
+  di troppo. Aggiunto CSS `.sim-sub-grid`/`.sim-sub-item` per la vista
+  espansa. Torta doughnut allineata: ora mostra solo le macro (prima le 30
+  aree).
+- **H — Click su area organigramma apre scheda AREA**: nuovo
+  `openSchedaArea(areaId)` che apre il popover esistente con dati aggregati
+  dell'area (budget/costo/margine %, KPI area con dettaglio micro, rollup
+  discendenti se presenti, responsabili, sotto-aree cliccabili, elenco
+  persone) + bottoni "▶ Vai a pagina X" (se l'area ha una page dedicata:
+  comm/prod/form/amm/mkt/sorvsan/sis), "⚙ Struttura", "👤 Configura resp"
+  se c'è un solo responsabile. Il click nell'organigramma non fa più
+  partire il popover "Configura persona" del responsabile (bug: l'`if(n.pi
+  >=0) fg.addEventListener('click', openPersonaPop)` a line 4720 ora esclude
+  `type==='area'`). L'`endDrag` chiama `openSchedaArea(n.areaId)` anziché
+  `goPage(areaPageMap[...])` — la navigazione alla pagina resta come pulsante
+  esplicito dentro la scheda.
+
+### ✅ H FIX 1/2/3 — Responsabili corretti + editor + nodi persona (2026-07-26)
+
+Schema portato a **v10**. Sempre puro rendering/dato di display: motore
+`flow()` / `areaBudget` / `areaCosto` / `garantitoNatura` intatto.
+Invarianti confermati identici (Sistema 43.994,28 · garantito personale
+40.916,15 · liquidità 3.537 · fornitori totali 20.356,43).
+
+- **FIX 1 — Responsabili designati distinti dalle persone**: la sezione
+  "Responsabili" della scheda AREA mostrava tutte le persone dell'area
+  (`p.areaResp===id` → identico a "N persone"). Nuovi campi per ogni area:
+  - `area.responsabiliIds[]` — designazione responsabili (input futuro §F)
+  - `area.capiAreaIds[]` — subset che è anche Capo Area (rilevante per comm)
+  Seed nel DEF + migrazione v10 (idempotente):
+  - `amm.responsabiliIds = ['p04']` (Francesco Martini)
+  - `comm.responsabiliIds = ['p01','p05']`, `capiAreaIds = ['p05']` (Roberto
+    Macinai + Alessandro Raia con distinzione CA)
+  - `prod.responsabiliIds = ['p03','p07']` (Giovanna Panti + Samuele/RTO)
+  - `form/mkt/sorvsan/sis.responsabiliIds = []` (da designare da UI)
+  `openSchedaArea` ora legge questi array. Il flag `persona.isResp` NON è
+  toccato (alimenta ancora `comp.ore_resp`). Nessun compenso calcolato —
+  pura designazione.
+- **FIX 2 — Editor responsabili nel pannello AREA**: nella scheda AREA
+  ogni responsabile mostra un badge cliccabile con: nome (apre pop persona),
+  toggle `+CA/✕CA` (Capo Area), `✕` rimuovi. Sotto: select "Aggiungi" con
+  le persone dell'area non ancora designate + pulsante `+ resp.` Helper
+  globali `addResponsabileFromSelect(areaId)`, `removeResponsabile(areaId,
+  pid)`, `toggleCapoArea(areaId, pid)`. Ogni azione fa `renderAll()` che
+  salva su LS + Supabase (autosave).
+- **FIX 3 — Nodi persona esplicti nell'organigramma**: aggiunti nodi
+  `type:'org_person'` (badge PERSONA) per **Samuele** (p07, sub "RTO") sotto
+  Produzione e **Alessandro Raia** (p05, sub "Capo Area") sotto Commerciale.
+  Non creano nuove risorse: usano persone esistenti nel personale. Pattern
+  simile a Gaia (`cda_staff`) ma agganciati via `lnk(nProd, nSamuele)` e
+  `lnk(nComm, nRaia)` prima di `posT` → entrano nel layout ricorsivo come
+  primi figli. Il click apre `openPersonaPop` (listener esistente gestisce
+  `n.pi>=0 && n.type!=='area'`).
+
+Smoke test:
+ - `tests/smoke-g.mjs` (verifica no `%%`, macro renderizzate, espansione
+   sotto con doppia %)
+ - `tests/smoke-h.mjs` **esteso**: 5 verifiche in una — seed schema v10,
+   responsabili corretti in scheda amm (Francesco sì, Mattia solo in select
+   "aggiungi"), badge CA su Raia in comm, editor add/remove/toggle non tocca
+   `p.isResp`, nodi Samuele/Raia presenti nell'SVG organigramma con badge
+   PERSONA, regressione H originale (Area:X invece di Configura, ecc.)
+
+### ✅ F — Compensi responsabili macro-area (2026-07-26)
+
+Schema portato a **v11**. Regola confermata: F applica ai responsabili
+designati di aree con budget proprio (`variabilePct>0 || fisso>0`), NON
+in `capiAreaIds`. Esclusi automaticamente: Raia (CA), Samuele (spostato
+a rto — area senza budget proprio), Gaia (non responsabile).
+
+**5 responsabili in F (mappatura definitiva)**:
+| id | Persona | Area |
+|---|---|---|
+| p01 | Roberto Macinai | comm (Commerciale) |
+| p02 | Marco Macinai | mkt (Marketing) |
+| p03 | Giovanna Panti | prod (Produzione) |
+| p04 | Francesco Martini | amm (Amministrazione) |
+| p11 | Niccolò | form (Formazione) |
+
+**Formula (parametri modificabili dal pannello CDA)**:
+```
+K < 80        → r = 0
+80 ≤ K < 100  → r = 1,0% × (K − 80) / 20        (0 → 1,0% linearmente)
+100 ≤ K < 130 → r = 1,0% + 0,05% × (K − 100)    (1,0% → 2,5% linearmente)
+K ≥ 130       → r = 2,5%                         (cap)
+
+Compenso F = r × margine diretto area (0 se margine ≤ 0)
+```
+
+**Base = margine DIRETTO** (bud area − costo area del solo nodo), non
+il roll: il responsabile macro governa il proprio nodo, non i margini
+dei centri interni chiusi (che sono responsabilità dei sub-manager).
+Esempio: Giovanna prende F sul +12.622 diretto di Produzione, non su
+−39.469 del roll con 16 centri.
+
+**Natura = VARIABILE, priorità 2 nel pool comprimibile**: F entra in
+`flow().pool2e3` come voce `{nome:'Compensi F', val:totCompensoFRichiesto,
+priorita:S.compensiF.priorita||2}`. Se la liquidità non basta viene
+compresso insieme al budget aree (default P2). Non tocca il garantito
+personale (40.916,15 resta invariato).
+
+**Integrazione**: `calcCompensoF(p)` è chiamata SOLO da `flow()` e dalla
+UI (openSchedaArea). NON è dentro `calcPersona.totale` → evita loop
+circolare (areaCosto→calcPersona→calcCompensoF→areaCosto).
+
+**Invarianti al K attuale=0% (tutti i micro non compilati)**: identici
+al pre-F (Sistema 43.994,28 · Garantito 40.916,15 · Liquidità 3.537 ·
+Fornitori 20.356,43). F si attiverà quando si compilerà `micro[i].ke`
+per portare i KPI area sopra 80%.
+
+**UI**:
+- `openSchedaArea` mostra sezione "💰 Compenso §F responsabili" con
+  riga per ogni resp: K, r, margine, importo richiesto. Bottone "⚙
+  formula" per aprire `openCompensiFParams()` (soglia/base/inc/cap/
+  priorità + preview aliquote sui bordi + toggle enabled).
+- `S.compensiF.enabled=false` disattiva tutto (utile per stress test).
+
+Smoke test `tests/smoke-f.mjs` verifica: schema v11, seed mappature,
+isRespF discrimina correttamente (5 in F, 4 esclusi), aliquotaF su
+bordi (0, 79, 80, 90, 100, 115, 130, 200), K=0% → F=0 e invarianti
+identici, simulazione K=100% su Commerciale → Roberto prende 198,52.
+
+### ✅ E1 — Catalogo proposte KPI + Pannello target unico (2026-07-27)
+
+Puro rendering/dato di display: motore intatto. Invarianti identici
+(Sistema 43.994,28 · Garantito personale 40.916,15 · Liquidità 3.537 ·
+Fornitori totali 20.356,43).
+
+**Stato KPI pre-E1**: 51 KPI micro DEF su 7 aree macro/funzionali
+(comm 9, prod 10, amm 9, mkt 3, form 10, sorvsan 2, sis 8); 23 aree
+tecniche (RTO, ASF, centri, sicurezza) senza KPI; kpiCustom vuoto.
+
+**E1a — Catalogo proposte KPI per tipo area**:
+Costante `KPI_PROPOSTE` con 9 categorie tipo (commerciale/produzione/
+formazione/amministrazione/marketing/sorvsan/segreteria/centro/
+trasversale) e ~44 proposte totali (target consigliato, unità, note).
+`areaTipoCatalogo(a)` mappa area→tipo con regole:
+ - comm/prod/amm/mkt/form/sorvsan/sis → tipo omonimo
+ - rto/asf/CENTRI_IDS/figli di ASF/sicurezza → 'centro'
+ - sotto-aree di macro riconosciute → tipo del padre (es. c_medici_
+   competenti → 'sorvsan', c_senior_sales → 'commerciale')
+ - fallback: 'trasversale'
+`proposteKpiPer(areaId)` restituisce proposte NON già presenti (dedup
+case-insensitive/trim su micro DEF + kpiCustom).
+`aggiungiKpiDaProposta(areaId, nome)` idempotente: se già presente
+non duplica. `aggiungiTuttiKpiProposte(areaId)` con conferma per popolare
+un centro vuoto in un colpo. UI nella scheda AREA: sezione "📚 Catalogo
+proposte KPI (tipo: X) — N" con button per ogni proposta + "+ Aggiungi
+tutti". Ogni aggiunta atterra in `S.kpiCustom[areaId]` — mai tocca micro
+esistenti.
+
+**E1b — Pannello target unico** (nuova pagina `kpi_targets`):
+Voce nav "🎯 KPI & target" (dopo Struttura). Aggrega TUTTI i KPI (micro
+DEF + kpiCustom) di TUTTE le aree in una vista piatta raggruppata per
+area, con edit inline dei target che autosalva via `renderAll()` (LS +
+Supabase). Filtri: testo (nome KPI o area), "solo aree con resp. §F",
+"nascondi target=0" (default on). Per ogni area mostra KPI area
+aggregato + badge §F ("attivo r=X%" se KPI area ≥ 80%, "sotto soglia"
+altrimenti). Shortcut alla scheda area dai risultati. `renderKpiTargets
+Page()` chiamata da goPage e ri-chiamata a ogni edit per feedback
+immediato del % KPI cambiato.
+
+Smoke test `tests/smoke-e1.mjs`: verifica catalogo (9 tipi definiti),
+areaTipoCatalogo (13 mapping), proposteKpiPer (dedup con micro + custom),
+aggiungiKpiDaProposta idempotente, pagina kpi_targets renderizza + edit
+target su micro/custom autosalva, invarianti identici.
+
+### ⏳ Blocchi rimasti
+
+Vedi in cima a questo file:
+ - **§I completato** (Erogato per servizio) — 2026-07-27
+ - **§E2 rinviato** al 2027 quando lo storico KPI sarà disponibile
+
+### Note tecniche per continuare
+
+- Schema attuale **v11**. Ogni bump di `CURRENT_SCHEMA_VERSION` richiede un nuovo
+  step in `SCHEMA_MIGRATIONS` (migra aggiungendo solo ciò che manca, mai
+  sovrascrive dati reali).
+- Verifica rapida senza toccare il cloud condiviso: Playwright con rete Supabase
+  **bloccata** (`ctx.route('**://*.supabase.co/**', r=>r.abort())`), poi
+  `localStorage.clear()`. Vedi gli script in `/tmp/ssi-*.mjs` usati per validare
+  A–D (import di `playwright` per path assoluto dalla cache npx).
+- Controllo sintassi JS: estrai lo `<script>` principale e `node --check`.
 
 ---
 
