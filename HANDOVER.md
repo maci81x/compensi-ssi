@@ -1,7 +1,90 @@
 # HANDOVER — Compensi SSI
 
-Stato del lavoro al **2026-07-27** (blocco finale A–D, L, G, H, F, E1
-completati e validati), per continuare su un altro portatile.
+Stato del lavoro al **2026-07-27** — **BLOCCO FINALE COMPLETO** (A, B, C,
+D, L, G, H, F, E1, I completati e validati; E2 rinviato con nota; audit
+universale eseguito).
+
+## 🎯 Stato finale del branch `blocco-finale`
+
+**Il branch è pronto per il merge su `main`, ma il merge NON è stato
+eseguito e va fatto solo dopo un test manuale end-to-end.** Il sito
+GitHub Pages (`maci81x.github.io/compensi-ssi`) resta sul `main`
+precedente finché non si decide di pubblicare.
+
+Regression finale automatizzata: **11/11 verdi** — invariants + smoke
+L1..L6 + G + H + F + E1 + I. Invarianti confermati IDENTICI dal blocco
+D (2026-07-24): **Sistema 43.994,28 · Garantito personale 40.916,15 ·
+Liquidità 3.537 · Fornitori totali 20.356,43**.
+
+## 📋 Matrice CRUD dopo audit universale (2026-07-27)
+
+Per ogni contesto dati: (M) manuale · (I) import · (X) ignora · (D) elimina.
+
+| Contesto | M | I | X | D | Note |
+|---|:-:|:-:|:-:|:-:|---|
+| Persone (S.personale) | ✔ | ✔ | ✔ *new* | ✔ | Toggle 👁 "Ignora nel calcolo" (`p.escludiDaCalcolo`) nel pop persona, default OFF. Import dipendenti Excel già presente. |
+| Aree/Organigramma (S.aree) | ✔ | ✗ | ✔ | ✔ | `chiusa` flag + blacklist `S.areeCancellate` per ufficiali. Import batch aree non pertinente (config statica). |
+| Centri di costo | ✔ | ✗ | ✔ | ✔ | Come aree; `chiusa:true` esclude dal rollup. |
+| KPI base (a.micro) | ✔ | ✔ *new* | ✗ | ✔ | Import batch da pannello target unico (colonne: area, nome, target, effettivo, unita, note). "Ignora" non applicabile (KPI è misura, non costo). |
+| KPI custom (S.kpiCustom) | ✔ | ✔ *new* | ✗ | ✔ | Stesso importer del sopra. |
+| Catalogo proposte KPI (§E1a) | ✔ | — | — | — | Sorgente dati statica (KPI_PROPOSTE); ogni proposta si "promuove" a KPI custom con click. |
+| Target KPI | ✔ | ✔ | — | — | Pannello unico §E1b + import batch KPI include target. |
+| Responsabili (responsabiliIds/capiAreaIds) | ✔ | ✗ | ✔ | ✔ | Editor nella scheda AREA (§H). Import non necessario (configurazione statica). "Ignora" = rimuovi resp. |
+| Erogato per servizio (S.erogatoServizi) | ✔ *new* | ✔ *new* | ✔ *new* | ✔ *new* | §I completo: manuale + import Excel/CSV additivo con dedup + toggle "considera" per riga + delete. |
+| Voci sistema (S.sistemaFissi) | ✔ | ✔ | ✔ *new* | ✔ | Toggle 👁 sulla riga in pagina Sistema (`v.escludi`), default OFF. Import PF già presente. |
+| Fornitori area | ✔ | ✔ | ✔ *new* | ✔ | Toggle 👁 sulla riga in Centri di costo (`f.escludi`), default OFF. Import PF popola fornitori. |
+| Dati mensili per area | ✔ | ✗ | — | ✔ | Editor per area + resetAreaDati. Import non pertinente (dati mese ≠ import batch). |
+| Snapshot mensili (S.snaps) | ✔ | — | — | ✔ | Snap automatico + delete cloud/local. |
+| Prioritari (S.prioritari) | ✔ | — | — | ✔ | Editor in pagina Sistema. |
+| Voci griglia Produzione (S.produzioneVoci) | ✔ | ✗ | — | ✔ | Toolbar CRUD in Produzione (§L L5). |
+
+*Le voci contrassegnate `*new*` sono aggiunte del batch finale 2026-07-27.*
+
+**Regola comune audit**: tutti i toggle `escludi`/`escludiDaCalcolo`/
+`considera` hanno default sicuro (OFF/false) → gli invarianti seed
+restano identici. Ogni import è additivo con dedup — mai sovrascrittura
+in silenzio.
+
+## 📜 Stato completo dei blocchi
+
+| Blocco | Stato | Commit | Note |
+|---|---|---|---|
+| A | ✅ | `a415de2` | Incassato reale |
+| Fix flusso | ✅ | `c975d9e` | altriCostiOperativi + GRFM 2% |
+| B | ✅ | `025097f` | Import storico vendite |
+| C | ✅ | `55b45e4` | Stagionalità (indici, non ancora applicati ai target — vedi E2 sotto) |
+| D | ✅ | `c219764`+`851ecd3` | Organigramma ufficiale |
+| L (L1..L6) | ✅ | `c83054e`..`acfe765` | CRUD ovunque + fix KPI Commerciale |
+| G | ✅ | `a95d751` | Incidenza aree 2 livelli + fix %% |
+| H | ✅ | `a95d751`+`5d53930` | Scheda AREA + responsabili distinti + nodi org |
+| F | ✅ | `6339b01` | Compensi responsabili macro (curva cap 2,5%) |
+| E1 | ✅ | `ed1bd3f` | Catalogo proposte + pannello target |
+| **I + audit** | ✅ | *(questo commit)* | Erogato per servizio + audit CRUD universale |
+| **E2** | ⏸ RINVIATO | — | Vedi nota sotto. |
+
+## ⏸ E2 (stagionalità sui target KPI) — RINVIATO
+
+**Motivo**: mancano i dati storici sufficienti per costruire indici di
+stagionalità affidabili applicabili automaticamente ai target del mese
+corrente. Gli indici già in `S.stagionalita` (§C) coprono `venduto`/
+`incassato` sugli anni 2024-2025, ma per i KPI diversi da fatturato (es.
+"Nr visite mediche", "Nr corsi erogati", "Nr appuntamenti") non abbiamo
+storico storicizzato per KPI/area/mese.
+
+**Piano ripresa**: riprendere l'anno prossimo (2027) quando lo storico
+2026 mensile per KPI sarà disponibile:
+1. Aggiungere `S.storicoKPI[anno][areaId][kpiKey]=[12]` con seed dallo
+   snapshot mensile
+2. `ricalcolaStagionalitaKPI()` analogo a `ricalcolaStagionalita()` di §C
+3. Nel pannello target unico (§E1b): toggle "applica stagionalità" per
+   riga → target destagionalizzato = target medio × indice / 100
+4. Il compenso §F userà automaticamente il target destagionalizzato (K =
+   effettivo / target destagionalizzato × 100)
+
+Nel frattempo l'utente inserisce i target manualmente nel pannello unico
+(§E1b) — che è già coerente col mese in corso.
+
+## ⏭ Nessun blocco pendente
 
 ## Come ripartire
 
@@ -308,18 +391,11 @@ areaTipoCatalogo (13 mapping), proposteKpiPer (dedup con micro + custom),
 aggiungiKpiDaProposta idempotente, pagina kpi_targets renderizza + edit
 target su micro/custom autosalva, invarianti identici.
 
-### ⏳ ANCORA DA FARE — blocchi E2, I
+### ⏳ Blocchi rimasti
 
-- **E2 — Stagionalità target** *(rimasto in sospeso dopo E1)*: applicare
-  automaticamente ai target del mese corrente il peso di stagionalità già
-  presente in §C (`S.stagionalita.venduto`/`incassato` mese × 100).
-  Distinguere tra target "grezzo" (mensile costante) e "destagionalizzato"
-  (target × indice / 100). Il pannello target unico dovrà mostrare
-  entrambi.
-- **I — Erogato per servizio**: inserimento manuale per centro (tempi, valore
-  erogato, tipologia, centro di costo), modificabile/eliminabile. Margine col
-  metodo "Marginalità" del PF: prezzo vendita netto − var. commerciali − var.
-  interni − incidenza costi fissi.
+Vedi in cima a questo file:
+ - **§I completato** (Erogato per servizio) — 2026-07-27
+ - **§E2 rinviato** al 2027 quando lo storico KPI sarà disponibile
 
 ### Note tecniche per continuare
 

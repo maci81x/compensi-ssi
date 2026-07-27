@@ -652,6 +652,9 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
   <button class="nav-item" onclick="goPage('kpi_targets',this)">
     <span class="ni">🎯</span> KPI &amp; target
   </button>
+  <button class="nav-item" onclick="goPage('erogato',this)">
+    <span class="ni">📥</span> Erogato / servizi
+  </button>
   <button class="nav-item" onclick="goPage('sistema',this)">
     <span class="ni">⚙️</span> Sistema
     <span class="nav-badge warn" id="nav-badge-sis"></span>
@@ -1163,6 +1166,29 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
   </div>
 
   <!-- ═══════════════════════════════════════════ -->
+  <!-- PAGE: EROGATO (§I — Erogato per servizio) -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div id="page-erogato" class="page">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+      <div>
+        <h2 style="font-size:15px;font-weight:600">📥 Erogato per servizio</h2>
+        <p style="font-size:12px;color:var(--ink3);margin-top:2px">Inserisci l'erogato mensile per centro/servizio. Default: OFF (informativo). Toggle "considera" per farlo entrare nel margine del centro.</p>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <label style="font-size:11px;color:var(--ink3)">Centro:
+          <select id="ero-area-sel" onchange="renderErogatoPage()" style="padding:4px 6px;border:1px solid var(--lift);border-radius:var(--r);font-size:12px;background:var(--sheet);margin-left:4px"></select>
+        </label>
+        <button class="btn sm prim" onclick="_eroAddManuale()">+ Aggiungi manuale</button>
+        <label class="btn sm" style="cursor:pointer;position:relative">
+          📥 Importa Excel/CSV
+          <input type="file" accept=".xlsx,.xls,.csv" onchange="_eroImportFile(this)" style="position:absolute;inset:0;opacity:0;cursor:pointer">
+        </label>
+      </div>
+    </div>
+    <div id="ero-cont"></div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ -->
   <!-- PAGE: KPI TARGETS (§E1b — pannello target unico) -->
   <!-- ═══════════════════════════════════════════ -->
   <div id="page-kpi_targets" class="page">
@@ -1175,6 +1201,10 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
         <input type="text" id="kpit-filtro" placeholder="🔍 filtra..." style="padding:5px 8px;border:1px solid var(--lift);border-radius:var(--r);font-size:12px;background:var(--sheet);width:180px" oninput="renderKpiTargetsPage()">
         <label style="font-size:11px;color:var(--ink3);display:flex;align-items:center;gap:4px"><input type="checkbox" id="kpit-solo-conresp" onchange="renderKpiTargetsPage()"> solo aree con resp. §F</label>
         <label style="font-size:11px;color:var(--ink3);display:flex;align-items:center;gap:4px"><input type="checkbox" id="kpit-nascondi-zero" onchange="renderKpiTargetsPage()" checked> nascondi target=0</label>
+        <label class="btn sm" style="cursor:pointer;position:relative" title="Colonne: area, nome, target?, effettivo?, unita?, note?">
+          📥 Import KPI
+          <input type="file" accept=".xlsx,.xls,.csv" onchange="if(this.files[0]){importKpiCustomFile(this.files[0]);this.value=''}" style="position:absolute;inset:0;opacity:0;cursor:pointer">
+        </label>
       </div>
     </div>
     <div id="kpit-cont"></div>
@@ -3268,6 +3298,9 @@ function matchDipendenteRecord(p){
   return winner?dipendenti.find(d=>d.nome===winner)||null:null;
 }
 function garantitoNatura(p){
+  // §AUDIT: flag p.escludiDaCalcolo (default false/undefined) → se true la
+  // persona non contribuisce al garantito. Default OFF = invarianti immutati.
+  if(p.escludiDaCalcolo===true) return 0;
   if(p.natura==='dipendente'){
     // Preferisci il valore già scritto sulla persona (da applicaMatchDipendenti() o
     // dal selettore manuale) — visibile nell'export JSON. Fallback al match live solo
@@ -3598,15 +3631,23 @@ const GENERATO_TEC_TERM={
 //                  ripartizione ore già esistente su altri centri)
 function centroValore(centro){
   const modo=centro.ricavoModo||(CENTRO_TECNICO_FIELD[centro.id]?'tecnico':'manuale');
-  if(modo==='manuale')return centro.ricavoManuale||0;
-  if(modo==='percentuale')return((centro.ricavoPct||0)/100)*S.incassato;
-  const field=CENTRO_TECNICO_FIELD[centro.id];
-  if(!field)return 0;
-  const term=GENERATO_TEC_TERM[field];
-  return S.personale.reduce((s,p)=>s+(p.slots||[]).reduce((ss,sl)=>{
-    const g=sl.comp&&sl.comp.generato_tecnico;
-    return(g&&g.on)?ss+term(g):ss;
-  },0),0);
+  let base;
+  if(modo==='manuale')      base = centro.ricavoManuale||0;
+  else if(modo==='percentuale') base = ((centro.ricavoPct||0)/100)*S.incassato;
+  else{
+    const field=CENTRO_TECNICO_FIELD[centro.id];
+    if(!field) base = 0;
+    else{
+      const term=GENERATO_TEC_TERM[field];
+      base = S.personale.reduce((s,p)=>s+(p.slots||[]).reduce((ss,sl)=>{
+        const g=sl.comp&&sl.comp.generato_tecnico;
+        return(g&&g.on)?ss+term(g):ss;
+      },0),0);
+    }
+  }
+  // §I — Erogato per servizio: somma dei valori delle righe con
+  // considera===true. Default vuoto/OFF → base + 0 → invarianti immutati.
+  return base + erogatoAttivoDelCentro(centro.id);
 }
 // Somma delle % dei centri attualmente in modo 'percentuale' — informativo,
 // come il controllo già esistente sulla ripartizione ore (§6 richiesta B).
@@ -3630,7 +3671,251 @@ function centroCostoVar(centro){
 // quello è autoritativo — evita di tenere due numeri (totale + elenco) che
 // potrebbero disallinearsi; fornitoreFisso resta il fallback manuale per i
 // centri senza fornitori noti (es. Cantieri/RSPP/Documenti, solo lavoro interno).
-function areaFornitoriTot(a){return(a.fornitori||[]).reduce((s,f)=>s+(f.valMensile||0),0);}
+// §AUDIT: rispetta il flag escludi (default false) — se true, la voce fornitore
+// non entra nel calcolo del costo fisso del centro. Default OFF = costo invariato.
+function areaFornitoriTot(a){return(a.fornitori||[]).filter(f=>!(f.escludi===true)).reduce((s,f)=>s+(f.valMensile||0),0);}
+// ══════════════════════════════════════════════════════════════════════════
+// §I — Erogato per servizio. Modello:
+//   S.erogatoServizi = { [areaId]: [{ id, data, servizio, valore, tipologia,
+//     note, considera:false, _dedupKey, _fromImport }] }
+// Default: array vuoto per ogni centro; ogni riga ha considera:false → non
+// entra nel margine. L'utente attiva 'considera' per far entrare il valore.
+// Import Excel/CSV: additivo con dedup su _dedupKey = data|servizio|valore
+// (case-insensitive/trim); righe già presenti vengono skippate.
+// ══════════════════════════════════════════════════════════════════════════
+function ensureErogato(areaId){
+  if(!S.erogatoServizi||typeof S.erogatoServizi!=='object') S.erogatoServizi={};
+  if(!Array.isArray(S.erogatoServizi[areaId])) S.erogatoServizi[areaId]=[];
+  return S.erogatoServizi[areaId];
+}
+function erogatoAttivoDelCentro(areaId){
+  if(!S.erogatoServizi||!Array.isArray(S.erogatoServizi[areaId])) return 0;
+  return S.erogatoServizi[areaId]
+    .filter(r=>r.considera===true)
+    .reduce((s,r)=>s+(+r.valore||0),0);
+}
+function _erogatoDedupKey(row){
+  const norm=v=>String(v==null?'':v).trim().toLowerCase();
+  return norm(row.data)+'|'+norm(row.servizio)+'|'+(+row.valore||0).toFixed(2);
+}
+function addErogatoManuale(areaId){
+  const arr=ensureErogato(areaId);
+  arr.push({
+    id:'er_'+Date.now()+'_'+Math.floor(Math.random()*1000),
+    data:new Date().toISOString().slice(0,10),
+    servizio:'', valore:0, tipologia:'', note:'',
+    considera:false, _dedupKey:'', _fromImport:false,
+  });
+  renderErogatoPage();
+}
+function deleteErogato(areaId,id){
+  const arr=ensureErogato(areaId);
+  const r=arr.find(x=>x.id===id);
+  if(!r) return;
+  if(!confirm('Eliminare la riga '+(r.servizio||'senza nome')+' del '+(r.data||'—')+' (€ '+(+r.valore||0).toFixed(2)+')?')) return;
+  const idx=arr.indexOf(r);
+  arr.splice(idx,1);
+  renderAll(); renderErogatoPage();
+  notify('Riga erogato eliminata');
+}
+function toggleErogatoConsidera(areaId,id){
+  const arr=ensureErogato(areaId);
+  const r=arr.find(x=>x.id===id);
+  if(!r) return;
+  r.considera=!r.considera;
+  renderAll(); renderErogatoPage();
+}
+function updateErogatoField(areaId,id,field,value){
+  const arr=ensureErogato(areaId);
+  const r=arr.find(x=>x.id===id);
+  if(!r) return;
+  if(field==='valore') r.valore=parseFloat(value)||0;
+  else r[field]=value;
+  r._dedupKey=_erogatoDedupKey(r);
+  renderAll();
+}
+// Import Excel/CSV — additivo con dedup. Colonne attese (case-insensitive):
+// data, servizio, valore, tipologia (opz), note (opz). Se il file ha una
+// intestazione "centro" o "area" (id), le righe possono anche essere
+// distribuite su più centri; altrimenti usa areaId corrente.
+function importErogatoFile(areaId,file){
+  const reader=new FileReader();
+  reader.onload=function(ev){
+    try{
+      let rows=[];
+      const name=file.name.toLowerCase();
+      if(name.endsWith('.csv')){
+        const text=new TextDecoder().decode(ev.target.result);
+        rows=_parseCSV(text);
+      } else {
+        const wb=XLSX.read(ev.target.result,{type:'array'});
+        const sheet=wb.Sheets[wb.SheetNames[0]];
+        rows=XLSX.utils.sheet_to_json(sheet,{header:1,raw:true,defval:''});
+      }
+      if(!rows.length){ alert('File vuoto o non leggibile'); return; }
+      // header (prima riga non vuota)
+      let headerIdx=rows.findIndex(r=>r&&r.some(c=>String(c).trim()));
+      if(headerIdx<0){ alert('Nessuna intestazione'); return; }
+      const header=rows[headerIdx].map(c=>String(c).trim().toLowerCase());
+      const col=name=>header.indexOf(name);
+      const cData=col('data'), cServ=col('servizio')>=0?col('servizio'):col('descrizione');
+      const cVal=col('valore')>=0?col('valore'):(col('importo')>=0?col('importo'):col('euro'));
+      const cTip=col('tipologia'), cNote=col('note'), cArea=col('area')>=0?col('area'):col('centro');
+      if(cData<0||cServ<0||cVal<0){
+        alert('Colonne obbligatorie: data, servizio (o descrizione), valore (o importo). Presenti: '+header.join(', '));
+        return;
+      }
+      let added=0, skipped=0;
+      for(let i=headerIdx+1;i<rows.length;i++){
+        const r=rows[i]; if(!r) continue;
+        const data=String(r[cData]||'').trim();
+        const servizio=String(r[cServ]||'').trim();
+        const valore=parseFloat(String(r[cVal]||'0').replace(',','.'))||0;
+        if(!data&&!servizio&&!valore) continue;
+        const targetArea=cArea>=0?(String(r[cArea]||'').trim()||areaId):areaId;
+        const arr=ensureErogato(targetArea);
+        const nuova={
+          id:'er_'+Date.now()+'_'+i,
+          data:data, servizio:servizio, valore:valore,
+          tipologia:cTip>=0?String(r[cTip]||'').trim():'',
+          note:cNote>=0?String(r[cNote]||'').trim():'',
+          considera:false, _fromImport:true,
+        };
+        nuova._dedupKey=_erogatoDedupKey(nuova);
+        // dedup: se esiste già riga con stesso _dedupKey, skip (mai
+        // sovrascrivere in silenzio).
+        if(arr.some(x=>(x._dedupKey||_erogatoDedupKey(x))===nuova._dedupKey)){ skipped++; continue; }
+        arr.push(nuova); added++;
+      }
+      renderAll(); renderErogatoPage();
+      notify('Import erogato: '+added+' aggiunte, '+skipped+' skippate (già presenti)');
+    } catch(err){ alert('Errore import: '+err.message); }
+  };
+  reader.readAsArrayBuffer(file);
+}
+function _parseCSV(text){
+  const out=[];
+  const lines=text.split(/\r?\n/);
+  const delim=(lines[0]||'').indexOf(';')>=0?';':',';
+  for(const line of lines){
+    if(!line.trim()) continue;
+    // parser semplice: non gestisce virgolette con delimitatori dentro,
+    // sufficiente per file esportati da Excel standard.
+    out.push(line.split(delim).map(c=>c.trim().replace(/^"|"$/g,'')));
+  }
+  return out;
+}
+// Wrapper UI: legge l'area corrente dal select e delega.
+function _eroCurrentAreaId(){
+  const sel=document.getElementById('ero-area-sel');
+  return sel?sel.value:'';
+}
+function _eroAddManuale(){
+  const aid=_eroCurrentAreaId();
+  if(!aid){ notify('Seleziona prima un centro'); return; }
+  addErogatoManuale(aid);
+}
+function _eroImportFile(input){
+  const aid=_eroCurrentAreaId();
+  if(!aid){ notify('Seleziona prima un centro'); input.value=''; return; }
+  const f=input.files[0]; if(!f) return;
+  importErogatoFile(aid,f);
+  input.value='';
+}
+function _eroEligibleAree(){
+  // Centri di costo + aree operative (produttiva/staff/supporto/costo) —
+  // in pratica quasi tutte le aree escluse quelle che nascono come pure
+  // etichette; usiamo un filtro semplice: tutte le aree con id definito.
+  return S.aree.filter(a=>a&&a.id).sort((a,b)=>{
+    // macro prima, poi sotto-aree
+    const ap=a.parentId?1:0, bp=b.parentId?1:0;
+    if(ap!==bp) return ap-bp;
+    return String(a.nome).localeCompare(String(b.nome));
+  });
+}
+function renderErogatoPage(){
+  const cont=document.getElementById('ero-cont'); if(!cont) return;
+  const sel=document.getElementById('ero-area-sel'); if(!sel) return;
+  const aree=_eroEligibleAree();
+  const prev=sel.value;
+  sel.innerHTML=aree.map(a=>{
+    const n=(S.erogatoServizi&&S.erogatoServizi[a.id]||[]).length;
+    const attivi=erogatoAttivoDelCentro(a.id);
+    const label=a.nome+(a.parentId?' ↳ '+(S.aree.find(x=>x.id===a.parentId)?.nome||''):'')+
+      (n?' — '+n+' righe':'')+(attivi>0?' · attivi '+fmt(attivi):'');
+    return '<option value="'+a.id+'">'+label+'</option>';
+  }).join('');
+  if(prev&&aree.some(a=>a.id===prev)) sel.value=prev;
+  else if(aree.length) sel.value=aree[0].id;
+  const aid=sel.value;
+  const a=S.aree.find(x=>x.id===aid);
+  const arr=ensureErogato(aid);
+  const totRow=arr.reduce((s,r)=>s+(+r.valore||0),0);
+  const totAttivo=erogatoAttivoDelCentro(aid);
+  const vTot=(typeof centroValore==='function')?centroValore(a||{id:aid}):0;
+  const cFisso=(typeof centroCostoFisso==='function')?centroCostoFisso(a||{id:aid}):0;
+  const cVar=(typeof centroCostoVar==='function')?centroCostoVar(a||{id:aid}):0;
+  const mCentro=vTot - cFisso - cVar;
+  let html='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:12px">'
+    +'<div style="background:var(--sheet);border-radius:var(--r);padding:8px 10px">'
+      +'<div style="font-size:9px;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em">Righe totali</div>'
+      +'<div class="mono" style="font-size:14px">'+arr.length+'</div>'
+      +'<div style="font-size:10px;color:var(--ink3)">tot € '+fmt(totRow)+'</div>'
+    +'</div>'
+    +'<div style="background:var(--sheet);border-radius:var(--r);padding:8px 10px">'
+      +'<div style="font-size:9px;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em">Attive (→ margine)</div>'
+      +'<div class="mono" style="font-size:14px;color:'+(totAttivo>0?'var(--green)':'var(--ink3)')+'">'+fmt(totAttivo)+'</div>'
+      +'<div style="font-size:10px;color:var(--ink3)">righe con toggle ON</div>'
+    +'</div>'
+    +'<div style="background:var(--sheet);border-radius:var(--r);padding:8px 10px">'
+      +'<div style="font-size:9px;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em">Valore centro</div>'
+      +'<div class="mono" style="font-size:14px">'+fmt(vTot)+'</div>'
+      +'<div style="font-size:10px;color:var(--ink3)">base + attivi</div>'
+    +'</div>'
+    +'<div style="background:var(--sheet);border-radius:var(--r);padding:8px 10px">'
+      +'<div style="font-size:9px;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em">Margine centro</div>'
+      +'<div class="mono" style="font-size:14px;color:'+(mCentro>=0?'var(--green)':'var(--red)')+'">'+fmt(mCentro)+'</div>'
+      +'<div style="font-size:10px;color:var(--ink3)">valore − costi</div>'
+    +'</div>'
+  +'</div>';
+  if(!arr.length){
+    html+='<div style="padding:20px;text-align:center;color:var(--ink3);font-size:12px;background:var(--card);border:1px dashed var(--lift);border-radius:var(--r)">'
+      +'Nessun erogato per <strong>'+(a?a.nome:aid)+'</strong>. Usa "+ Aggiungi manuale" o "Importa Excel/CSV".<br>'
+      +'<span style="font-size:10px">Colonne import richieste: <code>data</code>, <code>servizio</code> (o <code>descrizione</code>), <code>valore</code> (o <code>importo</code>). Opzionali: <code>tipologia</code>, <code>note</code>, <code>area</code>/<code>centro</code>.</span>'
+    +'</div>';
+  } else {
+    html+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">'
+      +'<thead><tr style="background:var(--ink);color:#fff;font-size:10px;text-transform:uppercase">'
+      +'<th style="padding:6px 8px;text-align:center;width:70px">Considera</th>'
+      +'<th style="padding:6px 8px;text-align:left;width:110px">Data</th>'
+      +'<th style="padding:6px 8px;text-align:left">Servizio</th>'
+      +'<th style="padding:6px 8px;text-align:right;width:110px">Valore €</th>'
+      +'<th style="padding:6px 8px;text-align:left;width:110px">Tipologia</th>'
+      +'<th style="padding:6px 8px;text-align:left">Note</th>'
+      +'<th style="padding:6px 8px;text-align:center;width:60px">Elimina</th>'
+    +'</tr></thead><tbody>';
+    arr.forEach(r=>{
+      const rId=r.id.replace(/'/g,'');
+      const bg=r.considera?'var(--green-bg)':'var(--card)';
+      html+='<tr style="background:'+bg+';border-bottom:1px solid rgba(0,0,0,.04)">'
+        +'<td style="padding:4px 8px;text-align:center">'
+          +'<input type="checkbox" '+(r.considera?'checked':'')+' onchange="toggleErogatoConsidera(\''+aid+'\',\''+rId+'\')" title="Considera nel margine">'
+          +'</td>'
+        +'<td style="padding:4px 8px"><input type="date" value="'+(r.data||'')+'" style="padding:3px 5px;border:1px solid var(--lift);border-radius:var(--r);font-size:11px;background:var(--sheet);width:100%" onblur="updateErogatoField(\''+aid+'\',\''+rId+'\',\'data\',this.value)"></td>'
+        +'<td style="padding:4px 8px"><input type="text" value="'+String(r.servizio||'').replace(/"/g,'&quot;')+'" placeholder="Nome servizio" style="padding:3px 5px;border:1px solid var(--lift);border-radius:var(--r);font-size:11px;background:var(--sheet);width:100%" onblur="updateErogatoField(\''+aid+'\',\''+rId+'\',\'servizio\',this.value)"></td>'
+        +'<td style="padding:4px 8px;text-align:right"><input type="number" value="'+(+r.valore||0)+'" step="0.01" style="padding:3px 5px;border:1px solid var(--lift);border-radius:var(--r);font-size:11px;background:var(--sheet);width:90px;text-align:right" onblur="updateErogatoField(\''+aid+'\',\''+rId+'\',\'valore\',this.value)"></td>'
+        +'<td style="padding:4px 8px"><input type="text" value="'+String(r.tipologia||'').replace(/"/g,'&quot;')+'" placeholder="" style="padding:3px 5px;border:1px solid var(--lift);border-radius:var(--r);font-size:11px;background:var(--sheet);width:100%" onblur="updateErogatoField(\''+aid+'\',\''+rId+'\',\'tipologia\',this.value)"></td>'
+        +'<td style="padding:4px 8px"><input type="text" value="'+String(r.note||'').replace(/"/g,'&quot;')+'" placeholder="" style="padding:3px 5px;border:1px solid var(--lift);border-radius:var(--r);font-size:11px;background:var(--sheet);width:100%" onblur="updateErogatoField(\''+aid+'\',\''+rId+'\',\'note\',this.value)"></td>'
+        +'<td style="padding:4px 8px;text-align:center"><button class="btn xs danger" style="font-size:9px;padding:2px 5px" onclick="deleteErogato(\''+aid+'\',\''+rId+'\')" title="Elimina">🗑</button></td>'
+      +'</tr>';
+    });
+    html+='</tbody></table></div>'
+      +'<div style="margin-top:10px;padding:8px 10px;background:var(--sheet);border-radius:var(--r);font-size:11px;color:var(--ink3)">'
+      +'💡 <strong>Default sicuro</strong>: le nuove righe partono con "Considera" OFF → sono solo informative e NON entrano nel margine. Attiva il toggle quando vuoi che il valore concorra al margine del centro (e quindi a §F).'
+      +'</div>';
+  }
+  cont.innerHTML=html;
+}
 function centroCostoFisso(centro){return(centro.fornitori&&centro.fornitori.length)?areaFornitoriTot(centro):(centro.fornitoreFisso||0);}
 function centroMargine(centro){return centroValore(centro)-centroCostoFisso(centro)-centroCostoVar(centro);}
 function centroMarginePct(centro){
@@ -3720,7 +4005,10 @@ function renderRipartizioneCentriEditor(p,pi){
 
 // Totali semplici
 function totTasse(){return S.tasse.reduce((s,g)=>s+g.voci.reduce((ss,v)=>ss+(v.val||0),0),0);}
-function totSistema(){return(S.sistemaFissi||[]).reduce((s,v)=>s+(v.val||0),0);}
+// §AUDIT: rispetta il flag escludi (default false/undefined → conta la voce).
+// Se una voce ha escludi===true, non entra nella somma. Default per tutte le
+// voci esistenti = invarianti immutati.
+function totSistema(){return(S.sistemaFissi||[]).filter(v=>!(v.escludi===true)).reduce((s,v)=>s+(v.val||0),0);}
 function totPersonale(){return S.personale.reduce((s,p)=>s+calcPersona(p).totale,0);}
 function totCommCRM(){return S.personale.reduce((s,p)=>s+calcPersona(p).commissioni,0);}
 
@@ -4331,7 +4619,8 @@ function renderStep2(){
   (S.sistemaFissi||[]).forEach((v,i)=>{
     const row=document.createElement('div');
     row.className='sis-row';
-    row.innerHTML=`<span class="sis-cat">${CAT_ICONS[v.cat]||'📦'}</span>       <input class="sis-name" value="${v.nome}" placeholder="Nome voce..."         onblur="S.sistemaFissi[${i}].nome=this.value" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">       <input type="number" class="sis-val" value="${v.val}"         onblur="S.sistemaFissi[${i}].val=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">       <span style="font-size:11px;color:var(--ink3);min-width:38px;text-align:right">${P((v.val/Math.max(1,f.inc))*100)}</span>       <button class="btn xs danger" onclick="S.sistemaFissi.splice(${i},1);renderAll()">✕</button>`;
+    const escl=v.escludi===true;
+    row.innerHTML=`<span class="sis-cat">${CAT_ICONS[v.cat]||'📦'}</span>       <input class="sis-name" value="${v.nome}" placeholder="Nome voce..."         onblur="S.sistemaFissi[${i}].nome=this.value" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()" style="${escl?'text-decoration:line-through;opacity:.55':''}">       <input type="number" class="sis-val" value="${v.val}"         onblur="S.sistemaFissi[${i}].val=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()" style="${escl?'opacity:.55':''}">       <span style="font-size:11px;color:${escl?'var(--ink3)':'var(--ink3)'};min-width:38px;text-align:right;${escl?'opacity:.55':''}">${P((v.val/Math.max(1,f.inc))*100)}</span>       <button class="btn xs" title="${escl?'Ri-considera nel calcolo':'Ignora nel calcolo (non elimina)'}" onclick="S.sistemaFissi[${i}].escludi=!(S.sistemaFissi[${i}].escludi===true);renderAll()">${escl?'👁‍🗨':'👁'}</button>       <button class="btn xs danger" onclick="if(confirm('Eliminare la voce &quot;'+(S.sistemaFissi[${i}].nome||'?')+'&quot;?')){S.sistemaFissi.splice(${i},1);renderAll()}">✕</button>`;
     cont.appendChild(row);
   });
   setEl('sis-tot-flow',fmt(totSistema()));
@@ -5036,7 +5325,7 @@ function openPersonaPop(pi){
              <option value="">— auto (${auto?auto.nome:'nessun match'}) —</option>
              ${opts}
            </select>`;
-       })()}     </div>     <div class="pf"><label>Tariffa oraria €/h</label><input type="number" id="pp-tariffa" value="${p.tariffaOraria||0}"></div>     <div class="pf"><label>Livello</label><select id="pp-liv">       <option value="A" ${p.livello==='A'?'selected':''}>A — Operativo</option>       <option value="B" ${p.livello==='B'?'selected':''}>B — Responsabile</option>       <option value="C" ${p.livello==='C'?'selected':''}>C — Dirigente/Socio</option>       <option value="D" ${p.livello==='D'?'selected':''}>D — Esterno</option>     </select></div>     <div class="pop-div"></div>     <div style="display:flex;gap:10px;font-size:12px;flex-wrap:wrap">       <label><input type="checkbox" ${p.isResp?'checked':''} id="pp-resp"> Responsabile/Dirigente</label>       <label><input type="checkbox" ${p.isCapoArea?'checked':''} id="pp-ca"> Capo Area</label>     </div>     <div class="pf" style="margin-top:8px"><label>Note</label><input id="pp-note" value="${p.note||''}"></div>     <div class="pop-div"></div>     <div style="margin-bottom:6px;font-size:12px;font-weight:600">Slot attività (${(p.slots||[]).length})</div>     ${(p.slots||[]).map((sl,si)=>`
+       })()}     </div>     <div class="pf"><label>Tariffa oraria €/h</label><input type="number" id="pp-tariffa" value="${p.tariffaOraria||0}"></div>     <div class="pf"><label>Livello</label><select id="pp-liv">       <option value="A" ${p.livello==='A'?'selected':''}>A — Operativo</option>       <option value="B" ${p.livello==='B'?'selected':''}>B — Responsabile</option>       <option value="C" ${p.livello==='C'?'selected':''}>C — Dirigente/Socio</option>       <option value="D" ${p.livello==='D'?'selected':''}>D — Esterno</option>     </select></div>     <div class="pop-div"></div>     <div style="display:flex;gap:10px;font-size:12px;flex-wrap:wrap">       <label><input type="checkbox" ${p.isResp?'checked':''} id="pp-resp"> Responsabile/Dirigente</label>       <label><input type="checkbox" ${p.isCapoArea?'checked':''} id="pp-ca"> Capo Area</label>       <label title="Se attivo la persona non contribuisce al garantito (utile per congedi/prova senza cancellarla)"><input type="checkbox" ${p.escludiDaCalcolo===true?'checked':''} id="pp-escl"> 👁 Ignora nel calcolo</label>     </div>     <div class="pf" style="margin-top:8px"><label>Note</label><input id="pp-note" value="${p.note||''}"></div>     <div class="pop-div"></div>     <div style="margin-bottom:6px;font-size:12px;font-weight:600">Slot attività (${(p.slots||[]).length})</div>     ${(p.slots||[]).map((sl,si)=>`
       <div style="border:1px solid var(--lift);border-radius:var(--r);padding:7px 9px;margin-bottom:5px;background:var(--sheet)">
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
           <span style="font-size:14px">${SLOT_ICON[sl.tipo]||'📦'}</span>
@@ -5071,6 +5360,8 @@ function openPersonaPop(pi){
     p.livello=document.getElementById('pp-liv').value;
     p.isResp=document.getElementById('pp-resp').checked;
     p.isCapoArea=document.getElementById('pp-ca').checked;
+    const escl=document.getElementById('pp-escl');
+    if(escl) p.escludiDaCalcolo=escl.checked;
     p.note=document.getElementById('pp-note').value;
   };
   openPopover();
@@ -6231,13 +6522,16 @@ function renderCentriCostoPage(){
             <td colspan="7" style="padding:0 8px 8px 8px">
               <details><summary style="font-size:10px;color:var(--ink3);cursor:pointer">${fornitori.length} fornitori — dettaglio</summary>
                 <table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:4px">
-                  ${fornitori.map((fo,fi)=>`<tr>
-                    <td style="padding:2px 6px"><input value="${fo.nome}" style="border:none;background:transparent;font-size:11px;width:100%"
+                  ${fornitori.map((fo,fi)=>{
+                    const escl=fo.escludi===true;
+                    return `<tr style="${escl?'opacity:.55':''}">
+                    <td style="padding:2px 6px"><input value="${fo.nome}" style="border:none;background:transparent;font-size:11px;width:100%;${escl?'text-decoration:line-through':''}"
                       onblur="S.aree[${ci}].fornitori[${fi}].nome=this.value;renderAll()" onkeydown="if(event.keyCode===13)this.blur()"></td>
                     <td style="padding:2px 6px;text-align:right;width:110px"><input type="number" value="${fo.valMensile}" class="inp n" style="width:90px"
                       onblur="S.aree[${ci}].fornitori[${fi}].valMensile=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13)this.blur()"></td>
-                    <td style="padding:2px 6px;width:24px"><button class="btn xs danger" onclick="S.aree[${ci}].fornitori.splice(${fi},1);renderAll()">✕</button></td>
-                  </tr>`).join('')}
+                    <td style="padding:2px 6px;width:24px"><button class="btn xs" title="${escl?'Ri-considera':'Ignora (non elimina)'}" onclick="S.aree[${ci}].fornitori[${fi}].escludi=!(S.aree[${ci}].fornitori[${fi}].escludi===true);renderAll()">${escl?'👁‍🗨':'👁'}</button></td>
+                    <td style="padding:2px 6px;width:24px"><button class="btn xs danger" onclick="if(confirm('Eliminare il fornitore &quot;'+(S.aree[${ci}].fornitori[${fi}].nome||'?')+'&quot;?')){S.aree[${ci}].fornitori.splice(${fi},1);renderAll()}">✕</button></td>
+                  </tr>`;}).join('')}
                 </table>
                 <button class="btn xs" style="margin-top:4px" onclick="S.aree[${ci}].fornitori=S.aree[${ci}].fornitori||[];S.aree[${ci}].fornitori.push({nome:'Nuovo fornitore',valMensile:0});renderAll()">+ Fornitore</button>
               </details>
@@ -7793,6 +8087,65 @@ function aggiungiKpiDaPropostaEUI(areaId,nomeProposta){
     renderAll(); openSchedaArea(areaId); notify('KPI aggiunto: '+nomeProposta);
   }
 }
+// §AUDIT — Import batch KPI custom da Excel/CSV. Colonne attese
+// (case-insensitive): area (id o nome), nome, target (opz), effettivo
+// (opz), unita (opz), note (opz). Additivo con dedup su (areaId, nome
+// norm). Righe già presenti (case-insensitive/trim su nome, compreso
+// contro a.micro) vengono skippate — mai sovrascrive in silenzio.
+function importKpiCustomFile(file){
+  const reader=new FileReader();
+  reader.onload=function(ev){
+    try{
+      let rows=[];
+      const name=file.name.toLowerCase();
+      if(name.endsWith('.csv')){
+        const text=new TextDecoder().decode(ev.target.result);
+        rows=_parseCSV(text);
+      } else {
+        const wb=XLSX.read(ev.target.result,{type:'array'});
+        const sheet=wb.Sheets[wb.SheetNames[0]];
+        rows=XLSX.utils.sheet_to_json(sheet,{header:1,raw:true,defval:''});
+      }
+      let hdrI=rows.findIndex(r=>r&&r.some(c=>String(c).trim()));
+      if(hdrI<0){ alert('File vuoto'); return; }
+      const header=rows[hdrI].map(c=>String(c).trim().toLowerCase());
+      const col=n=>header.indexOf(n);
+      const cArea=col('area')>=0?col('area'):col('area_id');
+      const cNome=col('nome')>=0?col('nome'):col('kpi');
+      const cTarget=col('target'), cEff=col('effettivo'), cUni=col('unita'), cNote=col('note');
+      if(cArea<0||cNome<0){ alert('Colonne obbligatorie: area (id o nome), nome. Presenti: '+header.join(', ')); return; }
+      const norm=s=>String(s||'').trim().toLowerCase();
+      let added=0, skipped=0, notFound=0;
+      for(let i=hdrI+1;i<rows.length;i++){
+        const r=rows[i]; if(!r) continue;
+        const areaTok=String(r[cArea]||'').trim();
+        const nome=String(r[cNome]||'').trim();
+        if(!areaTok||!nome) continue;
+        const a=S.aree.find(x=>x.id===areaTok||norm(x.nome)===norm(areaTok));
+        if(!a){ notFound++; continue; }
+        const arr=ensureKpiCustom(a.id);
+        const gia=new Set([
+          ...((a.micro||[]).map(m=>norm(m.nome))),
+          ...arr.map(k=>norm(k.nome)),
+        ]);
+        if(gia.has(norm(nome))){ skipped++; continue; }
+        arr.push({
+          id:'k'+Date.now()+'_'+i,
+          nome:nome,
+          target:cTarget>=0?parseFloat(String(r[cTarget]||'0').replace(',','.'))||0:0,
+          effettivo:cEff>=0?parseFloat(String(r[cEff]||'0').replace(',','.'))||0:0,
+          unita:cUni>=0?String(r[cUni]||'').trim():'',
+          note:cNote>=0?String(r[cNote]||'').trim():'',
+          _fromImport:true,
+        });
+        added++;
+      }
+      renderAll();
+      alert('Import KPI custom: '+added+' aggiunti, '+skipped+' skippati (già presenti), '+notFound+' righe area sconosciuta.');
+    } catch(err){ alert('Errore import: '+err.message); }
+  };
+  reader.readAsArrayBuffer(file);
+}
 // Bulk: aggiunge TUTTE le proposte disponibili per l'area (utile per
 // popolare rapidamente un centro senza KPI). Ritorna il numero aggiunto.
 function aggiungiTuttiKpiProposte(areaId){
@@ -8471,6 +8824,7 @@ function goPage(id, btn){
     org:['Organigramma','Gestisci struttura e risorse'],
     struttura:['Struttura & aree','Incidenze, micro aree, responsabili'],
     kpi_targets:['🎯 KPI & target','Pannello unico: tutti i KPI, tutte le aree, un colpo solo'],
+    erogato:['📥 Erogato per servizio','Inserimento manuale + import per centro, toggle "considera nel calcolo"'],
     sistema:['Sistema & tasse','Costi fissi e stime fiscali'],
     comm_page:['Commerciale','Venduto, incassato, provvigioni, KPI agenti'],
     form_page:['Formazione','Ore erogate, persone aula, corsi, valore economico'],
@@ -8508,6 +8862,7 @@ function goPage(id, btn){
   if(id==='sistema') setTimeout(()=>renderSistemaPage(),30);
   if(id==='struttura') setTimeout(()=>renderStruttura(),30);
   if(id==='kpi_targets') setTimeout(()=>renderKpiTargetsPage(),30);
+  if(id==='erogato') setTimeout(()=>renderErogatoPage(),30);
   if(id==='storico'){ _supaSnapsFetched=false; setTimeout(()=>renderStorico(),30); }
   if(id==='import') setTimeout(()=>renderImportPage(),30);
 }
