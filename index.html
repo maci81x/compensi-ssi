@@ -2595,7 +2595,7 @@ const CAT_ICONS={affitto:'🏢',utenze:'⚡',software:'💻',assicurazione:'🛡
 // stato non ha). Vedi SCHEMA_MIGRATIONS più sotto per la logica di
 // migrazione — root cause del problema "una scheda vecchia sovrascrive dati
 // più recenti", non un cerotto sul sintomo.
-const CURRENT_SCHEMA_VERSION=12;
+const CURRENT_SCHEMA_VERSION=13;
 
 // ══════════════════════════════════════════════════════════════════════════
 // §D blocco finale — ORGANIGRAMMA UFFICIALE
@@ -3194,8 +3194,13 @@ const DEF={
 
     // ── SEGRETERIA — staff a lato del CDA (SPEC-v10 §3) ────────────────────
     {id:'sis',nome:'Segreteria',tipo:'SUP',desc:'Segreteria direzione, backoffice, supporto trasversale',incPct:3.92,
-     resp:'',
-     responsabiliIds:[], capiAreaIds:[],  // §H: da designare
+     resp:'Gaia',
+     // §Segreteria (2026-07-27): Gaia responsabile, ma esclusa da §F
+     // (coordinamento/staff, non prende compenso responsabile-macro).
+     // Nota descrittiva "di cui parte segreteria di direzione" (solo etichetta).
+     responsabiliIds:['p12'], capiAreaIds:[],
+     esclusaDaCompensiF:true,
+     nota:'di cui parte segreteria di direzione',
      parentId:null,natura:'staff',priorita:2,budget:{fisso:0,variabilePct:3.92},chiusa:false,
      micro:[
        {nome:'Scadenze aziendali rispettate %',       fisso:0,bonus:0,kt:101,ke:0,note:'Scadenze rispettate / scadenze totali del mese × 100.'},
@@ -4028,6 +4033,28 @@ const SCHEMA_MIGRATIONS=[
       if(a.ricavoManuale===undefined)a.ricavoManuale=0;
     });
   }},
+  {to:13,migrate(s){
+    // §Segreteria (2026-07-27) — ricollocazione nell'organigramma:
+    // 1) Gaia (p12) responsabile designata di Segreteria (sis)
+    // 2) sis.esclusaDaCompensiF=true → Gaia NON scatta §F (coordinamento/
+    //    staff, non produzione). Anche se in futuro sis avrà KPI e budget,
+    //    isRespF salta le aree con questo flag.
+    // 3) sis.nota descrittiva "di cui parte segreteria di direzione"
+    //    (solo etichetta UI, nessun costo aggiunto).
+    // 4) Il render dell'organigramma sposta sis da "laterale CDA" a
+    //    "top-level sotto SSI" quando sis.parentId===null (già così nel
+    //    modello — la modifica è solo nel branch condizionale di renderOrg,
+    //    non nei dati).
+    // Invarianti IMMUTATI: cascata a monte non cambia, sis budget/incPct
+    // già presenti, Gaia garantito già contato.
+    if(!Array.isArray(s.aree)) return;
+    const sis=s.aree.find(a=>a.id==='sis'); if(!sis) return;
+    if(!Array.isArray(sis.responsabiliIds)) sis.responsabiliIds=[];
+    if(!sis.responsabiliIds.includes('p12')) sis.responsabiliIds.push('p12');
+    if(!Array.isArray(sis.capiAreaIds)) sis.capiAreaIds=[];
+    if(sis.esclusaDaCompensiF===undefined) sis.esclusaDaCompensiF=true;
+    if(!sis.nota) sis.nota='di cui parte segreteria di direzione';
+  }},
 ];
 function migrateSchema(s){
   let v=s.schemaVersion||0;
@@ -4843,7 +4870,11 @@ function isRespF(p){
   // resta fuori. Regola verificata sul seed 2026: le 5 persone confermate
   // (Roberto/Marco/Giovanna/Francesco/Niccolò) sono le sole a soddisfare
   // "responsabile + area con budget + non CA".
+  // §Segreteria: aree con esclusaDaCompensiF===true sono FUORI §F anche se
+  // hanno budget e responsabili (es. Segreteria = staff/coordinamento,
+  // non produttiva).
   for(const a of S.aree){
+    if(a.esclusaDaCompensiF===true) continue; // §Segreteria: staff fuori §F
     const bv=(a.budget&&a.budget.variabilePct)||0;
     const bf=(a.budget&&a.budget.fisso)||0;
     if(bv<=0 && bf<=0) continue; // aree senza budget proprio: fuori da F
@@ -5739,19 +5770,19 @@ function renderOrg(){
     color:f.utili>=0?'#1A6B3C':'#A32020',
     bg:f.utili>=0?'#EAF4EC':'#FCEAEA',
     bd:f.utili>=0?'#B8DBBF':'#F0B8B8'});
-  const gaia=S.personale.find(p=>p.id==='p12');
-  const nGaia=mkN({type:'cda_staff',label:'Gaia',sub:'Coord.SS / Seg.',
-    pct:'Diretto CDA',color:'#1A6B3C',bg:'#EAF4EC',bd:'#B8DBBF',
-    pi:gaia?S.personale.indexOf(gaia):-1});
+  // §Segreteria (2026-07-27): il nodo Gaia "Diretto CDA" è stato rimosso —
+  // Gaia ora è responsabile della Segreteria (area macro sotto SSI) e
+  // apparirà nella scheda AREA di Segreteria (openSchedaArea). Nessun
+  // nodo persona a lato del CDA.
 
   // ── AREE sotto SSI — albero generico da S.aree[].parentId (SPEC-v10 §3 di
   // default: Formazione/Sorv.San. sotto Produzione, Marketing sotto
-  // Commerciale; Segreteria resta staff a lato del CDA finché non viene
-  // trascinata altrove, §E Fase 6 drag&drop). I centri di costo (chiusi,
-  // rollup §5.1) non compaiono come nodi propri.
+  // Commerciale; §Segreteria 2026-07-27: sis è ora una macro area top-level
+  // regolare sotto SSI, come le altre — non più laterale al CDA). I centri
+  // di costo (chiusi, rollup §5.1) non compaiono come nodi propri.
   const AREA_COLORS={comm:'#1A6B3C',prod:'#0F4499',form:'#4A38B0',
     amm:'#7A4A08',mkt:'#A32020',sorvsan:'#0F4499',sis:'#5A5850'};
-  let nProd=null,nComm=null;
+  let nProd=null,nComm=null,nSis=null;
   const orgAreas=S.aree.filter(a=>!CENTRI_IDS.includes(a.id));
   const areaNodeById={};
 
@@ -5772,12 +5803,9 @@ function renderOrg(){
     return n;
   }
 
-  // Segreteria resta nella posizione storica "staff a lato del CDA" finché il
-  // suo parentId non viene esplicitamente impostato trascinandola su un'altra
-  // area (isSelfOrDescendant/applyReparent, più sotto).
-  const sisArea=orgAreas.find(a=>a.id==='sis');
-  const sisIsDefault=!sisArea||!sisArea.parentId;
-  const topLevel=orgAreas.filter(a=>!a.parentId&&!(a.id==='sis'&&sisIsDefault));
+  // §Segreteria (2026-07-27): sis è ora una macro area top-level a tutti
+  // gli effetti (sotto SSI, come comm/prod/amm). Nessuna esclusione speciale.
+  const topLevel=orgAreas.filter(a=>!a.parentId);
 
   function walkArea(a,parentNode,dashed){
     const nA=mkAreaNode(a.id,dashed?'% — ':undefined);
@@ -5785,6 +5813,7 @@ function renderOrg(){
     if(parentNode)lnk(parentNode,nA,dashed?'dash':'v');else lnk(nSSI,nA);
     if(a.id==='prod')nProd=nA;
     if(a.id==='comm')nComm=nA;
+    if(a.id==='sis') nSis=nA;
     orgAreas.filter(x=>x.parentId===a.id).forEach(c=>walkArea(c,nA,true));
   }
   topLevel.forEach(a=>walkArea(a,null,false));
@@ -5832,26 +5861,13 @@ function renderOrg(){
   nCDA.x=aMaxX+30; nCDA.y=nSSI.y;
   // Utili sotto CDA — stessa colonna
   nUtili.x=nCDA.x; nUtili.y=nCDA.y+CH+20;
-  // Gaia sotto Utili — stessa colonna
-  nGaia.x=nCDA.x; nGaia.y=nUtili.y+CH+20;
 
   allE.push(
     {f:nSSI.id,   t:nCDA.id,   s:'lat-r'},
-    {f:nCDA.id,   t:nUtili.id, s:'v'},
-    {f:nUtili.id, t:nGaia.id,  s:'v'}
+    {f:nCDA.id,   t:nUtili.id, s:'v'}
   );
-
-  // ── SEGRETERIA: staff ORIZZONTALMENTE a lato del CDA (SPEC-v10 §3) — solo
-  // se non è stata trascinata altrove. Fase 10: prima era in fondo alla
-  // colonna CDA→Utili→Gaia→Segreteria come se dipendesse dagli Utili;
-  // è staff del CDA/SSI, va a fianco con connessione orizzontale tratteggiata.
-  if(sisIsDefault){
-    const nSis=mkAreaNode('sis','% — ');
-    if(nSis){
-      nSis.x=nCDA.x+CW+30; nSis.y=nCDA.y;
-      allE.push({f:nCDA.id,t:nSis.id,s:'lat-r'});
-    }
-  }
+  // §Segreteria (2026-07-27): nessun branch laterale — sis è top-level
+  // sotto SSI, gestita da walkArea. Nessun nodo Gaia laterale al CDA.
 
   // ── SVG bounds — filtra nodi senza coordinate valide ─────────────────────
   const validN=allN.filter(n=>isFinite(n.x)&&isFinite(n.y));
@@ -6457,9 +6473,10 @@ function openSchedaArea(areaId){
       <strong>Rollup (${roll.nFigli} sotto):</strong> valore <span class="mono">${fmt(roll.valore)}</span> · costo <span class="mono">${fmt(roll.costo)}</span> · margine <span class="mono" style="color:${roll.margine>=0?'var(--green)':'var(--red)'}">${fmt(roll.margine)}</span> ${roll.marginePct!==null?'('+roll.marginePct.toFixed(1)+'%)':''}
     </div>`:''}
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;font-size:11px">
-      <div><strong>Natura:</strong> ${a.natura||'—'} · <strong>Priorità:</strong> ${a.priorita||2}</div>
+      <div><strong>Natura:</strong> ${a.natura||'—'} · <strong>Priorità:</strong> ${a.priorita||2}${a.esclusaDaCompensiF===true?' · <span style="color:var(--ink3)">§F esclusa</span>':''}</div>
       <div>${parent?`<strong>Sotto:</strong> ${parent.nome}`:'<em style="color:var(--ink3)">Macro area top-level</em>'}</div>
     </div>
+    ${a.nota?`<div style="margin-bottom:10px;padding:6px 10px;background:var(--sheet);border-left:3px solid var(--ink3);border-radius:0 var(--r) var(--r) 0;font-size:11px;color:var(--ink2);font-style:italic">📝 ${a.nota}</div>`:''}
     <div style="margin-bottom:10px">
       <div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">Responsabili designati</div>
       <div>${respLine}</div>

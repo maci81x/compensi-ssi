@@ -141,9 +141,9 @@ const regressione = await p.evaluate(`(() => {
 console.log('regressione H:', regressione);
 
 const ok =
-  // Schema v12: Samuele spostato da prod a rto per §F; form/mkt popolati;
-  // v12 aggiunge il seed ricavoPct default (§Fase 7 cherry-picked da main).
-  seed.schemaVersion === 12 &&
+  // Schema v13: v11 responsabili, v12 ricavoPct default, v13 Gaia in
+  // sis.responsabiliIds + esclusaDaCompensiF (§Segreteria).
+  seed.schemaVersion === 13 &&
   JSON.stringify(seed.ammResp) === '["p04"]' &&
   JSON.stringify(seed.commResp) === '["p01","p05"]' &&
   JSON.stringify(seed.commCapi) === '["p05"]' &&
