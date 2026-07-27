@@ -1,8 +1,10 @@
 # HANDOVER — Compensi SSI
 
-Stato del lavoro al **2026-07-27** — **BLOCCO FINALE COMPLETO** (A, B, C,
-D, L, G, H, F, E1, I completati e validati; E2 rinviato con nota; audit
-universale eseguito).
+Stato del lavoro al **2026-07-27** — **BLOCCO FINALE COMPLETO + BATCH2 UX**.
+Completati e validati: A, B, C, D, L, G, H, F, E1, I; E2 rinviato con nota;
+audit universale eseguito; batch2 UX (P1-P5) integrato per rifiniture pre-
+merge (KPI risultato + catalogo servizi + fix bug erogato + modelli import
++ guide in-page). Regression 12/12 verde.
 
 ## 🎯 Stato finale del branch `blocco-finale`
 
@@ -11,10 +13,71 @@ eseguito e va fatto solo dopo un test manuale end-to-end.** Il sito
 GitHub Pages (`maci81x.github.io/compensi-ssi`) resta sul `main`
 precedente finché non si decide di pubblicare.
 
-Regression finale automatizzata: **11/11 verdi** — invariants + smoke
-L1..L6 + G + H + F + E1 + I. Invarianti confermati IDENTICI dal blocco
-D (2026-07-24): **Sistema 43.994,28 · Garantito personale 40.916,15 ·
-Liquidità 3.537 · Fornitori totali 20.356,43**.
+Regression finale automatizzata: **12/12 verdi** — invariants + smoke
+L1..L6 + G + H + F + E1 + I + batch2. Invarianti confermati IDENTICI
+dal blocco D (2026-07-24): **Sistema 43.994,28 · Garantito personale
+40.916,15 · Liquidità 3.537 · Fornitori totali 20.356,43**.
+
+## 🆕 Batch2 UX (2026-07-27) — 5 rifiniture pre-merge
+
+Solo UI/dato di display + estensione motore KPI (che al default a KPI=0
+non muove nulla). Invarianti confermati IDENTICI.
+
+- **P1 — KPI risultato mensile + toggle "considera"** (sblocca §F):
+  Rinominata la colonna "Effettivo" → "Risultato mese" nel pannello 🎯
+  KPI & target. Aggiunta colonna "Considera" per i KPI custom (default
+  true; se OFF il KPI non concorre a `kpiA(a)`). Esteso `kpiA(a)` per
+  includere anche `S.kpiCustom[a.id]` (prima solo `a.micro`). Verifica:
+  portando i micro-KPI di comm a K=100%, Roberto passa da F=0 a F=198,52;
+  azzerando torna a 0. Nuovo helper `kpiRaggiungimentoCustom(k)`.
+- **P2 — Catalogo servizi centro + select servizio/tipologia + fix bug
+  erogato**: `S.cataloghiServizi[centroId]=[{id,nome,tipologia}]` con
+  seed lazy: (1) centri tecnici → VOCI_TEC_DEFAULT (Documenti/Analisi/
+  RSPP/…); (2) altri centri con micro/fornitori → derivazione; (3)
+  fallback 3 placeholder etichettati "Servizio A/B/C (placeholder —
+  rinomina)". `TIPOLOGIE_EROGATO_DEFAULT` = ['Standard','Extra',
+  'Ricorrente','Una tantum','Straordinario']. Helper add/rename/delete
+  + `importCatalogoServiziFile`. In `renderErogatoPage` "Servizio" e
+  "Tipologia" ora sono `<select>` popolati dal catalogo del centro
+  (mai testo libero); sezione collassabile "📚 Catalogo servizi di
+  questo centro" con warning se contiene placeholder. **Fix bug**
+  del valore=10000 non committato: aggiunto `oninput` (oltre a
+  `onchange`) sull'input number → il valore atterra in S al primo
+  carattere. Verifica: digitando 10000 e cliccando toggle senza tab,
+  attivo passa correttamente da 0 a 10000.
+- **P3 — Checkbox "Ignora persona" visibile**: era in linea con isResp/
+  isCapoArea (spesso tagliata dal flex-wrap). Ora è in un box dedicato
+  con background che cambia (amber se attiva) e testo esplicativo
+  dinamico che conferma lo stato.
+- **P4 — Modelli scaricabili accanto a ogni import**: `_downloadCSV(name,
+  rows)` genera CSV con BOM per Excel IT (delimiter `;`). Tre template
+  attuali:
+  - `downloadTemplateErogato(areaId)`: intestazioni + esempio +
+    LEGENDA con servizi ammessi del centro + tipologie ammesse
+  - `downloadTemplateCatalogoServizi()`: nome/tipologia + legenda
+  - `downloadTemplateKpiCustom()`: area/nome/target/effettivo/unita/
+    note + elenco aree disponibili
+  Pulsante "📄 Modello" affiancato a ogni pulsante "📥 Import" nelle
+  pagine Erogato, KPI targets, e nella sezione catalogo servizi.
+- **P5 — Guide "come funziona" in ogni pagina**: componente CSS
+  `.guida-box` (`<details>` collassabile) aggiunto in cima a: Erogato,
+  KPI targets, Struttura, Sistema, Produzione, Centri di costo, e le
+  6 pagine area (Comm/Form/Amm/Mkt/SorvSan/Seg). Contenuti brevi,
+  operativi, in italiano: cosa fa la pagina, come inserire manuale/
+  import, significato di toggle e delete, soglia 80 per §F dove
+  pertinente.
+
+Nuovo smoke `tests/smoke-batch2.mjs` verifica in un colpo:
+ - P1: kpiA include kpiCustom (17% quando aggiungi un KPI custom
+   100/100); Roberto F=198,52 al K=100%; torna a 0 al reset
+ - P2a: seed catalogo corretto (c_ambiente=12 voci da VOCI_TEC,
+   c_privacy=3 placeholder, rto=3, tipologie=5)
+ - P2b: CRUD catalogo idempotente (add + dedup + delete)
+ - P2c: bug erogato fixato (10000 + toggle = attivo 10000)
+ - P3: checkbox `pp-escl` esistente, visibile, box con background
+ - P4: 4 funzioni download definite
+ - P5: guide presenti su 12 pagine principali
+ - INVARIANTI IDENTICI al default
 
 ## 📋 Matrice CRUD dopo audit universale (2026-07-27)
 
@@ -25,8 +88,10 @@ Per ogni contesto dati: (M) manuale · (I) import · (X) ignora · (D) elimina.
 | Persone (S.personale) | ✔ | ✔ | ✔ *new* | ✔ | Toggle 👁 "Ignora nel calcolo" (`p.escludiDaCalcolo`) nel pop persona, default OFF. Import dipendenti Excel già presente. |
 | Aree/Organigramma (S.aree) | ✔ | ✗ | ✔ | ✔ | `chiusa` flag + blacklist `S.areeCancellate` per ufficiali. Import batch aree non pertinente (config statica). |
 | Centri di costo | ✔ | ✗ | ✔ | ✔ | Come aree; `chiusa:true` esclude dal rollup. |
-| KPI base (a.micro) | ✔ | ✔ *new* | ✗ | ✔ | Import batch da pannello target unico (colonne: area, nome, target, effettivo, unita, note). "Ignora" non applicabile (KPI è misura, non costo). |
-| KPI custom (S.kpiCustom) | ✔ | ✔ *new* | ✗ | ✔ | Stesso importer del sopra. |
+| KPI base (a.micro) | ✔ | ✔ | ✔ *batch2* | ✔ | Sempre inclusi in `kpiA(a)` (fonte DEF, i micro sono la baseline). "Considera" nel pannello 🎯 dice "sempre" — non escludibili. Per escludere: eliminare o azzerare target. |
+| KPI custom (S.kpiCustom) | ✔ | ✔ | ✔ *batch2* | ✔ | Nuovo toggle "Considera" (default true): se OFF il KPI custom NON entra in `kpiA(a)` senza cancellarlo. Il **risultato mese** è il campo `effettivo` (rinominato in UI "Risultato mese"). |
+| Catalogo servizi centro (S.cataloghiServizi) *batch2* | ✔ | ✔ | ✗ | ✔ | Nuovo modello: `{[centroId]:[{id,nome,tipologia}]}`. Seed lazy dai VOCI_TEC per centri tecnici, placeholder per gli altri. Alimenta i `<select>` "Servizio" nella pagina Erogato. Import con dedup case-insensitive. |
+| Tipologie erogato (S.tipologieErogato) *batch2* | ✔ | ✗ | ✗ | ✔ | Lista fissa (default 5 valori). Alimenta `<select>` "Tipologia" delle righe erogato. |
 | Catalogo proposte KPI (§E1a) | ✔ | — | — | — | Sorgente dati statica (KPI_PROPOSTE); ogni proposta si "promuove" a KPI custom con click. |
 | Target KPI | ✔ | ✔ | — | — | Pannello unico §E1b + import batch KPI include target. |
 | Responsabili (responsabiliIds/capiAreaIds) | ✔ | ✗ | ✔ | ✔ | Editor nella scheda AREA (§H). Import non necessario (configurazione statica). "Ignora" = rimuovi resp. |

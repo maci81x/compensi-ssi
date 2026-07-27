@@ -72,6 +72,7 @@ node tests/smoke-h.mjs                   # scheda AREA + resp designati
 node tests/smoke-f.mjs                   # §F compensi responsabili
 node tests/smoke-e1.mjs                  # §E1 catalogo KPI + pannello target
 node tests/smoke-i.mjs                   # §I erogato per servizio + audit CRUD
+node tests/smoke-batch2.mjs              # KPI risultato + catalogo servizi + modelli + guide
 ```
 
 Oppure tutti in sequenza via `npm run smoke` da dentro `tests/`:
