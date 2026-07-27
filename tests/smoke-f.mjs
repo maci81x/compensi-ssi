@@ -120,7 +120,7 @@ const ui = await p.evaluate(`(() => {
 })()`);
 console.log('UI scheda comm:', ui);
 
-const ok = seed.schemaVersion === 11 &&
+const ok = seed.schemaVersion === 12 &&  // v12 = §Fase 7 cherry-picked (ricavoPct default)
   seed.hasCompensiF && seed.cf.enabled === true && seed.cf.cap === 0.025 &&
   JSON.stringify(seed.rtoResp) === '["p07"]' &&
   JSON.stringify(seed.prodResp) === '["p03"]' &&
