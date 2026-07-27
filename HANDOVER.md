@@ -1,7 +1,7 @@
 # HANDOVER — Compensi SSI
 
-Stato del lavoro al **2026-07-26** (blocco finale A–D, L, G, H, F completati
-e validati), per continuare su un altro portatile.
+Stato del lavoro al **2026-07-27** (blocco finale A–D, L, G, H, F, E1
+completati e validati), per continuare su un altro portatile.
 
 ## Come ripartire
 
@@ -263,14 +263,59 @@ isRespF discrimina correttamente (5 in F, 4 esclusi), aliquotaF su
 bordi (0, 79, 80, 90, 100, 115, 130, 200), K=0% → F=0 e invarianti
 identici, simulazione K=100% su Commerciale → Roberto prende 198,52.
 
-### ⏳ ANCORA DA FARE — blocchi E, I
+### ✅ E1 — Catalogo proposte KPI + Pannello target unico (2026-07-27)
 
-- **E — KPI**: precaricare la proposta KPI per ogni area (marcati calcolabili vs
-  manuali), tutti creabili/modificabili/monitorabili/eliminabili; **pannello
-  target unico** dove il CDA imposta i target per tutte le aree con peso di
-  stagionalità applicato in automatico (§C già pronta). *(§L L6 minimale copre
-  già create/rename/delete di micro-KPI e KPI custom; §E completa questo
-  rendendoli pre-caricati per area e con pannello target unico.)*
+Puro rendering/dato di display: motore intatto. Invarianti identici
+(Sistema 43.994,28 · Garantito personale 40.916,15 · Liquidità 3.537 ·
+Fornitori totali 20.356,43).
+
+**Stato KPI pre-E1**: 51 KPI micro DEF su 7 aree macro/funzionali
+(comm 9, prod 10, amm 9, mkt 3, form 10, sorvsan 2, sis 8); 23 aree
+tecniche (RTO, ASF, centri, sicurezza) senza KPI; kpiCustom vuoto.
+
+**E1a — Catalogo proposte KPI per tipo area**:
+Costante `KPI_PROPOSTE` con 9 categorie tipo (commerciale/produzione/
+formazione/amministrazione/marketing/sorvsan/segreteria/centro/
+trasversale) e ~44 proposte totali (target consigliato, unità, note).
+`areaTipoCatalogo(a)` mappa area→tipo con regole:
+ - comm/prod/amm/mkt/form/sorvsan/sis → tipo omonimo
+ - rto/asf/CENTRI_IDS/figli di ASF/sicurezza → 'centro'
+ - sotto-aree di macro riconosciute → tipo del padre (es. c_medici_
+   competenti → 'sorvsan', c_senior_sales → 'commerciale')
+ - fallback: 'trasversale'
+`proposteKpiPer(areaId)` restituisce proposte NON già presenti (dedup
+case-insensitive/trim su micro DEF + kpiCustom).
+`aggiungiKpiDaProposta(areaId, nome)` idempotente: se già presente
+non duplica. `aggiungiTuttiKpiProposte(areaId)` con conferma per popolare
+un centro vuoto in un colpo. UI nella scheda AREA: sezione "📚 Catalogo
+proposte KPI (tipo: X) — N" con button per ogni proposta + "+ Aggiungi
+tutti". Ogni aggiunta atterra in `S.kpiCustom[areaId]` — mai tocca micro
+esistenti.
+
+**E1b — Pannello target unico** (nuova pagina `kpi_targets`):
+Voce nav "🎯 KPI & target" (dopo Struttura). Aggrega TUTTI i KPI (micro
+DEF + kpiCustom) di TUTTE le aree in una vista piatta raggruppata per
+area, con edit inline dei target che autosalva via `renderAll()` (LS +
+Supabase). Filtri: testo (nome KPI o area), "solo aree con resp. §F",
+"nascondi target=0" (default on). Per ogni area mostra KPI area
+aggregato + badge §F ("attivo r=X%" se KPI area ≥ 80%, "sotto soglia"
+altrimenti). Shortcut alla scheda area dai risultati. `renderKpiTargets
+Page()` chiamata da goPage e ri-chiamata a ogni edit per feedback
+immediato del % KPI cambiato.
+
+Smoke test `tests/smoke-e1.mjs`: verifica catalogo (9 tipi definiti),
+areaTipoCatalogo (13 mapping), proposteKpiPer (dedup con micro + custom),
+aggiungiKpiDaProposta idempotente, pagina kpi_targets renderizza + edit
+target su micro/custom autosalva, invarianti identici.
+
+### ⏳ ANCORA DA FARE — blocchi E2, I
+
+- **E2 — Stagionalità target** *(rimasto in sospeso dopo E1)*: applicare
+  automaticamente ai target del mese corrente il peso di stagionalità già
+  presente in §C (`S.stagionalita.venduto`/`incassato` mese × 100).
+  Distinguere tra target "grezzo" (mensile costante) e "destagionalizzato"
+  (target × indice / 100). Il pannello target unico dovrà mostrare
+  entrambi.
 - **I — Erogato per servizio**: inserimento manuale per centro (tempi, valore
   erogato, tipologia, centro di costo), modificabile/eliminabile. Margine col
   metodo "Marginalità" del PF: prezzo vendita netto − var. commerciali − var.

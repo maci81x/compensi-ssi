@@ -70,6 +70,7 @@ node tests/smoke-l6.mjs                  # CRUD KPI custom
 node tests/smoke-g.mjs                   # incidenza aree 2 livelli
 node tests/smoke-h.mjs                   # scheda AREA + resp designati
 node tests/smoke-f.mjs                   # §F compensi responsabili
+node tests/smoke-e1.mjs                  # §E1 catalogo KPI + pannello target
 ```
 
 Oppure tutti in sequenza via `npm run smoke` da dentro `tests/`:

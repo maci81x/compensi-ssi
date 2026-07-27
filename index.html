@@ -649,6 +649,9 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
   <button class="nav-item" onclick="goPage('struttura',this)">
     <span class="ni">🏗</span> Struttura &amp; aree
   </button>
+  <button class="nav-item" onclick="goPage('kpi_targets',this)">
+    <span class="ni">🎯</span> KPI &amp; target
+  </button>
   <button class="nav-item" onclick="goPage('sistema',this)">
     <span class="ni">⚙️</span> Sistema
     <span class="nav-badge warn" id="nav-badge-sis"></span>
@@ -1157,6 +1160,24 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
       <button class="btn prim" onclick="addArea()">+ Area</button>
     </div>
     <div id="str-cont"></div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- PAGE: KPI TARGETS (§E1b — pannello target unico) -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div id="page-kpi_targets" class="page">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+      <div>
+        <h2 style="font-size:15px;font-weight:600">🎯 KPI &amp; target — pannello unico</h2>
+        <p style="font-size:12px;color:var(--ink3);margin-top:2px">Tutti i KPI di tutte le aree in un colpo. Modifica target = autosalva. Soglia F: KPI ≥ 80% attiva il compenso.</p>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <input type="text" id="kpit-filtro" placeholder="🔍 filtra..." style="padding:5px 8px;border:1px solid var(--lift);border-radius:var(--r);font-size:12px;background:var(--sheet);width:180px" oninput="renderKpiTargetsPage()">
+        <label style="font-size:11px;color:var(--ink3);display:flex;align-items:center;gap:4px"><input type="checkbox" id="kpit-solo-conresp" onchange="renderKpiTargetsPage()"> solo aree con resp. §F</label>
+        <label style="font-size:11px;color:var(--ink3);display:flex;align-items:center;gap:4px"><input type="checkbox" id="kpit-nascondi-zero" onchange="renderKpiTargetsPage()" checked> nascondi target=0</label>
+      </div>
+    </div>
+    <div id="kpit-cont"></div>
   </div>
 
   <!-- ═══════════════════════════════════════════ -->
@@ -5332,9 +5353,31 @@ function openSchedaArea(areaId){
         <tbody>${kpiRows}</tbody>
       </table>
     </div>`:''}
+    ${(()=>{
+      // §E1a — Catalogo proposte KPI per tipo area. In sola aggiunta:
+      // filtra i KPI già presenti (micro + kpiCustom, match case-insensitive).
+      const proposte=proposteKpiPer(areaId);
+      if(!proposte.length) return `<div style="margin-bottom:10px;padding:6px 10px;background:var(--sheet);border-radius:var(--r);font-size:10px;color:var(--ink3)">📚 Catalogo proposte KPI: tutti i suggerimenti sono già presenti per quest'area.</div>`;
+      const tipo=areaTipoCatalogo(a);
+      return `<div style="margin-bottom:10px;padding:8px 10px;background:var(--sheet);border:1px dashed var(--lift);border-radius:var(--r)">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <span style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em">📚 Catalogo proposte KPI (tipo: ${tipo}) — ${proposte.length}</span>
+          <button class="btn xs prim" onclick="aggiungiTuttiKpiProposte('${areaId}')">+ Aggiungi tutti</button>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px">
+          ${proposte.map(p=>{
+            const nEsc=String(p.nome).replace(/'/g,"\\'");
+            const uniHtml=p.unita?(' <span style="color:var(--ink3)">('+p.unita+')</span>'):'';
+            return `<button class="btn xs" style="font-size:10px" title="${(p.note||'').replace(/"/g,'&quot;')} — target proposto ${p.target}" onclick="aggiungiKpiDaPropostaEUI('${areaId}','${nEsc}')">+ ${p.nome}${uniHtml}</button>`;
+          }).join('')}
+        </div>
+        <div style="font-size:10px;color:var(--ink3);margin-top:5px;font-style:italic">Ogni proposta atterra in KPI custom (§L L6). Nessun KPI esistente viene toccato.</div>
+      </div>`;
+    })()}
     <div style="display:flex;gap:6px;flex-wrap:wrap;padding-top:8px;border-top:1px solid var(--lift)">
       ${pageId?`<button class="btn sm prim" onclick="closePop();goPage('${pageId}')">▶ Vai a pagina ${a.nome}</button>`:''}
       <button class="btn sm" onclick="closePop();goPage('struttura')">⚙ Struttura & aree</button>
+      <button class="btn sm" onclick="closePop();goPage('kpi_targets')">🎯 Pannello target KPI</button>
       ${respAll.length===1?`<button class="btn sm" onclick="closePop();openPersonaPop(${S.personale.indexOf(respAll[0])})">👤 Configura ${respAll[0].nome.split(' ')[0]}</button>`:''}
     </div>`;
   openPopover();
@@ -7628,6 +7671,141 @@ function renderAreaKPIInto(el, areaId){
 }
 
 // ══════════════════════════════════════════════════════════════════════════
+// §E1a — Catalogo proposte KPI per tipo area. In SOLA AGGIUNTA (mai
+// sovrascrive né duplica): l'aggiunta atterra in S.kpiCustom[areaKey]
+// (creato da §L L6). Un KPI proposto viene skippato se il suo nome (case-
+// insensitive) è già presente in area.micro o in kpiCustom. Non è un
+// motore di calcolo — sono solo dati preconfezionati che l'utente può
+// promuovere a KPI reali con un click.
+// ══════════════════════════════════════════════════════════════════════════
+const KPI_PROPOSTE={
+  commerciale:[
+    {nome:'CAC — Costo acquisizione cliente €',unita:'€',target:0,note:'Costo commerciale totale / nr nuovi clienti nel mese.'},
+    {nome:'Lead qualificati / lead totali %',unita:'%',target:101,note:'Lead pronti al preventivo / lead totali × 100.'},
+    {nome:'Tasso conversione preventivo→contratto %',unita:'%',target:101,note:'Contratti firmati / preventivi fatti × 100.'},
+    {nome:'Ciclo di vendita medio (giorni)',unita:'gg',target:0,note:'Giorni medi tra primo contatto e contratto firmato.'},
+    {nome:'Pipeline aperta €',unita:'€',target:0,note:'Valore totale trattative in corso a fine mese.'},
+    {nome:'Cross-selling clienti attivi %',unita:'%',target:101,note:'Clienti con >1 servizio attivo / clienti totali × 100.'},
+    {nome:'NPS clienti (Net Promoter Score)',unita:'',target:101,note:'Da sondaggio periodico ai clienti.'},
+  ],
+  produzione:[
+    {nome:'On-time delivery %',unita:'%',target:101,note:'Servizi consegnati entro data / totali × 100.'},
+    {nome:'Utilizzo tecnici (ore fatturabili / totali) %',unita:'%',target:101,note:'Ore su commessa / ore lavorate × 100.'},
+    {nome:'Rilavorazioni / errori interni nr',unita:'nr',target:0,note:'Nr di rilavorazioni per errore interno nel mese.'},
+    {nome:'Reclami clienti nr',unita:'nr',target:0,note:'Reclami formali ricevuti nel mese.'},
+    {nome:'Ricavo per ora tecnico €',unita:'€/h',target:0,note:'Ricavo area / ore lavorate tecnici.'},
+    {nome:'Tempo medio evasione pratica (giorni)',unita:'gg',target:0,note:'Da apertura pratica a chiusura.'},
+  ],
+  formazione:[
+    {nome:'Soddisfazione partecipanti (1-5)',unita:'/5',target:101,note:'Media questionari fine corso.'},
+    {nome:'Ore docenza per docente',unita:'h',target:0,note:'Ore totali docenza / nr docenti attivi.'},
+    {nome:'Riacquisto formazione clienti %',unita:'%',target:101,note:'Clienti che comprano corsi ripetuti / totali × 100.'},
+    {nome:'Rispetto calendario corsi %',unita:'%',target:101,note:'Corsi partiti nella data pianificata / totali × 100.'},
+  ],
+  amministrazione:[
+    {nome:'Aging crediti > 90gg €',unita:'€',target:0,note:'Somma crediti scaduti oltre 90 giorni.'},
+    {nome:'Aging debiti > 30gg €',unita:'€',target:0,note:'Somma debiti scaduti oltre 30 giorni verso fornitori.'},
+    {nome:'Riconciliazioni bancarie chiuse a fine mese (sì=100)',unita:'',target:101,note:'100 se tutte le banche riconciliate al 5 del mese successivo.'},
+    {nome:'Costi non contabilizzati oltre 30gg €',unita:'€',target:0,note:'Somma fatture ricevute non ancora registrate.'},
+    {nome:'Tempo medio pagamento fatture (giorni)',unita:'gg',target:0,note:'Media giorni tra ricezione fattura e pagamento.'},
+  ],
+  marketing:[
+    {nome:'CTR campagne %',unita:'%',target:101,note:'Click / impressioni × 100 (media pesata).'},
+    {nome:'Conversioni da landing page nr',unita:'nr',target:0,note:'Form compilati / lead qualificati da landing nel mese.'},
+    {nome:'Impressioni totali',unita:'nr',target:0,note:'Somma impressioni tutte le campagne del mese.'},
+    {nome:'Costo per acquisizione lead (CPL) €',unita:'€',target:0,note:'Spesa totale / lead generati.'},
+    {nome:'Engagement rate social %',unita:'%',target:101,note:'Interazioni / follower attivi × 100.'},
+    {nome:'Menzioni brand (organic) nr',unita:'nr',target:0,note:'Nr menzioni tracciate nel mese.'},
+  ],
+  sorvsan:[
+    {nome:'Tempo medio pianificazione visita (giorni)',unita:'gg',target:0,note:'Da richiesta cliente a data visita concordata.'},
+    {nome:'Visite annullate/rinviate %',unita:'%',target:101,note:'Visite rinviate o annullate / totali × 100.'},
+    {nome:'Idoneità con prescrizioni %',unita:'%',target:0,note:'Visite con prescrizioni / visite totali × 100.'},
+    {nome:'MC attivi (dashboard)',unita:'nr',target:0,note:'Nr medici competenti attivamente in servizio.'},
+    {nome:'Tempo emissione giudizio idoneità (giorni)',unita:'gg',target:0,note:'Da visita a consegna del giudizio.'},
+  ],
+  segreteria:[
+    {nome:'Backlog richieste aperte nr',unita:'nr',target:0,note:'Nr richieste in coda a fine mese.'},
+    {nome:'Errori documentali segnalati nr',unita:'nr',target:0,note:'Errori nei documenti prodotti dalla segreteria.'},
+    {nome:'Tempo medio evasione mail interne (h)',unita:'h',target:0,note:'Ore medie per rispondere a una mail interna.'},
+  ],
+  centro:[
+    {nome:'Margine % del centro',unita:'%',target:101,note:'(Valore centro − costo fisso − costo variabile) / valore × 100.'},
+    {nome:'Ore fatturabili sul centro',unita:'h',target:0,note:'Ore effettive imputate al centro nel mese.'},
+    {nome:'Ricavo per ora centro €',unita:'€/h',target:0,note:'Valore centro / ore fatturabili.'},
+    {nome:'Fornitori esterni attivi nr',unita:'nr',target:0,note:'Nr fornitori con almeno una fattura del mese.'},
+    {nome:'Costo fornitori esterni €',unita:'€',target:0,note:'Somma valMensile dei fornitori del centro.'},
+  ],
+  trasversale:[
+    {nome:'Ore assenza (malattia+ferie) nr',unita:'h',target:0,note:'Ore assenza totali del personale dell\'area.'},
+    {nome:'Turnover personale (usciti nel trimestre)',unita:'nr',target:0,note:'Persone uscite nell\'ultimo trimestre.'},
+    {nome:'Formazione interna erogata (ore)',unita:'h',target:0,note:'Ore di formazione ricevute dal personale dell\'area.'},
+  ],
+};
+// Mapping esplicito area → tipo del catalogo. Aree custom (id 'aTIMESTAMP')
+// o non mappate cadono su 'trasversale'. I centri figli di ASF/sicurezza
+// vanno tutti su 'centro'. Le sotto-aree di macro (mkt sotto comm, form/
+// sorvsan sotto prod) usano il proprio tipo, non quello del padre.
+function areaTipoCatalogo(a){
+  if(!a) return 'trasversale';
+  const map={ comm:'commerciale', prod:'produzione', form:'formazione',
+    amm:'amministrazione', mkt:'marketing', sorvsan:'sorvsan', sis:'segreteria' };
+  if(map[a.id]) return map[a.id];
+  // centri di costo tecnici (asf, rto, tutti i c_*)
+  if(a.id==='rto'||a.id==='asf') return 'centro';
+  if(a.parentId==='asf'||a.parentId==='rto'||a.parentId==='c_sicurezza') return 'centro';
+  if(typeof CENTRI_IDS!=='undefined'&&CENTRI_IDS.includes(a.id)) return 'centro';
+  // sotto-aree di macro area riconosciute
+  const p=a.parentId?S.aree.find(x=>x.id===a.parentId):null;
+  if(p&&map[p.id]) return map[p.id];
+  return 'trasversale';
+}
+// Restituisce le proposte del catalogo per l'area che NON sono già presenti
+// (né in a.micro né in kpiCustom). Match case-insensitive/trim sul nome.
+function proposteKpiPer(areaId){
+  const a=S.aree.find(x=>x.id===areaId); if(!a) return [];
+  const tipo=areaTipoCatalogo(a);
+  const catalogo=KPI_PROPOSTE[tipo]||[];
+  const norm=s=>String(s||'').trim().toLowerCase();
+  const gia=new Set([
+    ...((a.micro||[]).map(m=>norm(m.nome))),
+    ...(((S.kpiCustom||{})[areaId]||[]).map(k=>norm(k.nome))),
+  ]);
+  return catalogo.filter(p=>!gia.has(norm(p.nome))).map(p=>({...p,_tipo:tipo}));
+}
+// Aggiunge la proposta indicizzata dell'area alla lista kpiCustom.
+// Ritorna true se ha aggiunto, false se già presente (idempotente).
+function aggiungiKpiDaProposta(areaId,nomeProposta){
+  const a=S.aree.find(x=>x.id===areaId); if(!a) return false;
+  const norm=s=>String(s||'').trim().toLowerCase();
+  const target=norm(nomeProposta);
+  const disponibili=proposteKpiPer(areaId);
+  const prop=disponibili.find(p=>norm(p.nome)===target);
+  if(!prop) return false; // già presente o non nel catalogo
+  const arr=ensureKpiCustom(areaId);
+  arr.push({id:'k'+Date.now()+'_'+Math.floor(Math.random()*1000),
+    nome:prop.nome, target:prop.target||0, effettivo:0,
+    unita:prop.unita||'', note:prop.note||'', _fromProposta:true});
+  return true;
+}
+function aggiungiKpiDaPropostaEUI(areaId,nomeProposta){
+  if(aggiungiKpiDaProposta(areaId,nomeProposta)){
+    renderAll(); openSchedaArea(areaId); notify('KPI aggiunto: '+nomeProposta);
+  }
+}
+// Bulk: aggiunge TUTTE le proposte disponibili per l'area (utile per
+// popolare rapidamente un centro senza KPI). Ritorna il numero aggiunto.
+function aggiungiTuttiKpiProposte(areaId){
+  const disponibili=proposteKpiPer(areaId);
+  if(!disponibili.length){ notify('Nessuna proposta disponibile'); return 0; }
+  if(!confirm('Aggiungere '+disponibili.length+' KPI proposti a "'+
+    (S.aree.find(x=>x.id===areaId)?.nome||areaId)+'"?')) return 0;
+  let n=0;
+  disponibili.forEach(p=>{ if(aggiungiKpiDaProposta(areaId,p.nome)) n++; });
+  if(n){ renderAll(); openSchedaArea(areaId); notify(n+' KPI aggiunti dal catalogo'); }
+  return n;
+}
+// ══════════════════════════════════════════════════════════════════════════
 // §L L6 — KPI custom per area (S.kpiCustom[areaKey]=[])
 // ══════════════════════════════════════════════════════════════════════════
 function ensureKpiCustom(areaKey){
@@ -7697,6 +7875,122 @@ function renderKpiCustomHTML(areaKey){
     html+='</div>';
   }
   return html+'</div>';
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// §E1b — Pannello target unico. Aggrega TUTTI i KPI (micro DEF + kpiCustom)
+// di TUTTE le aree, con edit inline dei target che autosalva via renderAll.
+// Puro rendering: non calcola/modifica flow. Non tocca gli invarianti.
+// Serve al CDA per governare le soglie che alimentano §F (che paga se
+// KPI area ≥ 80%).
+// ══════════════════════════════════════════════════════════════════════════
+function _kpiTargetsRows(){
+  // Aggrega tutti i KPI in una tabella piatta {areaId, areaNome, fonte, idx|id,
+  // nome, target, effettivo, pct, unita, aliqF, hasRespF}
+  const rows=[];
+  S.aree.forEach(a=>{
+    const respF=(Array.isArray(a.responsabiliIds)?a.responsabiliIds:[])
+      .filter(pid=>!((Array.isArray(a.capiAreaIds)?a.capiAreaIds:[]).includes(pid)))
+      .map(pid=>S.personale.find(x=>x.id===pid)).filter(Boolean);
+    const bv=(a.budget&&a.budget.variabilePct)||0;
+    const bf=(a.budget&&a.budget.fisso)||0;
+    const hasRespF=respF.length>0&&(bv>0||bf>0);
+    const kaArea=(typeof kpiA==='function')?kpiA(a):null;
+    const rF=(typeof aliquotaF==='function')?aliquotaF(kaArea||0):0;
+    (a.micro||[]).forEach((m,i)=>{
+      const t=+m.kt||0,e=+m.ke||0;
+      rows.push({areaId:a.id,areaNome:a.nome,parentId:a.parentId,
+        fonte:'micro',refId:String(i),nome:m.nome,
+        target:t,effettivo:e,unita:'',
+        pct:t>0?Math.round((e/t)*100):null,
+        kaArea:kaArea,rF:rF,hasRespF:hasRespF,respF:respF.map(p=>p.nome)});
+    });
+    ((S.kpiCustom||{})[a.id]||[]).forEach(k=>{
+      const t=+k.target||0,e=+k.effettivo||0;
+      rows.push({areaId:a.id,areaNome:a.nome,parentId:a.parentId,
+        fonte:'custom',refId:k.id,nome:k.nome,
+        target:t,effettivo:e,unita:k.unita||'',
+        pct:t>0?Math.round((e/t)*100):null,
+        kaArea:kaArea,rF:rF,hasRespF:hasRespF,respF:respF.map(p=>p.nome)});
+    });
+  });
+  return rows;
+}
+function renderKpiTargetsPage(){
+  const el=document.getElementById('kpit-cont'); if(!el) return;
+  const filtro=(document.getElementById('kpit-filtro')?.value||'').trim().toLowerCase();
+  const soloResp=!!document.getElementById('kpit-solo-conresp')?.checked;
+  const nascondiZero=!!document.getElementById('kpit-nascondi-zero')?.checked;
+  let rows=_kpiTargetsRows();
+  if(soloResp)     rows=rows.filter(r=>r.hasRespF);
+  if(nascondiZero) rows=rows.filter(r=>r.target>0);
+  if(filtro){
+    rows=rows.filter(r=>r.nome.toLowerCase().includes(filtro)||r.areaNome.toLowerCase().includes(filtro));
+  }
+  // Raggruppa per areaId, ordinamento: macro prima (parentId nullo), poi figli
+  const byArea={};
+  rows.forEach(r=>{ (byArea[r.areaId]=byArea[r.areaId]||[]).push(r); });
+  const areeOrdinate=Object.keys(byArea).map(id=>S.aree.find(a=>a.id===id)).filter(Boolean)
+    .sort((a,b)=>{
+      const ap=a.parentId?1:0, bp=b.parentId?1:0;
+      if(ap!==bp) return ap-bp;
+      return a.nome.localeCompare(b.nome);
+    });
+  if(!areeOrdinate.length){
+    el.innerHTML='<div style="padding:20px;text-align:center;color:var(--ink3);font-size:12px">Nessun KPI corrisponde ai filtri.</div>';
+    return;
+  }
+  const totKPI=rows.length;
+  const nAree=areeOrdinate.length;
+  const conTarget=rows.filter(r=>r.target>0).length;
+  let html='<div style="padding:8px 12px;background:var(--sheet);border-radius:var(--r);margin-bottom:10px;font-size:11px;color:var(--ink3);display:flex;gap:14px;flex-wrap:wrap">'
+    +'<span>KPI mostrati: <strong style="color:var(--ink)">'+totKPI+'</strong></span>'
+    +'<span>Aree: <strong style="color:var(--ink)">'+nAree+'</strong></span>'
+    +'<span>Con target impostato: <strong style="color:var(--ink)">'+conTarget+'</strong></span>'
+    +'<span style="margin-left:auto">💡 Un click sul target lo modifica. Salva al blur.</span>'
+    +'</div>';
+  areeOrdinate.forEach(a=>{
+    const arr=byArea[a.id]; if(!arr) return;
+    const kaArea=arr[0].kaArea, rF=arr[0].rF, hasRespF=arr[0].hasRespF, respF=arr[0].respF;
+    const badgeF=hasRespF?(kaArea!==null&&kaArea>=80
+      ? '<span style="font-size:9px;padding:2px 6px;background:var(--green-bg);color:var(--green);border-radius:8px;font-weight:600">§F attivo r='+(rF*100).toFixed(2)+'%</span>'
+      : '<span style="font-size:9px;padding:2px 6px;background:var(--amber-bg);color:var(--amber);border-radius:8px;font-weight:600">§F sotto soglia</span>'):'';
+    const kaBadge=kaArea!==null?'<span style="font-size:10px;color:'+(kaArea>=80?'var(--green)':'var(--ink3)')+';margin-left:6px">KPI area: '+kaArea+'%</span>':'';
+    html+='<div style="background:var(--card);border:1px solid var(--lift);border-radius:var(--rl);margin-bottom:10px;overflow:hidden">'
+      +'<div style="display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--sheet);border-bottom:1px solid var(--lift);flex-wrap:wrap">'
+      +'<span style="font-size:12px;font-weight:600">'+a.nome+'</span>'
+      +(a.parentId?'<span style="font-size:10px;color:var(--ink3)">↳ '+(S.aree.find(x=>x.id===a.parentId)?.nome||a.parentId)+'</span>':'')
+      +kaBadge+badgeF
+      +(hasRespF?'<span style="font-size:10px;color:var(--ink3)">resp. §F: '+respF.join(', ')+'</span>':'')
+      +'<button class="btn xs" style="margin-left:auto;font-size:10px" onclick="openSchedaArea(\''+a.id+'\')">apri scheda</button>'
+      +'</div>'
+      +'<table style="width:100%;border-collapse:collapse;font-size:12px">'
+      +'<thead><tr style="color:var(--ink3);font-size:9px;text-transform:uppercase;background:var(--sheet)">'
+      +'<th style="text-align:left;padding:4px 10px">KPI</th>'
+      +'<th style="text-align:center;padding:4px 6px;width:70px">Fonte</th>'
+      +'<th style="text-align:right;padding:4px 6px;width:90px">Target</th>'
+      +'<th style="text-align:right;padding:4px 6px;width:90px">Effettivo</th>'
+      +'<th style="text-align:right;padding:4px 8px;width:60px">%</th>'
+      +'</tr></thead><tbody>';
+    arr.forEach(r=>{
+      const onblurTarget=r.fonte==='micro'
+        ? 'S.aree.find(a=>a.id===\''+a.id+'\').micro['+r.refId+'].kt=parseFloat(this.value)||0;renderAll();renderKpiTargetsPage()'
+        : 'const arr=ensureKpiCustom(\''+a.id+'\');const k=arr.find(x=>x.id===\''+r.refId+'\');if(k){k.target=parseFloat(this.value)||0;renderAll();renderKpiTargetsPage()}';
+      const onblurEff=r.fonte==='micro'
+        ? 'S.aree.find(a=>a.id===\''+a.id+'\').micro['+r.refId+'].ke=parseFloat(this.value)||0;renderAll();renderKpiTargetsPage()'
+        : 'const arr=ensureKpiCustom(\''+a.id+'\');const k=arr.find(x=>x.id===\''+r.refId+'\');if(k){k.effettivo=parseFloat(this.value)||0;renderAll();renderKpiTargetsPage()}';
+      const pctColor=r.pct===null?'var(--ink3)':(r.pct>=100?'var(--green)':r.pct>=80?'var(--amber)':'var(--red)');
+      html+='<tr style="border-top:1px solid rgba(0,0,0,.04)">'
+        +'<td style="padding:5px 10px;font-size:11px">'+r.nome+(r.unita?' <span style="color:var(--ink3);font-size:10px">('+r.unita+')</span>':'')+'</td>'
+        +'<td style="padding:5px 6px;text-align:center;font-size:9px;color:var(--ink3)">'+(r.fonte==='micro'?'DEF':'custom')+'</td>'
+        +'<td style="padding:3px 6px;text-align:right"><input type="number" value="'+r.target+'" class="inp n" style="font-size:11px;padding:3px 5px;width:70px;text-align:right" onblur="'+onblurTarget+'" onkeydown="if(event.keyCode===13)this.blur()"></td>'
+        +'<td style="padding:3px 6px;text-align:right"><input type="number" value="'+r.effettivo+'" class="inp n" style="font-size:11px;padding:3px 5px;width:70px;text-align:right;background:var(--sheet)" onblur="'+onblurEff+'" onkeydown="if(event.keyCode===13)this.blur()"></td>'
+        +'<td style="padding:5px 8px;text-align:right;font-weight:600;color:'+pctColor+'">'+(r.pct===null?'—':r.pct+'%')+'</td>'
+        +'</tr>';
+    });
+    html+='</tbody></table></div>';
+  });
+  el.innerHTML=html;
 }
 
 window.addEventListener('DOMContentLoaded',()=>{
@@ -8176,6 +8470,7 @@ function goPage(id, btn){
     centri_costo:['Centri di costo','Margine per centro — valore, costo fisso, costo variabile'],
     org:['Organigramma','Gestisci struttura e risorse'],
     struttura:['Struttura & aree','Incidenze, micro aree, responsabili'],
+    kpi_targets:['🎯 KPI & target','Pannello unico: tutti i KPI, tutte le aree, un colpo solo'],
     sistema:['Sistema & tasse','Costi fissi e stime fiscali'],
     comm_page:['Commerciale','Venduto, incassato, provvigioni, KPI agenti'],
     form_page:['Formazione','Ore erogate, persone aula, corsi, valore economico'],
@@ -8212,6 +8507,7 @@ function goPage(id, btn){
   if(id==='org') setTimeout(()=>renderOrg(),30);
   if(id==='sistema') setTimeout(()=>renderSistemaPage(),30);
   if(id==='struttura') setTimeout(()=>renderStruttura(),30);
+  if(id==='kpi_targets') setTimeout(()=>renderKpiTargetsPage(),30);
   if(id==='storico'){ _supaSnapsFetched=false; setTimeout(()=>renderStorico(),30); }
   if(id==='import') setTimeout(()=>renderImportPage(),30);
 }
