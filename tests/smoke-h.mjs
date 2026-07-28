@@ -141,9 +141,10 @@ const regressione = await p.evaluate(`(() => {
 console.log('regressione H:', regressione);
 
 const ok =
-  // Schema v13: v11 responsabili, v12 ricavoPct default, v13 Gaia in
-  // sis.responsabiliIds + esclusaDaCompensiF (§Segreteria).
-  seed.schemaVersion === 13 &&
+  // Schema v14: v11 responsabili, v12 ricavoPct default, v13 Gaia in
+  // sis.responsabiliIds + esclusaDaCompensiF (§Segreteria),
+  // v14 §CostiMensili2026 seed serie costi dip Gen-Giu.
+  seed.schemaVersion === 14 &&
   JSON.stringify(seed.ammResp) === '["p04"]' &&
   JSON.stringify(seed.commResp) === '["p01","p05"]' &&
   JSON.stringify(seed.commCapi) === '["p05"]' &&

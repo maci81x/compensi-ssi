@@ -2595,7 +2595,7 @@ const CAT_ICONS={affitto:'🏢',utenze:'⚡',software:'💻',assicurazione:'🛡
 // stato non ha). Vedi SCHEMA_MIGRATIONS più sotto per la logica di
 // migrazione — root cause del problema "una scheda vecchia sovrascrive dati
 // più recenti", non un cerotto sul sintomo.
-const CURRENT_SCHEMA_VERSION=13;
+const CURRENT_SCHEMA_VERSION=14;
 
 // ══════════════════════════════════════════════════════════════════════════
 // §D blocco finale — ORGANIGRAMMA UFFICIALE
@@ -3885,6 +3885,78 @@ const VOCI_TEC_DEFAULT = [
   {k:'estintori',   lbl:'Estintori',  unit:'€', pf:'pct_est',    def_pf:0.02, def_r:0},
   {k:'sorveglianza',lbl:'Sorv.San.',  unit:'€', pf:'pct_sorv',   def_pf:0.08, def_r:0},
 ];
+// ══════════════════════════════════════════════════════════════════════════
+// §CostiMensili2026 (branch import-pf, 2026-07-28) — costo reale mese-su-mese
+// dei 13 dipendenti (LORDO PAGA). Gen-Giu consuntivati, Lug-Dic = null
+// (niente proiezioni). Sostituisce l'uso della media annua /12 quando si
+// applica un mese specifico via applicaMeseRealeIncassato.
+//   - null = mese non consuntivato (non usato, mai coerente a 0)
+//   - 0    = valore reale (es. Pelliccia da Aprile: uscito, dato consuntivato)
+// Somma di controllo Gen-Giu = 260.593,91 €.
+// ══════════════════════════════════════════════════════════════════════════
+const COSTI_MENSILI_2026_SEED = [
+  {nome:"Silvia",              v:[4011.33,4087.33,4146.25,6233.47,6233.47,6354.56]},
+  {nome:"Simone",              v:[3624.28,3624.28,3640.29,3624.28,3624.28,3624.28]},
+  {nome:"Niccolò Golini",      v:[4262.40,4312.66,4289.99,6050.75,6094.44,5935.33]},
+  {nome:"Alessandro Biotti",   v:[3894.83,3921.72,3937.87,4364.02,4356.51,3803.00]},
+  {nome:"Francesco Pelliccia", v:[3223.04,3255.63,3228.77,0,0,0]},
+  {nome:"Samuele Corti",       v:[4289.21,4357.08,4342.75,4116.52,4769.71,4594.97]},
+  {nome:"Cesare",              v:[936.00,1254.50,1220.00,1450.00,1218.00,1146.71]},
+  {nome:"Guccio",              v:[2944.73,2912.84,2912.84,2912.84,2912.84,2912.84]},
+  {nome:"Elia",                v:[2600.00,2600.00,2600.00,2800.00,2600.00,2602.00]},
+  {nome:"Massimo Necci",       v:[4800.00,4800.00,4800.00,4800.00,4800.00,4800.00]},
+  {nome:"Valentina Caserta",   v:[3699.05,3893.53,3703.99,1541.34,1382.47,1531.61]},
+  {nome:"Mattia Guardiani",    v:[1677.56,2477.75,1768.20,2028.92,2271.89,2310.99]},
+  {nome:"Gaia Deplano",        v:[3126.29,3173.48,3134.17,3102.41,3102.41,3102.41]},
+];
+// Applica il seed a un array persone: matcha via bipartiteMatchDipendenti
+// (già anti-doppio-Alessandro perché filtra .natura==='dipendente') e
+// scrive p.costoAziendaMensile2026 = [...v, null×6]. Idempotente: se la
+// persona ha già un array valorizzato NON viene sovrascritto (rispetta gli
+// edit dell'utente). Ritorna { matched, unmatched, sommaSeedGenGiu }.
+function _applySeedCostiMensili2026(personale){
+  const rows = COSTI_MENSILI_2026_SEED.map(r=>({nome:r.nome}));
+  // bipartiteMatchDipendenti guarda S.personale globale. Per lavorare su un
+  // array passato, uso una versione locale che replica la stessa logica.
+  const dips = personale.filter(p=>p.natura==='dipendente');
+  const candidates = [];
+  dips.forEach(pp=>{
+    const ppt = new Set(nameTokens(pp.nome));
+    if(!ppt.size) return;
+    rows.forEach(d=>{
+      const dt = new Set(nameTokens(d.nome));
+      if([...ppt].every(t=>dt.has(t))) candidates.push({pid:pp.id, dnome:d.nome, score:ppt.size});
+    });
+  });
+  candidates.sort((a,b)=>b.score-a.score);
+  const usedP = new Set(), usedD = new Set(), pairs = {};
+  candidates.forEach(c=>{
+    if(usedP.has(c.pid)||usedD.has(c.dnome)) return;
+    usedP.add(c.pid); usedD.add(c.dnome);
+    pairs[c.pid] = c.dnome;
+  });
+  const seedByNome = Object.fromEntries(COSTI_MENSILI_2026_SEED.map(r=>[r.nome, r.v]));
+  const report = { matched: [], unmatched: [] };
+  Object.entries(pairs).forEach(([pid, dnome])=>{
+    const p = personale.find(x=>x.id===pid);
+    const v = seedByNome[dnome];
+    if(!p || !v) return;
+    if(Array.isArray(p.costoAziendaMensile2026) && p.costoAziendaMensile2026.length===12){
+      // Idempotenza: se già esiste (es. utente ha già importato/editato),
+      // non sovrascrive. Registra come matched comunque.
+      report.matched.push({pid, personaNome:p.nome, fileNome:dnome, giaPresente:true});
+    } else {
+      p.costoAziendaMensile2026 = [...v, null, null, null, null, null, null];
+      report.matched.push({pid, personaNome:p.nome, fileNome:dnome, giaPresente:false});
+    }
+  });
+  // Righe del seed non agganciate a nessuna persona
+  COSTI_MENSILI_2026_SEED.forEach(r=>{
+    if(!Object.values(pairs).includes(r.nome)) report.unmatched.push(r.nome);
+  });
+  const sommaSeedGenGiu = COSTI_MENSILI_2026_SEED.reduce((s,r)=>s + r.v.reduce((x,y)=>x+y,0), 0);
+  return { ...report, sommaSeedGenGiu };
+}
 const SCHEMA_MIGRATIONS=[
   {to:6,migrate(s){
     s.aree=s.aree||[];
@@ -4054,6 +4126,17 @@ const SCHEMA_MIGRATIONS=[
     if(!Array.isArray(sis.capiAreaIds)) sis.capiAreaIds=[];
     if(sis.esclusaDaCompensiF===undefined) sis.esclusaDaCompensiF=true;
     if(!sis.nota) sis.nota='di cui parte segreteria di direzione';
+  }},
+  {to:14,migrate(s){
+    // §CostiMensili2026 (branch import-pf, 2026-07-28) — seed della serie
+    // mensile costi reali per i 13 dipendenti. Idempotente: se il campo
+    // costoAziendaMensile2026 è già valorizzato NON viene sovrascritto.
+    // La scalare p.costoAziendaMensile resta INTATTA finché non si applica
+    // esplicitamente un mese via applicaMeseRealeIncassato() → di default
+    // gli invarianti attuali (garantito 40.916,15 sulla media annua) non
+    // si muovono. Cambiano solo quando l'utente applica un mese completo.
+    if(!Array.isArray(s.personale)) return;
+    _applySeedCostiMensili2026(s.personale);
   }},
 ];
 function migrateSchema(s){
@@ -5052,13 +5135,83 @@ function scostamentoFattInc(){
   const gap=fatt-inc;
   return{fatt,inc,gap,gapPct:fatt>0?(gap/fatt)*100:0,incassoSuFattPct:fatt>0?(inc/fatt)*100:0};
 }
+// §CostiMensili2026 — nomi lunghi mese, ordine posizionale (idx 0=Gen).
+const MESI_LUNGHI = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
+// meseCompletoIdx(): ritorna l'ultimo indice mese (0..11) dove è consuntivato
+// SIA l'incassato SIA il costo di TUTTI i 13 dipendenti (definizione "mese
+// completo" da brief). Ritorna -1 se nessun mese è completo. Avanza in
+// automatico quando arrivano nuovi mesi.
+function meseCompletoIdx(){
+  const im = S.incassatoMensile2026 || [];
+  const dip = (S.personale||[]).filter(p=>p.natura==='dipendente');
+  let last = -1;
+  for(let M=0; M<12; M++){
+    const hasInc = im.some(r=>r.mese===MESI_LUNGHI[M] && r.anno===2026);
+    if(!hasInc) continue;
+    const allDip = dip.length>0 && dip.every(p=>{
+      const arr = p.costoAziendaMensile2026;
+      return Array.isArray(arr) && typeof arr[M]==='number';
+    });
+    if(hasInc && allDip) last = M;
+  }
+  return last;
+}
+// mesiCompletiList(): lista di record {mese, anno, idx} per ogni mese completo
+// (usata dal picker UI).
+function mesiCompletiList(){
+  const im = S.incassatoMensile2026 || [];
+  const dip = (S.personale||[]).filter(p=>p.natura==='dipendente');
+  const out = [];
+  for(let M=0; M<12; M++){
+    const rec = im.find(r=>r.mese===MESI_LUNGHI[M] && r.anno===2026);
+    if(!rec) continue;
+    const allDip = dip.length>0 && dip.every(p=>{
+      const arr = p.costoAziendaMensile2026;
+      return Array.isArray(arr) && typeof arr[M]==='number';
+    });
+    if(allDip) out.push({mese:MESI_LUNGHI[M], anno:2026, idx:M, incassato:rec.incassato});
+  }
+  return out;
+}
 function applicaMeseRealeIncassato(mese,anno){
   const m=(S.incassatoMensile2026||[]).find(r=>r.mese===mese&&r.anno===anno);
   if(!m)return;
   S.incassatoMode='diretto';           // usa l'incassato reale mensile così com'è
   S.incassato=m.incassato;
+  // §CostiMensili2026: applica anche i costi mensili per i dipendenti che
+  // hanno la serie e un valore numerico in quel mese. Skippa i null (nessuna
+  // proiezione: se manca il consuntivato del mese, il valore precedente resta).
+  const mIdx = MESI_LUNGHI.indexOf(mese);
+  if(mIdx >= 0){
+    (S.personale||[]).forEach(p=>{
+      if(p.natura!=='dipendente') return;
+      const arr = p.costoAziendaMensile2026;
+      if(!Array.isArray(arr)) return;
+      const v = arr[mIdx];
+      if(typeof v === 'number') p.costoAziendaMensile = v;
+    });
+  }
+  S.meseRealeSelezionato = mese+' '+anno;
   renderAll();
-  notify('Incassato precompilato da '+mese+' '+anno+' (incassato REALE, non fatturato): '+fmt(m.incassato));
+  notify('Applicato '+mese+' '+anno+' — incassato: '+fmt(m.incassato));
+}
+// §CostiMensili2026 — ripristina il costo scalare "media annua /12" per
+// tutti i dipendenti (dal DEF/matchDipendente): utile quando si vuole tornare
+// alla vista "media annua" senza un mese specifico.
+function ripristinaCostoMediaAnnua(){
+  (S.personale||[]).forEach(p=>{
+    if(p.natura!=='dipendente') return;
+    // Fonte prioritaria: rec dal seed DEF (matchDipendenteRecord)
+    const rec = matchDipendenteRecord(p);
+    if(rec && typeof rec.costoAziendaMensile==='number'){
+      p.costoAziendaMensile = rec.costoAziendaMensile;
+    } else if(typeof p.costoAziendaAnnuo==='number'){
+      p.costoAziendaMensile = Math.round(p.costoAziendaAnnuo/12*100)/100;
+    }
+  });
+  S.meseRealeSelezionato = null;
+  renderAll();
+  notify('Ripristinato costo dipendenti a media annua /12');
 }
 // ── §C blocco finale — STAGIONALITÀ ───────────────────────────────────────
 const MESI_NOMI=['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
@@ -5407,13 +5560,26 @@ function renderStep1(){
     }
     const im=S.incassatoMensile2026||[];
     const incMedio=incassatoMedioReale();
-    incPicker.innerHTML=`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 10px;background:var(--green-bg);border:1px solid var(--green);border-radius:var(--r);font-size:11px">
-        <span style="color:var(--green);font-weight:600">Incassato REALE mensile 2026 (la cascata gira su questo):</span>
-        <select id="s1-inc-reale-sel" class="inp" style="width:auto;display:inline-block">
-          ${im.map(r=>`<option value="${r.mese}|${r.anno}">${r.mese} ${r.anno} — ${fmt(r.incassato)}</option>`).join('')}
-        </select>
-        <button class="btn xs prim" onclick="const v=document.getElementById('s1-inc-reale-sel').value.split('|');applicaMeseRealeIncassato(v[0],parseInt(v[1]))">Applica</button>
-        <span style="margin-left:auto;color:var(--ink3)">Media 7 mesi: <strong class="mono">${fmt(incMedio)}</strong> (= default)</span>
+    // §CostiMensili2026 — picker "MESE COMPLETO": mostra solo i mesi dove
+    // sono consuntivati SIA incassato SIA costi di tutti i 13 dipendenti.
+    // Il default è l'ultimo mese completo (avanza da solo). Applicando il
+    // mese: incassato + costi dipendenti diventano quelli del mese scelto.
+    // Il picker sopra ("Incassato REALE") resta accessibile per applicare
+    // solo l'incassato (es. Luglio con costi non ancora consuntivati).
+    const mCompleti = mesiCompletiList();
+    const mCompletoIdx = meseCompletoIdx();
+    const mDefault = mCompletoIdx >= 0 ? MESI_LUNGHI[mCompletoIdx] : null;
+    const applicato = S.meseRealeSelezionato ? S.meseRealeSelezionato.split(' ')[0] : null;
+    incPicker.innerHTML += `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 10px;background:var(--blue-bg);border:1px solid var(--blue);border-radius:var(--r);font-size:11px;margin-top:6px">
+        <span style="color:var(--blue);font-weight:600">Mese COMPLETO (incassato + costi dipendenti):</span>
+        ${mCompleti.length ? `
+          <select id="s1-mese-completo-sel" class="inp" style="width:auto;display:inline-block">
+            ${mCompleti.map(r=>`<option value="${r.mese}|${r.anno}"${r.mese===mDefault?' selected':''}>${r.mese} ${r.anno} — inc ${fmt(r.incassato)}</option>`).join('')}
+          </select>
+          <button class="btn xs prim" onclick="const v=document.getElementById('s1-mese-completo-sel').value.split('|');applicaMeseRealeIncassato(v[0],parseInt(v[1]))">Applica mese completo</button>
+          <button class="btn xs" onclick="ripristinaCostoMediaAnnua()" title="Torna ai costi = media annua /12 dal seed">↺ Media annua</button>
+          <span style="color:var(--ink3);margin-left:auto">Default: ${mDefault||'—'}${applicato?` · applicato: <strong>${applicato}</strong>`:''}</span>
+        ` : `<span style="color:var(--amber)">Nessun mese completo — mancano dati costi o incassato per tutti i 13 dipendenti.</span>`}
       </div>`;
   }
 

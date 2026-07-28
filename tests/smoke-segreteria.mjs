@@ -82,7 +82,7 @@ const inv = await p.evaluate(`(() => {
 console.log('invarianti:', inv);
 
 const ok =
-  stato.schemaVersion === 13 &&
+  stato.schemaVersion === 14 &&  // v14 = §CostiMensili2026 aggiunta al bump
   Array.isArray(stato.sisResp) && stato.sisResp.includes('p12') &&
   stato.sisEsclusaF === true &&
   stato.sisNota && stato.sisNota.includes('segreteria di direzione') &&
