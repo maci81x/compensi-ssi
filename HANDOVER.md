@@ -33,17 +33,19 @@ merge (KPI risultato + catalogo servizi + fix bug erogato + modelli import
    fermo su branch `ignora-premi`).
 6. Futuro: **Tab Personale** (anagrafica + switch dip↔P.IVA + serie costi mensili).
 
-## 🎯 Stato finale del branch `blocco-finale`
+## 🎯 Branch `blocco-finale` — ARCHIVIATO (2026-07-29)
 
-**Il branch è pronto per il merge su `main`, ma il merge NON è stato
-eseguito e va fatto solo dopo un test manuale end-to-end.** Il sito
-GitHub Pages (`maci81x.github.io/compensi-ssi`) resta sul `main`
-precedente finché non si decide di pubblicare.
+Il branch è stato **mergiato su `main` con commit `74337bc`** (chiusura
+blocco finale + batch2 UX + Fasi 7/11) e successivamente **cancellato
+locale e remoto** in data 2026-07-29. Tutto il suo contenuto è già in
+`main`, che nel frattempo è avanzato con Fase 12, `org-segreteria`,
+`CostiMensili2026` e `prep-import-pf`.
 
-Regression finale automatizzata: **12/12 verdi** — invariants + smoke
-L1..L6 + G + H + F + E1 + I + batch2. Invarianti confermati IDENTICI
-dal blocco D (2026-07-24): **Sistema 43.994,28 · Garantito personale
-40.916,15 · Liquidità 3.537 · Fornitori totali 20.356,43**.
+Regression finale automatizzata al momento del merge: **12/12 verdi** —
+invariants + smoke L1..L6 + G + H + F + E1 + I + batch2. Invarianti a
+quella data (blocco D, 2026-07-24): **Sistema 43.994,28 · Garantito
+personale 40.916,15 · Liquidità 3.537 · Fornitori totali 20.356,43**.
+Baseline attuale post-import-pf: vedi sezione in cima.
 
 ## 🆕 Batch2 UX (2026-07-27) — 5 rifiniture pre-merge
 
