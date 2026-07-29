@@ -6,6 +6,33 @@ audit universale eseguito; batch2 UX (P1-P5) integrato per rifiniture pre-
 merge (KPI risultato + catalogo servizi + fix bug erogato + modelli import
 + guide in-page). Regression 12/12 verde.
 
+## 🚀 STATO 2026-07-29 — motore import-pf / COSTI FISSI: CHIUSO E IN PRODUZIONE
+
+- Merge `prep-import-pf` → `main` eseguito. Schema v14. Regression 14/14 verde.
+- Invarianti a riposo (nuova baseline, OSM rimosso dai prioritari):
+  **Sistema 43.994,28 · Fornitori 20.356,43 · Liquidità 6.078 · Garantito 40.916,15**.
+- Cosa fa `applyImport` ora: fix parser PF (hyperlink, subtotali, IVA ristretto)
+  + backfill `importKey` sui seed + `prioMatchKey` + propagazione a Sistema **E**
+  Fornitori (`propagateFornitoreVal`, con ricalcolo `fornitoreFisso` e cross-parent
+  `sorvsan → c_medici_competenti` / `form → c_docenti`).
+- Import dei **DATI** PF NON ancora eseguito (solo il motore è in produzione).
+  Quando si importerà `PF.xlsx` dalla UI, atteso dal dry-run: 170 merge
+  `sistemaFissi` + 9 merge prioritari + propagazione fornitori dei 6 centri +
+  2 sole nuove prioritarie (IRPEF/Contributi 4.818,88 + F24 DM10 3.393,54).
+  Post-import atteso: **Sistema → 50.806,38**, **Liquidità media → −10.409**
+  (tasse dentro), **Fornitori resta 20.356,43** (no-op perché val PF = val seed).
+
+### TODO prossime sessioni
+
+1. Import PF dalla UI (azione manuale) + ispezionare le ~10 righe "nuove"
+   (costi veri o naming da allineare).
+2. Decidere il doppio **OSM / O.S.M.F.** nel PF.
+3. Collegare le voci PF alle macro-aree (ultimo pezzo del blocco import-pf).
+4. Collaudo a video del **garantito mese-su-mese** in produzione.
+5. In sospeso su altro branch: **ignora-premi** (scelta semantica A/B/C, merge
+   fermo su branch `ignora-premi`).
+6. Futuro: **Tab Personale** (anagrafica + switch dip↔P.IVA + serie costi mensili).
+
 ## 🎯 Stato finale del branch `blocco-finale`
 
 **Il branch è pronto per il merge su `main`, ma il merge NON è stato
