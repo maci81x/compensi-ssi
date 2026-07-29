@@ -26,12 +26,20 @@ merge (KPI risultato + catalogo servizi + fix bug erogato + modelli import
 
 1. Import PF dalla UI (azione manuale) + ispezionare le ~10 righe "nuove"
    (costi veri o naming da allineare).
-2. Decidere il doppio **OSM / O.S.M.F.** nel PF.
-3. Collegare le voci PF alle macro-aree (ultimo pezzo del blocco import-pf).
-4. Collaudo a video del **garantito mese-su-mese** in produzione.
-5. In sospeso su altro branch: **ignora-premi** (scelta semantica A/B/C, merge
+2. Collegare le voci PF alle macro-aree (ultimo pezzo del blocco import-pf).
+3. Collaudo a video del **garantito mese-su-mese** in produzione.
+4. In sospeso su altro branch: **ignora-premi** (scelta semantica A/B/C, merge
    fermo su branch `ignora-premi`).
-6. Futuro: **Tab Personale** (anagrafica + switch dip↔P.IVA + serie costi mensili).
+5. Futuro: **Tab Personale** (anagrafica + switch dip↔P.IVA + serie costi mensili).
+
+**Decisione OSM (2026-07-29)**: il parser PF NON deduplica OSM vs O.S.M.F.
+Entrambe le righe (stesso importo 18.300/anno, 1.525/mese) entrano in
+`sistemaFissi` come voci distinte. Dedup manuale post-import in pagina
+Sistema (edit/delete/toggle 👁 già disponibili).
+
+**Nice-to-have (out-of-scope, non urgente)**: toggle 👁 `escludi` anche
+sui prioritari (~10 righe UI + 1 filter in `prioritariP1`). Oggi
+prioritari hanno solo hard-delete.
 
 ## 🎯 Branch `blocco-finale` — ARCHIVIATO (2026-07-29)
 
