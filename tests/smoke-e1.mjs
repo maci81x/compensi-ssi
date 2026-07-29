@@ -161,7 +161,7 @@ const ok =
   editMicro.after === 150 &&
   editCustom.after === 999 &&
   inv.sistema === 43994.28 && inv.garantito === 40916.15 &&
-  inv.liquidita === 3537 && inv.fornitori === 20356.43;
+  inv.liquidita === 6078 && inv.fornitori === 20356.43;  // §prep-import-pf: 3537→6078
 console.log(ok ? '✅ E1 SMOKE OK' : '❌ E1 SMOKE FAIL');
 await b.close();
 process.exit(ok ? 0 : 1);

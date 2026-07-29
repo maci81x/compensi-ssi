@@ -9,7 +9,7 @@
 //     a 130 e oltre
 //  4) Con KPI attuali=0% ovunque, calcCompensoF.importo=0 per tutti →
 //     invarianti INVARIATI (Sistema 43994.28, Garantito 40916.15,
-//     Liquidità 3537, Fornitori 20356.43)
+//     Liquidità 6078, Fornitori 20356.43) — §prep-import-pf: 3537→6078 (OSM rimosso)
 //  5) Simulando K=100% su Commerciale (mettendo micro[0].ke=micro[0].kt),
 //     il compenso F di Roberto salta a 1% × margine_direct_comm.
 //  6) UI: openSchedaArea('comm') mostra la sezione "Compenso §F" con il
@@ -142,7 +142,7 @@ const ok = seed.schemaVersion === 14 &&  // v14 = §CostiMensili2026 (serie cost
   scen0.tot === 0 && scen0.rows.every(r => r.F.importo === 0) &&
   Math.abs(scen0.invSistema - 43994.28) < 1 &&
   Math.abs(scen0.invGar - 40916.15) < 1 &&
-  scen0.invLiq === 3537 &&
+  scen0.invLiq === 6078 &&  // §prep-import-pf: era 3537, +2541.67 per rimozione OSM da prio
   scen100.KRoberto === 100 && Math.abs(scen100.rRoberto - 0.01) < 1e-9 &&
   Math.abs(scen100.margineComm - 19852.28) < 1 &&
   Math.abs(scen100.importoRoberto - 198.52) < 1 &&

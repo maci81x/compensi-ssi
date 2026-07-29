@@ -203,7 +203,7 @@ console.log('invarianti finali:', invFinal);
 
 const ok =
   def.zeroAllCentri === true &&
-  def.inv.sistema === 43994.28 && def.inv.garantito === 40916.15 && def.inv.liquidita === 3537 && def.inv.fornitori === 20356.43 &&
+  def.inv.sistema === 43994.28 && def.inv.garantito === 40916.15 && def.inv.liquidita === 6078 && def.inv.fornitori === 20356.43 &&  // §prep-import-pf: 3537→6078
   add.consideraOff === true && add.valDopoAdd === add.valPrima && // manuale con considera:false
   Math.abs(add.delta_on - 1000) < 1e-6 && // toggle ON somma 1000
   add.valDopoOff === add.valPrima && // toggle OFF ripristina
@@ -214,7 +214,7 @@ const ok =
   audit.forni.dopo < audit.forni.prima && audit.forni.rip === audit.forni.prima && // escludi fornitore
   impKpi.added === 2 && impKpi.added2Repeat === 0 && impKpi.cleanedAt === impKpi.before &&
   invFinal.sistema === 43994.28 && invFinal.garantito === 40916.15 &&
-  invFinal.liquidita === 3537 && invFinal.fornitori === 20356.43;
+  invFinal.liquidita === 6078 && invFinal.fornitori === 20356.43;  // §prep-import-pf: 3537→6078
 console.log(ok ? '✅ I SMOKE OK' : '❌ I SMOKE FAIL');
 await b.close();
 process.exit(ok ? 0 : 1);

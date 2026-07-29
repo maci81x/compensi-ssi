@@ -10,7 +10,10 @@ const BASE = process.env.BASE || 'http://localhost:8791/';
 const EXPECT = {
   sistema: 43994.28,
   garantito: 40916.15,   // = garantitoPersonale (esclusa CDA); flow() lo espone come garantitoPersonale
-  liquidita: 3537,
+  // §prep-import-pf (2026-07-29): rimosso OSM 2541.67 (tipo=iva) dal seed
+  // prioritari — era relict del vecchio classifier PF. Effetto: prioritariP1
+  // -2541.67 → Liquidità +2541.67 (3537 → 6078).
+  liquidita: 6078,
   fornitori: 20356.43,
 };
 const TOL = 1; // ± 1 € tolleranza (arrotondamenti)

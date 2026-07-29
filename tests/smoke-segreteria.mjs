@@ -93,7 +93,7 @@ const ok =
   // sis è esclusaDaCompensiF (regola di sicurezza)
   stress.kaSisSim > 0 && stress.gaiaCompFSim === 0 && stress.isRespFGaiaSim === null &&
   org.gaiaNodo === false && org.dirCDA === false && org.sisNodo === true &&
-  inv.sistema === 43994.28 && inv.garantito === 40916.15 && inv.liquidita === 3537 && inv.fornitori === 20356.43;
+  inv.sistema === 43994.28 && inv.garantito === 40916.15 && inv.liquidita === 6078 && inv.fornitori === 20356.43;  // §prep-import-pf: 3537→6078
 console.log(ok ? '✅ SEGRETERIA SMOKE OK' : '❌ SEGRETERIA SMOKE FAIL');
 await b.close();
 process.exit(ok ? 0 : 1);

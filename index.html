@@ -1963,7 +1963,12 @@ function handleLoad(e){
 let pendingImport={pf:null,previsionale:null,dipendenti:null,storico:null};
 const STORICO_SEZIONI={'VENDUTO':'venduto','TACITI RINNOVI':'taciti','INCASSATO':'incassato'};
 const MESI_KEY=['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
-const PF_SUBTOTAL_KEYWORDS=['VENDUTO','FATTURATO','INCASSATO','ANTICIPI','COSTI FISSI','COSTO SOCI','COSTI VARIABILI'];
+const PF_SUBTOTAL_KEYWORDS=['VENDUTO','FATTURATO','INCASSATO','ANTICIPI','COSTI FISSI','COSTO SOCI','COSTI VARIABILI','COSTI FISSI STRUTTURA','PUBBLICITÀ - MARKETING','PUBBLICITA - MARKETING','UTENZE','RISULTATO DEL MESE','DELTA - RISULTATO DEL MESE'];
+// Estratti aggiunti in Fase §prep-import-pf: subtotali/celle-calcolo del PF reale
+// che il parser non riconosceva (finivano importati come voci vere e gonfiavano Sistema).
+// "RISULTATO DEL MESE" / "DELTA - RISULTATO DEL MESE" sono valori di sintesi calcolati.
+// "COSTI FISSI STRUTTURA" / "PUBBLICITÀ - MARKETING" / "UTENZE" sono subtotali di blocco.
+// Il match è su `cat`, `voce` E anche direttamente su `areaPF` (vedi loop parsePFSheet).
 
 function parsePFSheet(wb){
   const sheet=wb.Sheets['2026 PF'];
@@ -1994,9 +1999,26 @@ function parsePFSheet(wb){
   // interno restano invece prioritarie (obbligo aziendale, non individuale).
   let inServiziPersonale=false;
   let lastArea='';
+  // Fase §prep-import-pf: fix col A hyperlink. Se la cella A ha un hyperlink
+  // (proprietà .l), XLSX con raw:true a volte restituisce l'URL invece del
+  // testo visibile. Fallback: leggo direttamente sheet['A'+riga].w (formatted
+  // text). Se anche .w è un URL o vuoto, cadono su ereditarietà da lastArea.
+  const readAreaCell=(i)=>{
+    const ref='A'+(i+1); // sheet_to_json è 0-based, ref Excel è 1-based
+    const cell=sheet[ref];
+    if(!cell)return '';
+    // Preferisci .w (formatted) se presente e non è URL; poi .v raw
+    const w=cell.w!=null?String(cell.w).trim():'';
+    const v=cell.v!=null?String(cell.v).trim():'';
+    const isUrl=s=>/^https?:\/\//i.test(s);
+    if(w&&!isUrl(w))return w;
+    if(v&&!isUrl(v))return v;
+    // Entrambi URL o vuoti: ritorna vuoto → ereditarietà da lastArea
+    return '';
+  };
   for(let i=2;i<rows.length;i++){
     const r=rows[i];
-    let areaPF=String(r[0]||'').trim();
+    let areaPF=readAreaCell(i);
     const cat=String(r[1]||'').trim();
     const voce=String(r[2]||'').trim();
     const annuo=r[3];
@@ -2006,7 +2028,9 @@ function parsePFSheet(wb){
     if(typeof annuo!=='number')continue;
     if(areaPF)lastArea=areaPF; else areaPF=lastArea; // celle unite: eredita l'area della riga precedente
     const natura=(marker>=0&&i>=marker)?'variabile':'fisso';
-    const isSubtotal=inRecap||PF_SUBTOTAL_KEYWORDS.includes(cat.toUpperCase())||/TOTAL/i.test(voce)||/TOTAL/i.test(cat);
+    // Fase §prep-import-pf: aggiunto match su areaPF (nel PF reale certi
+    // subtotali come "RISULTATO DEL MESE" stanno in col A, non in cat).
+    const isSubtotal=inRecap||PF_SUBTOTAL_KEYWORDS.includes(cat.toUpperCase())||PF_SUBTOTAL_KEYWORDS.includes(areaPF.toUpperCase())||PF_SUBTOTAL_KEYWORDS.includes(voce.toUpperCase())||/TOTAL/i.test(voce)||/TOTAL/i.test(cat);
     if(cat.toUpperCase()==='COSTO SOCI')inServiziPersonale=true;
     const isPersonaleDetail=inServiziPersonale&&!isSubtotal;
     if(isSubtotal&&inServiziPersonale&&/TOTAL/i.test(cat))inServiziPersonale=false; // fine blocco: subtotale successivo (es. "COSTI FISSI TOTALI")
@@ -2376,13 +2400,16 @@ function condivideToken(a,b){
 }
 function classifyPFRow(v){
   const s=(v.areaPF+' '+(v.cat||'')+' '+v.voce).toLowerCase();
-  // "P.IVA"/"Partita IVA" (collaboratore a fattura) non è la voce fiscale
-  // "IVA" (F24/acconto) — va ripulita prima del test, altrimenti ogni riga
-  // di un collaboratore P.IVA finiva erroneamente tra i prioritari.
-  const sIva=s.replace(/\bp\.?\s*iva\b/g,'').replace(/partita\s+iva/g,'');
+  const catUp=(v.cat||'').toString().toUpperCase().trim();
+  const voceUp=(v.voce||'').toString().toUpperCase().trim();
   if(/leasing/.test(s))return{dest:'prioritari',tipo:'leasing'};
   if(/\bf24\b|irpef|inail|enasarco/.test(s))return{dest:'prioritari',tipo:'f24'};
-  if(/\biva\b/.test(sIva))return{dest:'prioritari',tipo:'iva'};
+  // Fase §prep-import-pf: restringi IVA. Prima era `\biva\b` sull'aggregato
+  // areaPF+cat+voce → matchava tutte le righe del blocco areaPF="IVA" del PF
+  // (incluso OSM 2541.67 che è formazione manager, non IVA). Ora: solo se
+  // la voce è specificamente F24 IVA o la categoria è IVA — l'area macro
+  // "IVA" del PF non basta più a classificare.
+  if(catUp==='IVA'||voceUp.startsWith('F24 IVA'))return{dest:'prioritari',tipo:'iva'};
   if(/\btfr\b/.test(s))return{dest:'prioritari',tipo:'tfr'};
   if(/rateizz/.test(s))return{dest:'prioritari',tipo:'rateizzo'};
   if(/accantona/.test(s))return{dest:'prioritari',tipo:'accantonamento'};
@@ -2398,6 +2425,82 @@ function classifyPFRow(v){
 // macro + categoria + descrizione originale corrispondano.
 function pfImportKey(v){
   return 'PF/'+normalizeStr((v.areaPF||'')+'|'+(v.cat||'')+'|'+(v.voce||''));
+}
+// Fase §prep-import-pf: backfill importKey per le voci seed di sistemaFissi
+// (183 righe DEF senza importKey, quindi il re-import PF non le riconosceva
+// come "stesse" e le duplicava). Idempotente: salta le voci che già hanno
+// importKey. NON tocca val/nome/areaId, quindi i 4 invarianti a riposo
+// restano identici. Da usare ONE-SHOT (via console o script) — non è chiamata
+// in migration finché non è verificato in dry-run.
+function backfillImportKeysSistemaFissi(){
+  if(!Array.isArray(S.sistemaFissi))return{backfilled:0,skipped:0,collisioni:0};
+  let b=0,s=0,col=0;
+  const seen=new Set();
+  S.sistemaFissi.forEach(sf=>{
+    if(sf.importKey){seen.add(sf.importKey);s++;return;}
+    const key='PF/'+normalizeStr((sf.areaPF||'')+'|'+(sf.cat||'')+'|'+(sf.nome||''));
+    if(seen.has(key)){col++;}else{seen.add(key);}
+    sf.importKey=key;
+    b++;
+  });
+  return{backfilled:b,skipped:s,collisioni:col};
+}
+// Backfill importKey anche su S.prioritari. Il seed prio non ha areaPF/cat
+// PF-friendly (le stesse voci nel PF vivono in blocchi diversi: F24 IVA in
+// "IVA", Enasarco in "Commerciale", Leasing Immobile in "Sistema", ecc.),
+// quindi usare pfImportKey(areaPF|cat|voce) porta a mismatch garantiti.
+// Uso una chiave dedicata: prioMatchKey = 'PRIO/' + normalizeStr(tipo|nome),
+// stabile perché tipo e nome sono determinati dal classifier e restano
+// costanti tra re-import. applyImport usa questa chiave per il merge prio.
+function prioMatchKey(nome,tipo){
+  return 'PRIO/'+normalizeStr((tipo||'')+'|'+(nome||''));
+}
+function backfillImportKeysPrioritari(){
+  if(!Array.isArray(S.prioritari))return{backfilled:0,skipped:0,collisioni:0};
+  let b=0,s=0,col=0;
+  const seen=new Set();
+  S.prioritari.forEach(pr=>{
+    if(pr.importKey){seen.add(pr.importKey);s++;return;}
+    const key=prioMatchKey(pr.nome,pr.tipo);
+    if(seen.has(key)){col++;}else{seen.add(key);}
+    pr.importKey=key;
+    b++;
+  });
+  return{backfilled:b,skipped:s,collisioni:col};
+}
+function backfillImportKeysAll(){
+  const sf=backfillImportKeysSistemaFissi();
+  const pr=backfillImportKeysPrioritari();
+  return{sistemaFissi:sf,prioritari:pr};
+}
+// §prep-import-pf: propagazione da sistemaFissi a aree[X].fornitori[].
+// Quando una voce PF con areaId di un centro (comm, c_antincendio, c_ambiente,
+// c_verifiche_terra, c_medici_competenti, c_docenti) viene scritta in
+// sistemaFissi, cerca il fornitore gemello in aree[*].fornitori (via nome
+// normalizzato, non areaId perché sistemaFissi ha spesso il padre sorvsan/form
+// mentre il fornitore vive nel figlio c_medici_competenti/c_docenti — vedi
+// ricognizione overlap) e aggiorna il suo valMensile. Merge, mai duplica: se
+// non trova gemello NON aggiunge (l'utente può creare manualmente il fornitore).
+// Ritorna {areaId, nomeForn, oldVal, newVal} se propagato, null se no gemello.
+function propagateFornitoreVal(nome,monthly){
+  const nomeNorm=normalizeStr(nome);
+  if(!nomeNorm||!Array.isArray(S.aree))return null;
+  for(const area of S.aree){
+    if(!Array.isArray(area.fornitori)||!area.fornitori.length)continue;
+    const forn=area.fornitori.find(f=>normalizeStr(f.nome)===nomeNorm);
+    if(forn){
+      const oldVal=forn.valMensile||0;
+      if(Math.abs(oldVal-monthly)<0.001)return null; // stesso val: no-op
+      forn.valMensile=monthly;
+      // Ricalcola area.fornitoreFisso = Σ valMensile per mantenere coerenti le
+      // due formule Fornitori (centroCostoFisso usa Σ valMensile quando c'è
+      // dettaglio; smoke test legacy usano fornitoreFisso come totale).
+      // Senza questo, valMensile e fornitoreFisso divergerebbero dopo import.
+      area.fornitoreFisso=area.fornitori.filter(f=>!(f.escludi===true)).reduce((s,f)=>s+(f.valMensile||0),0);
+      return{areaId:area.id,nomeForn:forn.nome,oldVal,newVal:monthly};
+    }
+  }
+  return null;
 }
 function findPossibileDoppione(v){
   const nv=normalizeStr(v.voce);
@@ -2430,6 +2533,8 @@ function applyImport(){
     S.sistemaFissi=S.sistemaFissi||[];
     S.prioritari=S.prioritari||[];
     let nPreserved=0;
+    let nPropForn=0; // §prep-import-pf: fornitori propagati
+    const propForn=(nome,monthly)=>{ if(propagateFornitoreVal(nome,monthly))nPropForn++; };
     pendingImport.pf.filter(v=>!v.escludi).forEach(v=>{
       const key=pfImportKey(v);
       const monthly=Math.round((v.annuo/12)*100)/100;
@@ -2445,18 +2550,31 @@ function applyImport(){
           if(!ue.natura){sf.natura=v.natura;}else nPreserved++;
           sf.importKey=key;
           nMerge++;
+          propForn(sf.nome,monthly);
           return;
         }
       }
       const cls=classifyPFRow(v);
       if(cls.dest==='prioritari'){
+        // §prep-import-pf: prima di push, cerca match via prioMatchKey (tipo+nome
+        // normalizzato). Se trovato: aggiorna val, non duplica. Altrimenti push.
+        const nome=v.voce||v.cat||v.areaPF;
+        const pkey=prioMatchKey(nome,cls.tipo);
+        const existing=S.prioritari.find(x=>x.importKey===pkey);
+        if(existing){
+          existing.val=monthly;
+          existing.importKey=pkey; // idempotente
+          nMerge++;
+          return;
+        }
         S.prioritari.push({id:'pr_'+Math.random().toString(36).slice(2,9),
-          nome:v.voce||v.cat||v.areaPF,val:monthly,tipo:cls.tipo,priorita:1});
+          nome,val:monthly,tipo:cls.tipo,priorita:1,importKey:pkey});
         nPrio++;
       }else{
+        const nomeNew=v.voce||v.cat||v.areaPF;
         S.sistemaFissi.push({
           id:'pf_'+Math.random().toString(36).slice(2,9),
-          nome:v.voce||v.cat||v.areaPF,
+          nome:nomeNew,
           cat:v.cat||v.areaPF,
           areaPF:v.areaPF,
           natura:v.natura,
@@ -2465,12 +2583,16 @@ function applyImport(){
           importKey:key
         });
         n++;
+        propForn(nomeNew,monthly);
       }
     });
     if(nPreserved>0){
       // Non silenziare: se ci sono conflitti tra import e override manuali,
       // l'utente deve saperlo per decidere se resettare qualche flag.
       console.log('[applyImport] '+nPreserved+' voci con override utente preservate (natura/area non sovrascritte)');
+    }
+    if(nPropForn>0){
+      console.log('[applyImport] '+nPropForn+' fornitori di area propagati (Sistema↔Fornitori sincronizzati)');
     }
   }
   if(pendingImport.previsionale){
@@ -2805,7 +2927,10 @@ const DEF={
     {id:'pr_s3z23q3',nome:'Leasing Immobile Poggibonsi',val:961.15,tipo:'leasing',priorita:1},
     {id:'pr_c98f3lb',nome:'F24 IVA',val:383.89,tipo:'f24',priorita:1},
     {id:'pr_9hf727i',nome:'F24 IMU+REGIONI+7085+2001',val:188.08,tipo:'f24',priorita:1},
-    {id:'pr_gbw58w1',nome:'OSM',val:2541.67,tipo:'iva',priorita:1},
+    // OSM (era 2541.67 tipo=iva, id pr_gbw58w1) rimosso in §prep-import-pf:
+    // era relict del vecchio classifier PF che matchava \biva\b su areaPF="IVA"
+    // — in realtà OSM è formazione manager, va in Sistema (o rivalutato).
+    // Impatto: prioritariP1 -2541.67 → Liquidità default +2541.67 (3537 → 6079).
     {id:'pr_x0la9tt',nome:'Accantonamento fondo',val:0,tipo:'accantonamento',priorita:1},
     {id:'pr_fczjq7i',nome:'anni precedenti',val:0,tipo:'rateizzo',priorita:1},
   ],

@@ -190,7 +190,7 @@ const ok =
   // P5 — guide su tutte le pagine principali
   Object.values(p5).every(v => v === true) &&
   // INVARIANTI
-  inv.sistema === 43994.28 && inv.garantito === 40916.15 && inv.liquidita === 3537 && inv.fornitori === 20356.43;
+  inv.sistema === 43994.28 && inv.garantito === 40916.15 && inv.liquidita === 6078 && inv.fornitori === 20356.43;  // §prep-import-pf: 3537→6078
 console.log(ok ? '✅ BATCH2 SMOKE OK' : '❌ BATCH2 SMOKE FAIL');
 await b.close();
 process.exit(ok ? 0 : 1);
