@@ -5073,6 +5073,13 @@ function addArea(parentId){
 
 function crudCommit(msg){ renderAll(); if(msg) notify(msg); }
 
+// Un nome può contenere virgolette o apici: senza escaping romperebbero
+// l'attributo HTML (o l'onclick) in cui viene interpolato.
+function escAttr(v){
+  return String(v==null?'':v).replace(/&/g,'&amp;').replace(/"/g,'&quot;')
+    .replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
 // Prompt di rinomina condiviso: annullare lascia tutto com'era, un nome vuoto
 // non cancella il nome esistente (errore di battitura ≠ intenzione).
 function crudRename(labelPrompt,valoreAttuale,apply,okMsg){
@@ -6028,8 +6035,8 @@ function renderProdSezioniExtra(){
           <th style="width:28px"></th>
         </tr></thead>
         <tbody>${voci.map((v,i)=>`<tr style="border-top:1px solid var(--lift)">
-          <td style="padding:4px 6px"><input value="${v.lbl}" class="inp" style="font-size:11px;padding:2px 5px;width:100%"
-            onblur="setVoceTec(${i},'lbl',this.value.trim()||'${v.lbl}')" onkeydown="if(event.keyCode===13)this.blur()"></td>
+          <td style="padding:4px 6px"><input value="${escAttr(v.lbl)}" class="inp" style="font-size:11px;padding:2px 5px;width:100%"
+            onblur="setVoceTec(${i},'lbl',this.value.trim()||this.defaultValue)" onkeydown="if(event.keyCode===13)this.blur()"></td>
           <td style="padding:4px 6px"><select class="inp" style="width:auto;font-size:11px;padding:1px 4px" onchange="setVoceTec(${i},'unit',this.value)">
             <option value="€" ${v.unit==='€'?'selected':''}>€</option>
             <option value="h" ${v.unit==='h'?'selected':''}>h</option>
@@ -7455,7 +7462,7 @@ function renderKpiCustomBlock(areaId){
       const pctK=(k.target>0)?Math.round((k.effettivo/k.target)*100):null;
       const okK=pctK!==null&&pctK>=S.soglia;
       h+='<tr style="border-top:1px solid var(--lift)">'
-        +'<td style="padding:3px 5px"><input value="'+k.nome+'" class="inp" style="font-size:11px;padding:2px 4px;width:100%"'
+        +'<td style="padding:3px 5px"><input value="'+escAttr(k.nome)+'" class="inp" style="font-size:11px;padding:2px 4px;width:100%"'
         +' onblur="setKpiCustom(\''+areaId+'\','+i+',\'nome\',this.value.trim()||this.defaultValue)" onkeydown="if(event.keyCode===13)this.blur()"></td>'
         +'<td style="padding:3px 5px;text-align:right"><input type="number" value="'+(k.target||0)+'" class="inp n" style="width:64px;font-size:11px;padding:2px 4px"'
         +' onblur="setKpiCustom(\''+areaId+'\','+i+',\'target\',this.value)" onkeydown="if(event.keyCode===13)this.blur()"></td>'

@@ -1,14 +1,14 @@
 # HANDOVER — Compensi SSI
 
-Stato del lavoro al **2026-07-24** (blocco finale A–D completati e validati),
-per continuare su un altro portatile.
+Stato del lavoro al **2026-08-03** (blocco finale A–D **e L** completati e
+validati), per continuare su un altro portatile.
 
 ## Come ripartire
 
 ```bash
 git clone https://github.com/maci81x/compensi-ssi.git
 cd compensi-ssi
-git checkout blocco-finale        # branch del blocco finale (A–D fatti)
+git checkout blocco-finale        # branch del blocco finale (A–D e L fatti)
 python3 -m http.server 8791
 # poi apri http://localhost:8791/
 ```
@@ -18,7 +18,7 @@ python3 -m http.server 8791
 > negli appunti di avvio).
 
 Repo: **https://github.com/maci81x/compensi-ssi**
-Branch di lavoro attuale: **`blocco-finale`** (contiene A–D; parte da
+Branch di lavoro attuale: **`blocco-finale`** (contiene A–D e L; parte da
 `ssi-compensi-import-phase`). **Non è mergiato su `main`, non toccare Pages** —
 il sito live resta quello attuale su `main`. Nessun merge finché il blocco
 finale non è validato tutto insieme.
@@ -29,9 +29,9 @@ Nota: i tre file Excel sorgente (`PF SI 2026.xlsx`, `26_Dettaglio costi dipenden
 
 ---
 
-## BLOCCO FINALE (A–L) — stato al 2026-07-24
+## BLOCCO FINALE (A–L) — stato al 2026-08-03
 
-Branch **`blocco-finale`**. Commit in ordine: A → fix flusso → B → C → D → fix D.
+Branch **`blocco-finale`**. Commit in ordine: A → fix flusso → B → C → D → fix D → L.
 
 ### ✅ FATTI E VALIDATI (numeri prima → dopo, verificati con Playwright)
 
@@ -70,6 +70,54 @@ Branch **`blocco-finale`**. Commit in ordine: A → fix flusso → B → C → D
   Docenti (1.703,52) ereditano i costi **spostandoli** dal padre (no doppio
   conteggio). `areaRollup` ora aggrega i discendenti chiusi fino a ogni confine.
 
+- **L — CRUD ovunque** (`e960aa0` → `2120153`): si può modificare, rinominare
+  ed eliminare in **ogni** contesto. Schema **v8→v9** (migrazione additiva:
+  **non tocca la topologia delle 30 aree**, verificato id/nomi/padri identici
+  prima e dopo).
+  - **Blocco CRUD condiviso**: `renamePersona` / `deletePersona` /
+    `sganciaPersonaDaArea` / `renameArea` / `deleteArea` / `addCentro` /
+    `deleteCAArea` / `addKpiCustom`… — un solo posto, stesso comportamento
+    ovunque. `crudCommit()` = `renderAll()` (ricalcolo `flow()` + salvataggio).
+    `crudRename()`: annullare non cambia nulla, nome vuoto non cancella il nome.
+  - **Persone** (L1): rinomina + elimina in schede risorsa (passo 4), popover
+    Configura, mini-organigrammi di area (✎ · ⚙ · ⊖ togli dall'area · 🗑) e
+    righe agenti del Commerciale. `personaStorico()` elenca nella conferma cosa
+    si perde (slot, storico premi, riga griglia, dati mensili, ruolo di capo
+    area) e con storico presente chiede una **seconda** conferma.
+    `deletePersona` ripulisce `areeCA`, `datiArea[*].agenti/_per` e le
+    distribuzioni premi: niente capi area fantasma né righe orfane.
+  - **Centri di costo** (L2): `addCentro()` dalla pagina Centri di costo
+    (prima esistevano solo come dati), ✎/🗑 per riga. Nasce chiuso e a zero →
+    entra nel rollup §5.1 senza spostare margine, budget o cascata.
+    `isCentro()`/`centriAree()`/`centriIds()` sostituiscono i confronti su
+    `CENTRI_IDS`, che resta solo come seed della migrazione v6.
+  - **Aree organigramma** (L3): azioni su hover sulla card (✎ rinomina ·
+    + sotto-area · 🗑 elimina), **inclusa la card Segreteria**, che prima non
+    aveva nulla. `deleteArea` non lascia figli orfani (risalgono al nonno).
+    **Le 30 aree ufficiali non si resettano, non si rigenerano, non si
+    ri-seedano**: si rendono solo editabili una alla volta.
+  - **Griglia Produzione** (L4, opzione 1): il 🗑 sulla riga **disattiva** lo
+    slot (`generato_tecnico.on=false`), reversibile dal pannello "righe
+    disattivate" sotto la tabella; i dati restano. La cancellazione totale
+    della persona resta in `deletePersona`.
+  - **Colonne griglia** (L5): le 9 voci cablate diventano dato di stato
+    (`S.vociTec`), aggiungibili/rinominabili/eliminabili con etichetta, unità
+    (€/h) e coefficiente di default. `calcSlot` somma sulle voci vive con la
+    stessa formula → generato invariato al centesimo.
+  - **KPI** (L6, opzione 1): `a.kpiCustom` **array parallelo**, minimale, in
+    pagina area e in Struttura (dove ci sono tutte e 30 le aree). Sono
+    monitoraggio: **non** fanno da cancello sui premi (`kpiA`/`areaKpiOk`
+    restano su `a.micro`) — il refactor completo è il blocco **E**.
+    Aggiunti anche ✎/🗑 con conferma sui KPI micro esistenti.
+  - **Fix**: default KPI Commerciale non è più `DVR da chiudere` (KPI da
+    tecnici) → campo vuoto con placeholder commerciale; la migrazione lo
+    azzera solo se è ancora esattamente quel placeholder.
+    `renderAll()` non ri-renderizzava `page-centri_costo`.
+  - **Invarianti confermati dopo tutto il blocco**: Sistema **43.994,28**,
+    garantito **40.916,15**, liquidità **3.536,75**, fornitori **20.356,43**,
+    budget aree var **78.013,27**, 30 aree, 18 pagine renderizzate con 0
+    errori JS.
+
 ### Risposte di Roberto ai 5 punti aperti di D (validazione 2026-07-24)
 
 1. **Nesting RTO→ASF**: confermato. ASF sotto RTO, servizi sotto ASF.
@@ -85,12 +133,15 @@ Branch **`blocco-finale`**. Commit in ordine: A → fix flusso → B → C → D
    confini "chiusa".
 5. Persone ed erogato per le nuove aree arrivano con **E** e **I**.
 
-### ⏳ DA FARE — blocchi E, F, G, H, I, L
+### ⏳ DA FARE — blocchi E, F, G, H, I
 
 - **E — KPI**: precaricare la proposta KPI per ogni area (marcati calcolabili vs
   manuali), tutti creabili/modificabili/monitorabili/eliminabili; **pannello
   target unico** dove il CDA imposta i target per tutte le aree con peso di
-  stagionalità applicato in automatico (§C già pronta).
+  stagionalità applicato in automatico (§C già pronta). *Il CRUD minimale sui
+  KPI c'è già (§L: `a.kpiCustom` + ✎/🗑 sui micro); qui manca la proposta
+  precaricata, la distinzione calcolabile/manuale, il pannello target unico e
+  il collegamento dei KPI custom al cancello premi.*
 - **F — Compensi responsabili**: fisso a mano modificabile (riproporziona tutto
   in tempo reale); variabile con **crescita continua** (no scaglioni): KPI<80→0;
   80–100 → aliquota 1,0%×(KPI−80)/20; ≥100 → 1,0%+0,05%×(KPI−100); cap 2,5% a
@@ -108,13 +159,10 @@ Branch **`blocco-finale`**. Commit in ordine: A → fix flusso → B → C → D
   erogato, tipologia, centro di costo), modificabile/eliminabile. Margine col
   metodo "Marginalità" del PF: prezzo vendita netto − var. commerciali − var.
   interni − incidenza costi fissi.
-- **L — CRUD ovunque**: modificare/eliminare nomi dipendenti e collaboratori in
-  OGNI contesto; oggi la card Segreteria non è modificabile — rendere coerente
-  ovunque.
 
 ### Note tecniche per continuare
 
-- Schema attuale **v8**. Ogni bump di `CURRENT_SCHEMA_VERSION` richiede un nuovo
+- Schema attuale **v9**. Ogni bump di `CURRENT_SCHEMA_VERSION` richiede un nuovo
   step in `SCHEMA_MIGRATIONS` (migra aggiungendo solo ciò che manca, mai
   sovrascrive dati reali).
 - Verifica rapida senza toccare il cloud condiviso: Playwright con rete Supabase
