@@ -3083,6 +3083,10 @@ const DEF={
 
   ]
 };
+// §L6 — ogni area ha il suo array di KPI custom, anche partendo da zero:
+// la migrazione v9 lo aggiunge agli stati esistenti, questo lo garantisce su
+// uno stato nuovo generato da DEF (le aree legacy non lo dichiarano).
+DEF.aree.forEach(a=>{ if(!Array.isArray(a.kpiCustom))a.kpiCustom=[]; });
 let S=JSON.parse(JSON.stringify(DEF));
 normalizzaOrgUfficiale(S); // §D — sposta i costi ereditati anche sul clone fresco
 
@@ -3985,6 +3989,9 @@ function renderAll(){
   if(activePage?.id==='page-storico')renderStorico();
   if(['page-comm_page','page-form_page','page-amm_page','page-mkt_page','page-sorvsan_page','page-seg_page'].includes(activePage?.id)) renderAreaPage();
   if(activePage?.id==='page-produzione')renderProduzionePage();
+  // §L — mancava: aggiungendo/eliminando un centro da questa pagina la
+  // tabella restava ferma finché non si cambiava scheda.
+  if(activePage?.id==='page-centri_costo')renderCentriCostoPage();
   if(activePage?.id==='page-dash'){renderDash(f);}
   if(activePage?.id==='page-sim'){updateSim(simInc);}
   saveLocal();
@@ -5038,8 +5045,8 @@ function renderStruttura(){
               <td style="padding:5px 6px;border-bottom:1px solid rgba(0,0,0,.04);text-align:right"><input type="number" value="${m.kt}" class="ki" onblur="S.aree[${ai}].micro[${mi}].kt=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()"></td>
               <td style="padding:5px 6px;border-bottom:1px solid rgba(0,0,0,.04);text-align:right"><input type="number" value="${m.ke}" class="ki" onblur="S.aree[${ai}].micro[${mi}].ke=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()"></td>
               <td style="padding:5px 6px;border-bottom:1px solid rgba(0,0,0,.04);text-align:right" class="${kpiCls(km)}">${km!==null?km+'%':'—'}</td>
-              <td style="padding:5px 6px;border-bottom:1px solid rgba(0,0,0,.04)"><button class="btn xs danger" onclick="S.aree[${ai}].micro.splice(${mi},1);renderAll()">✕</button></td>
-            </tr>`;}).join('')}</tbody>         </table>         <div style="display:flex;gap:6px;margin-top:8px">           <button class="btn xs prim" onclick="S.aree[${ai}].micro.push({nome:'Nuova micro area',fisso:0,bonus:0,kt:101,ke:0,note:''});renderAll()">+ Micro area</button>           <button class="btn xs" onclick="addArea('${a.id}')">+ Sotto-area / centro di costo</button>           <button class="btn xs" onclick="renameArea('${a.id}')">✎ Rinomina</button>           <button class="btn xs danger" onclick="deleteArea('${a.id}')">🗑 Elimina area</button>         </div>       </div>`;
+              <td style="padding:5px 6px;border-bottom:1px solid rgba(0,0,0,.04);white-space:nowrap"><button class="btn xs" title="Rinomina" onclick="renameKpiMicro('${a.id}',${mi})">✎</button> <button class="btn xs danger" title="Elimina" onclick="deleteKpiMicro('${a.id}',${mi})">🗑</button></td>
+            </tr>`;}).join('')}</tbody>         </table>         ${renderKpiCustomBlock(a.id)}         <div style="display:flex;gap:6px;margin-top:8px">           <button class="btn xs prim" onclick="S.aree[${ai}].micro.push({nome:'Nuova micro area',fisso:0,bonus:0,kt:101,ke:0,note:''});renderAll()">+ Micro area</button>           <button class="btn xs" onclick="addArea('${a.id}')">+ Sotto-area / centro di costo</button>           <button class="btn xs" onclick="renameArea('${a.id}')">✎ Rinomina</button>           <button class="btn xs danger" onclick="deleteArea('${a.id}')">🗑 Elimina area</button>         </div>       </div>`;
     cont.appendChild(sec);
   });
 }
@@ -5215,6 +5222,61 @@ function addCentro(){
     fornitoreFisso:0,ricavoModo:'manuale',ricavoManuale:0,ricavoPct:0,
     fornitori:[],micro:[],kpiCustom:[]});
   crudCommit('Centro di costo creato: '+v);
+}
+
+// ── KPI (L6) ──────────────────────────────────────────────────────────────
+// Scelta presa (opzione 1): array PARALLELO a.kpiCustom, minimale e coerente
+// con L2/L3. Il refactor completo dei KPI per area — proposta precaricata per
+// tutte le aree, calcolabili vs manuali, pannello target unico — è il blocco E
+// dedicato: qui S.kpiPerArea/a.micro NON si toccano.
+// Conseguenza voluta: i KPI custom sono monitoraggio: non entrano ancora nel
+// cancello premi (areaKpiOk/kpiA restano su a.micro) finché non arriva §E.
+function areaKpiCustom(a){ if(!Array.isArray(a.kpiCustom))a.kpiCustom=[]; return a.kpiCustom; }
+
+function addKpiCustom(areaId){
+  const a=S.aree.find(x=>x.id===areaId); if(!a)return;
+  const nome=prompt('Nome del nuovo KPI per «'+a.nome+'»:');
+  if(nome===null)return;
+  const v=nome.trim();
+  if(!v){ notify('Nome vuoto — KPI non creato'); return; }
+  areaKpiCustom(a).push({id:'kc_'+Date.now(),nome:v,target:0,effettivo:0,note:''});
+  crudCommit('KPI aggiunto: '+v);
+}
+function renameKpiCustom(areaId,i){
+  const a=S.aree.find(x=>x.id===areaId); if(!a)return;
+  const k=areaKpiCustom(a)[i]; if(!k)return;
+  crudRename('Nome del KPI:',k.nome,v=>{k.nome=v;},'KPI rinominato: ');
+}
+function setKpiCustom(areaId,i,campo,valore){
+  const a=S.aree.find(x=>x.id===areaId); if(!a)return;
+  const k=areaKpiCustom(a)[i]; if(!k)return;
+  k[campo]=(campo==='nome'||campo==='note')?valore:(parseFloat(valore)||0);
+  crudCommit(null);
+}
+function deleteKpiCustom(areaId,i){
+  const a=S.aree.find(x=>x.id===areaId); if(!a)return;
+  const lista=areaKpiCustom(a);
+  const k=lista[i]; if(!k)return;
+  if(!confirm('Eliminare il KPI «'+k.nome+'» da «'+a.nome+'»?\n\nTarget e valore effettivo registrati vanno persi.'))return;
+  a.kpiCustom=lista.filter((_,j)=>j!==i);
+  crudCommit('KPI eliminato: '+k.nome);
+}
+
+// Micro aree KPI (a.micro): esistevano già con "+ KPI" e una ✕ senza conferma.
+// Stessi gesti delle altre entità, stessa conferma.
+function renameKpiMicro(areaId,mi){
+  const a=S.aree.find(x=>x.id===areaId); if(!a)return;
+  const m=(a.micro||[])[mi]; if(!m)return;
+  crudRename('Nome della micro area KPI:',m.nome,v=>{m.nome=v;},'KPI rinominato: ');
+}
+function deleteKpiMicro(areaId,mi){
+  const a=S.aree.find(x=>x.id===areaId); if(!a)return;
+  const m=(a.micro||[])[mi]; if(!m)return;
+  if(!confirm('Eliminare la micro area KPI «'+m.nome+'» da «'+a.nome+'»?\n\n'
+    +'Questi KPI fanno da cancello sui premi dell\'area (soglia '+S.soglia+'%): '
+    +'togliendone uno cambia la media e quindi il pool premi proposto.'))return;
+  a.micro.splice(mi,1);
+  crudCommit('KPI eliminato: '+m.nome);
 }
 
 // ── SISTEMA PAGE ─────────────────────────
@@ -5870,7 +5932,7 @@ function renderCentriCostoPage(){
   }
   html+=`<div style="max-height:700px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
     <thead><tr style="text-align:left;color:var(--ink3);font-size:10px;text-transform:uppercase">
-      <th style="padding:5px 8px">Centro</th><th style="padding:5px 8px">Ricavo — modo</th><th style="padding:5px 8px" class="mono">Valore €</th><th style="padding:5px 8px">Fornitore fisso €</th><th style="padding:5px 8px" class="mono">Costo var €</th><th style="padding:5px 8px" class="mono">Margine €</th><th style="padding:5px 8px" class="mono">Margine %</th>
+      <th style="padding:5px 8px">Centro</th><th style="padding:5px 8px">Ricavo — modo</th><th style="padding:5px 8px" class="mono">Valore €</th><th style="padding:5px 8px">Fornitore fisso €</th><th style="padding:5px 8px" class="mono">Costo var €</th><th style="padding:5px 8px" class="mono">Margine €</th><th style="padding:5px 8px" class="mono">Margine %</th><th style="padding:5px 8px;width:60px"></th>
     </tr></thead>
     <tbody>
     ${centri.map((c)=>{
@@ -5894,7 +5956,7 @@ function renderCentriCostoPage(){
       const fornitori=c.fornitori||[];
       const fiDetail=fornitori.length
         ?`<tr style="border-top:none">
-            <td colspan="7" style="padding:0 8px 8px 8px">
+            <td colspan="8" style="padding:0 8px 8px 8px">
               <details><summary style="font-size:10px;color:var(--ink3);cursor:pointer">${fornitori.length} fornitori — dettaglio</summary>
                 <table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:4px">
                   ${fornitori.map((fo,fi)=>`<tr>
@@ -5909,7 +5971,7 @@ function renderCentriCostoPage(){
               </details>
             </td>
           </tr>`
-        :`<tr><td colspan="7" style="padding:0 8px 8px 8px"><button class="btn xs" onclick="S.aree[${ci}].fornitori=S.aree[${ci}].fornitori||[];S.aree[${ci}].fornitori.push({nome:'Nuovo fornitore',valMensile:0});renderAll()">+ Fornitore</button></td></tr>`;
+        :`<tr><td colspan="8" style="padding:0 8px 8px 8px"><button class="btn xs" onclick="S.aree[${ci}].fornitori=S.aree[${ci}].fornitori||[];S.aree[${ci}].fornitori.push({nome:'Nuovo fornitore',valMensile:0});renderAll()">+ Fornitore</button></td></tr>`;
       return`<tr style="border-top:1px solid var(--lift)">
         <td style="padding:5px 8px;font-weight:600">${c.nome}</td>
         <td style="padding:5px 8px;white-space:nowrap">${modoSelect}${modoInput}</td>
@@ -5918,10 +5980,18 @@ function renderCentriCostoPage(){
         <td style="padding:5px 8px" class="mono">${fmt(cv)}</td>
         <td style="padding:5px 8px;color:${m>=0?'var(--green)':'var(--red)'}" class="mono">${fmt(m)}</td>
         <td style="padding:5px 8px" class="mono">${mp!==null?mp.toFixed(1)+'%':'—'}</td>
+        <td style="padding:5px 8px;text-align:right;white-space:nowrap">
+          <button class="btn xs" style="padding:1px 4px" title="Rinomina centro" onclick="renameArea('${c.id}')">✎</button>
+          <button class="btn xs danger" style="padding:1px 4px" title="Elimina centro" onclick="deleteArea('${c.id}')">🗑</button>
+        </td>
       </tr>${fiDetail}`;
     }).join('')}
     </tbody>
-  </table></div>`;
+  </table></div>
+  <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;align-items:center">
+    <button class="btn sm prim" onclick="addCentro()">+ Nuovo centro di costo</button>
+    <span style="font-size:11px;color:var(--ink3)">Nasce sotto lo stesso genitore dei centri esistenti, chiuso e a zero: entra nel rollup senza spostare margine, budget o cascata.</span>
+  </div>`;
   el.innerHTML=html;
 }
 
@@ -7295,13 +7365,16 @@ function renderAreaKPI(containerId, areaId){
 }
 
 function renderAreaKPIInto(el, areaId){
-  const a=S.aree.find(x=>x.id===areaId);if(!a||!a.micro?.length)return;
+  // §L6 — prima usciva subito se l'area non aveva micro KPI: nessun modo di
+  // crearne uno da qui. Ora la sezione c'è sempre, anche vuota.
+  const a=S.aree.find(x=>x.id===areaId);if(!a)return;
   const ai=S.aree.indexOf(a);
+  const micro=a.micro||[];
   // Remove existing KPI section if any
   const existing=el.querySelector('.area-kpi-section');
   if(existing)existing.remove();
 
-  const achieved=a.micro.filter(m=>m.kt>0&&Math.round((m.ke/m.kt)*100)>=S.soglia).length;
+  const achieved=micro.filter(m=>m.kt>0&&Math.round((m.ke/m.kt)*100)>=S.soglia).length;
   const wrap=document.createElement('div');
   wrap.className='area-kpi-section';
   wrap.style.cssText='margin-top:16px';
@@ -7311,11 +7384,11 @@ function renderAreaKPIInto(el, areaId){
     +'<span style="font-size:12px;font-weight:600">📊 KPI Area — '+a.nome+'</span>'
     +'<span style="font-size:11px;color:var(--ink3);display:flex;align-items:center;gap:6px">Mese destagionalizz.: '
     +'<select class="inp" style="width:auto;display:inline-block;font-size:11px;padding:1px 4px" onchange="S.meseCorrente=parseInt(this.value);renderAll()">'+meseOpts+'</select>'
-    +'· '+achieved+'/'+a.micro.length+' raggiunti (soglia '+S.soglia+'%)</span></div>'
+    +'· '+achieved+'/'+micro.length+' raggiunti (soglia '+S.soglia+'%)</span></div>'
     +'<div style="font-size:10px;color:var(--ink3);margin-bottom:6px">Tagga un KPI come <strong>vendita</strong> o <strong>cassa</strong> per vedere il target del mese: target medio × indice stagionale ('+MESI_NOMI[(S.meseCorrente||1)-1]+') / 100.</div>'
     +'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px">';
 
-  a.micro.forEach(function(m,mi){
+  micro.forEach(function(m,mi){
     const km=m.kt>0?Math.round((m.ke/m.kt)*100):null;
     const ok=km!==null&&km>=S.soglia;
     const pctBar=m.kt>0?Math.min((m.ke/m.kt)*100,100):0;
@@ -7324,7 +7397,11 @@ function renderAreaKPIInto(el, areaId){
     html+='<div style="background:var(--card);border:1px solid '+border+';border-radius:var(--r);padding:9px 11px">'
       +'<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;margin-bottom:4px">'
       +'<div style="font-size:11px;font-weight:500;flex:1">'+m.nome+'</div>'
-      +'<span style="font-size:10px;font-weight:700;color:'+(ok?'var(--green)':'var(--ink3)')+'">'+( km!==null?km+'%':'—')+'</span></div>'
+      +'<span style="font-size:10px;font-weight:700;color:'+(ok?'var(--green)':'var(--ink3)')+'">'+( km!==null?km+'%':'—')+'</span>'
+      +'<span style="display:flex;gap:2px">'
+      +'<button class="btn xs" style="padding:1px 4px" title="Rinomina KPI" onclick="renameKpiMicro(\''+areaId+'\','+mi+')">✎</button>'
+      +'<button class="btn xs danger" style="padding:1px 4px" title="Elimina KPI" onclick="deleteKpiMicro(\''+areaId+'\','+mi+')">🗑</button>'
+      +'</span></div>'
       +'<div style="height:3px;background:var(--lift);border-radius:2px;overflow:hidden;margin-bottom:6px">'
       +'<div style="height:100%;width:'+pctBar+'%;background:'+barColor+';border-radius:2px"></div></div>'
       +'<div style="display:flex;gap:8px;align-items:center">'
@@ -7346,9 +7423,55 @@ function renderAreaKPIInto(el, areaId){
       +'</div></div>';
   });
 
-  html+='</div><button class="btn xs" style="margin-top:8px" onclick="S.aree['+ai+'].micro.push({nome:"Nuovo KPI",kt:101,ke:0,note:""});renderAll()">+ KPI</button>';
+  if(!micro.length)
+    html+='<div style="font-size:11px;color:var(--ink3);padding:6px 2px">Nessun KPI di area (quelli che fanno da cancello sui premi). Aggiungine uno con "+ KPI".</div>';
+  html+='</div><button class="btn xs" style="margin-top:8px" onclick="S.aree['+ai+'].micro.push({nome:\'Nuovo KPI\',kt:101,ke:0,note:\'\'});renderAll()">+ KPI</button>';
+
+  // §L6 — KPI custom dell'area: array parallelo, monitoraggio libero.
+  html+=renderKpiCustomBlock(areaId);
+
   wrap.innerHTML=html;
   el.appendChild(wrap);
+}
+
+// Blocco KPI custom riusabile (pagina area e scheda Struttura): creabili,
+// rinominabili, eliminabili. Minimale di proposito — la proposta precaricata
+// per tutte le aree e il pannello target unico sono il blocco E.
+function renderKpiCustomBlock(areaId){
+  const a=S.aree.find(x=>x.id===areaId); if(!a)return '';
+  const lista=Array.isArray(a.kpiCustom)?a.kpiCustom:[];
+  let h='<div style="margin-top:14px;padding-top:8px;border-top:1px dashed var(--lift)">'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'
+    +'<span style="font-size:11px;font-weight:600">KPI custom — '+a.nome+'</span>'
+    +'<span style="font-size:10px;color:var(--ink3)">monitoraggio libero: non fanno da cancello sui premi (arriva col blocco E)</span></div>';
+  if(lista.length){
+    h+='<table style="width:100%;border-collapse:collapse;font-size:11px">'
+      +'<thead><tr style="color:var(--ink3);font-size:10px;text-transform:uppercase">'
+      +'<th style="text-align:left;padding:3px 5px">Nome</th>'
+      +'<th style="padding:3px 5px;text-align:right">Target</th>'
+      +'<th style="padding:3px 5px;text-align:right">Effettivo</th>'
+      +'<th style="padding:3px 5px;text-align:right">%</th><th style="width:52px"></th></tr></thead><tbody>';
+    lista.forEach(function(k,i){
+      const pctK=(k.target>0)?Math.round((k.effettivo/k.target)*100):null;
+      const okK=pctK!==null&&pctK>=S.soglia;
+      h+='<tr style="border-top:1px solid var(--lift)">'
+        +'<td style="padding:3px 5px"><input value="'+k.nome+'" class="inp" style="font-size:11px;padding:2px 4px;width:100%"'
+        +' onblur="setKpiCustom(\''+areaId+'\','+i+',\'nome\',this.value.trim()||this.defaultValue)" onkeydown="if(event.keyCode===13)this.blur()"></td>'
+        +'<td style="padding:3px 5px;text-align:right"><input type="number" value="'+(k.target||0)+'" class="inp n" style="width:64px;font-size:11px;padding:2px 4px"'
+        +' onblur="setKpiCustom(\''+areaId+'\','+i+',\'target\',this.value)" onkeydown="if(event.keyCode===13)this.blur()"></td>'
+        +'<td style="padding:3px 5px;text-align:right"><input type="number" value="'+(k.effettivo||0)+'" class="inp n" style="width:64px;font-size:11px;padding:2px 4px"'
+        +' onblur="setKpiCustom(\''+areaId+'\','+i+',\'effettivo\',this.value)" onkeydown="if(event.keyCode===13)this.blur()"></td>'
+        +'<td style="padding:3px 5px;text-align:right;font-weight:600;color:'+(okK?'var(--green)':'var(--ink3)')+'">'+(pctK!==null?pctK+'%':'—')+'</td>'
+        +'<td style="padding:3px 5px;text-align:right;white-space:nowrap">'
+        +'<button class="btn xs" style="padding:1px 4px" title="Rinomina" onclick="renameKpiCustom(\''+areaId+'\','+i+')">✎</button> '
+        +'<button class="btn xs danger" style="padding:1px 4px" title="Elimina" onclick="deleteKpiCustom(\''+areaId+'\','+i+')">🗑</button></td></tr>';
+    });
+    h+='</tbody></table>';
+  } else {
+    h+='<div style="font-size:10px;color:var(--ink3);padding:2px">Nessun KPI custom su quest\'area.</div>';
+  }
+  h+='<button class="btn xs" style="margin-top:6px" onclick="addKpiCustom(\''+areaId+'\')">+ KPI custom</button></div>';
+  return h;
 }
 
 window.addEventListener('DOMContentLoaded',()=>{
