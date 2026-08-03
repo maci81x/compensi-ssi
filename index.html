@@ -3385,6 +3385,14 @@ function areaCosto(a){
 // 0 finché non viene aggiunto un campo dedicato — sono "creabili" (CRUD già
 // presente su S.aree) più che operativi.
 const CENTRI_IDS=['c_antincendio','c_ambiente','c_cantieri','c_rspp','c_verifiche_terra','c_documenti'];
+// §L — la lista sopra resta il SEED storico (e la usa la migrazione v6, che
+// non deve dipendere da uno stato più recente). Da qui in poi si passa da
+// isCentro(): il flag esplicito a.isCentro vince, così un centro creato
+// dall'UI entra nei calcoli §6 e uno eliminato ne esce, senza riscrivere la
+// lista né toccare le 30 aree ufficiali di §D.
+function isCentro(a){ return !!a && (a.isCentro!==undefined ? !!a.isCentro : CENTRI_IDS.includes(a.id)); }
+function centriAree(){ return S.aree.filter(isCentro); }
+function centriIds(){ return centriAree().map(a=>a.id); }
 // Analisi assorbita in Ambiente, Estintori assorbito in Antincendio — i campi
 // di generato_tecnico non cambiano nome, solo il centro che li possiede.
 const CENTRO_TECNICO_FIELD={c_ambiente:'analisi',c_antincendio:'estintori',c_cantieri:'cantieri',c_rspp:'rspp',c_documenti:'documenti'};
@@ -3530,7 +3538,7 @@ function centroValore(centro){
 // Somma delle % dei centri attualmente in modo 'percentuale' — informativo,
 // come il controllo già esistente sulla ripartizione ore (§6 richiesta B).
 function checkRicavoPct(){
-  const centriPct=CENTRI_IDS.map(id=>S.aree.find(a=>a.id===id)).filter(c=>c&&(c.ricavoModo||'')==='percentuale');
+  const centriPct=centriAree().filter(c=>(c.ricavoModo||'')==='percentuale');
   const sum=centriPct.reduce((s,c)=>s+(c.ricavoPct||0),0);
   return{centri:centriPct,sum};
 }
@@ -3562,9 +3570,9 @@ function checkRipartizioneCentri(){
   const warn=[];
   S.personale.forEach(p=>{
     if(!p.ripartizioneCentri)return;
-    const pctSum=CENTRI_IDS.reduce((s,id)=>s+((p.ripartizioneCentri[id])||0),0);
+    const pctSum=centriIds().reduce((s,id)=>s+((p.ripartizioneCentri[id])||0),0);
     if(Math.abs(pctSum-100)>0.5)warn.push(`${p.nome}: le % sui centri sommano a ${pctSum.toFixed(1)}% (dovrebbero fare 100%)`);
-    const oreAllocate=CENTRI_IDS.reduce((s,id)=>s+getOreCentro(p,id),0);
+    const oreAllocate=centriIds().reduce((s,id)=>s+getOreCentro(p,id),0);
     if(p.oreMensili&&Math.abs(oreAllocate-p.oreMensili)>0.5)warn.push(`${p.nome}: ore allocate sui centri (${oreAllocate.toFixed(1)}) diverse dalle ore mensili reali (${p.oreMensili.toFixed(1)})`);
   });
   return warn;
@@ -3600,10 +3608,10 @@ function areaRollup(area){
 // Editor "ripartizione ore sui centri" per il modal Configura risorsa —
 // mostrato solo per i tecnici che hanno la matrice (S.personale[].ripartizioneCentri).
 function renderRipartizioneCentriEditor(p,pi){
-  const centri=S.aree.filter(a=>CENTRI_IDS.includes(a.id));
+  const centri=centriAree();
   const rip=p.ripartizioneCentri||{};
   const ove=p.oreEffettiveCentro||{};
-  const sum=CENTRI_IDS.reduce((s,id)=>s+(rip[id]||0),0);
+  const sum=centriIds().reduce((s,id)=>s+(rip[id]||0),0);
   return`<div class="pop-div"></div>
     <div style="margin-bottom:6px;font-size:12px;font-weight:600">Ripartizione ore sui centri di costo (§6)</div>
     <div style="font-size:11px;color:var(--ink3);margin-bottom:6px">
@@ -3678,7 +3686,7 @@ function bonusOk(k){return k!==null&&k>=S.soglia;}
 // altrimenti quota personale prodotta nell'area (parte variabile degli slot
 // di chi vi lavora) — SPEC-v10 §9.1 "quota personale prodotta".
 function areaMarginBase(a){
-  if(CENTRI_IDS.includes(a.id))return Math.max(0,centroMargine(a));
+  if(isCentro(a))return Math.max(0,centroMargine(a));
   const roll=areaRollup(a);
   if(roll)return Math.max(0,roll.margine);
   return S.personale.reduce((s,p)=>s+(p.slots||[]).filter(sl=>sl.area===a.id).reduce((ss,sl)=>ss+calcSlot(p,sl).variabile,0),0);
@@ -4237,7 +4245,7 @@ function renderStep4(){
     const hasSlots=(p.slots||[]).length>0;
 
     const rr=document.createElement('div');
-    rr.innerHTML=`<div class="rr ${isOpen?'open':''}" onclick="toggleRR(${pi},'s4')">       <div class="rr-av" style="background:${bg};color:${fg}">${initials(p.nome)}</div>       <div style="flex:1;min-width:0">         <div class="rr-name">${p.nome}           ${p.isResp?'<span class="badge" style="background:var(--purple-bg);color:var(--purple);font-size:9px;margin-left:4px">RESP</span>':''}           ${p.isCapoArea?'<span class="badge" style="background:var(--green-bg);color:var(--green);font-size:9px;margin-left:3px">CA</span>':''}         </div>         <div class="rr-role">${hasSlots?(p.slots||[]).map(s=>s.label).join(' · '):p.ruolo_principale}</div>       </div>       <div class="rr-slots">         ${(p.slots||[]).map(s=>`<span class="slot-pill ${SLOT_PILL[s.tipo]||'sp-altro'}">${SLOT_ICON[s.tipo]} ${s.label}</span>`).join('')}       </div>       <div class="rr-vals">         <div class="rv"><div class="rl">garantito</div><div class="rv-v">${fmt(cp.garantito)}</div></div>         <div class="rv"><div class="rl">variabile</div><div class="rv-v" style="color:var(--green)">${fmt(cp.variabile+cp.condizionale+cp.commissioni)}</div></div>         <div class="rv"><div class="rl">totale</div><div class="rv-v" style="color:var(--blue)">${fmt(cp.totale)}</div></div>       </div>       <div class="rr-acts">         <button class="btn xs" onclick="event.stopPropagation();openPersonaPop(${pi})" title="Configura">⚙️</button>         <button class="btn xs danger" onclick="event.stopPropagation();if(confirm('Eliminare ${p.nome.replace(/'/g,'&#39;')}?')){S.personale.splice(${pi},1);renderAll()}" title="Elimina">✕</button>       </div>     </div>     <div class="rr-body ${isOpen?'open':''}" id="rrb_${pi}_s4">       ${renderRRBody(p,pi,'s4')}     </div>`;
+    rr.innerHTML=`<div class="rr ${isOpen?'open':''}" onclick="toggleRR(${pi},'s4')">       <div class="rr-av" style="background:${bg};color:${fg}">${initials(p.nome)}</div>       <div style="flex:1;min-width:0">         <div class="rr-name">${p.nome}           ${p.isResp?'<span class="badge" style="background:var(--purple-bg);color:var(--purple);font-size:9px;margin-left:4px">RESP</span>':''}           ${p.isCapoArea?'<span class="badge" style="background:var(--green-bg);color:var(--green);font-size:9px;margin-left:3px">CA</span>':''}         </div>         <div class="rr-role">${hasSlots?(p.slots||[]).map(s=>s.label).join(' · '):p.ruolo_principale}</div>       </div>       <div class="rr-slots">         ${(p.slots||[]).map(s=>`<span class="slot-pill ${SLOT_PILL[s.tipo]||'sp-altro'}">${SLOT_ICON[s.tipo]} ${s.label}</span>`).join('')}       </div>       <div class="rr-vals">         <div class="rv"><div class="rl">garantito</div><div class="rv-v">${fmt(cp.garantito)}</div></div>         <div class="rv"><div class="rl">variabile</div><div class="rv-v" style="color:var(--green)">${fmt(cp.variabile+cp.condizionale+cp.commissioni)}</div></div>         <div class="rv"><div class="rl">totale</div><div class="rv-v" style="color:var(--blue)">${fmt(cp.totale)}</div></div>       </div>       <div class="rr-acts">         <button class="btn xs" onclick="event.stopPropagation();renamePersona(${pi})" title="Rinomina">✎</button>         <button class="btn xs" onclick="event.stopPropagation();openPersonaPop(${pi})" title="Configura">⚙️</button>         <button class="btn xs danger" onclick="event.stopPropagation();deletePersona(${pi})" title="Elimina definitivamente">🗑</button>       </div>     </div>     <div class="rr-body ${isOpen?'open':''}" id="rrb_${pi}_s4">       ${renderRRBody(p,pi,'s4')}     </div>`;
     cont.appendChild(rr);
   });
   // Add button
@@ -4457,7 +4465,7 @@ function renderOrg(){
   const AREA_COLORS={comm:'#1A6B3C',prod:'#0F4499',form:'#4A38B0',
     amm:'#7A4A08',mkt:'#A32020',sorvsan:'#0F4499',sis:'#5A5850'};
   let nProd=null,nComm=null;
-  const orgAreas=S.aree.filter(a=>!CENTRI_IDS.includes(a.id));
+  const orgAreas=S.aree.filter(a=>!isCentro(a));
   const areaNodeById={};
 
   function mkAreaNode(areaId,parentPct){
@@ -4855,7 +4863,7 @@ function openPersonaPop(pi){
           </div>
         </div>
         <div style="font-size:10px;color:var(--ink3);margin-top:5px">Componenti attivi: ${Object.entries(sl.comp||{}).filter(([k,v])=>v.on).map(([k])=>k).join(', ')||'nessuno'}</div>
-      </div>`).join('')}     <button class="btn xs prim" style="margin-top:4px" onclick="closePop();addSlot(${pi});renderAll()">+ Aggiungi ruolo secondario</button>     ${p.ripartizioneCentri?renderRipartizioneCentriEditor(p,pi):''}     <div class="pop-div"></div>     <button class="btn danger sm" onclick="if(confirm('Eliminare ${p.nome.replace(/'/g,"'")}?')){S.personale.splice(${pi},1);closePop();renderAll()}">Elimina risorsa</button>`;
+      </div>`).join('')}     <button class="btn xs prim" style="margin-top:4px" onclick="closePop();addSlot(${pi});renderAll()">+ Aggiungi ruolo secondario</button>     ${p.ripartizioneCentri?renderRipartizioneCentriEditor(p,pi):''}     <div class="pop-div"></div>     <div style="display:flex;gap:6px;flex-wrap:wrap">       <button class="btn sm" onclick="closePop();renamePersona(${pi})">✎ Rinomina</button>       <button class="btn danger sm" onclick="closePop();deletePersona(${pi})">🗑 Elimina risorsa</button>     </div>`;
   popCb=()=>{
     p.nome=document.getElementById('pp-nome').value;
     p.ruolo_principale=document.getElementById('pp-ruolo').value;
@@ -4999,8 +5007,176 @@ function renderStruttura(){
 }
 function addArea(parentId){
   S.aree.push({id:'a'+Date.now(),nome:parentId?'Nuovo centro di costo':'Nuova area',tipo:'SUP',desc:'',incPct:0,resp:'',
-    parentId:parentId||null,natura:parentId?'produttiva':'costo',priorita:2,budget:{fisso:0,variabilePct:0},chiusa:false,fornitoreFisso:0,micro:[]});
+    parentId:parentId||null,natura:parentId?'produttiva':'costo',priorita:2,budget:{fisso:0,variabilePct:0},chiusa:false,fornitoreFisso:0,micro:[],kpiCustom:[]});
   renderAll();goPage('struttura');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// §L — CRUD OVUNQUE (persone · centri di costo · aree · KPI custom)
+// ═══════════════════════════════════════════════════════════════════════════
+// Un solo posto per rinominare/eliminare, richiamato da TUTTI i contesti
+// (organigramma grande, mini-organigrammi di area, schede risorsa, griglie):
+// così il comportamento è identico ovunque e la pulizia dei riferimenti non
+// dipende da quale bottone è stato premuto.
+//
+// Regole comuni (richiesta esplicita):
+//   · ogni eliminazione chiede conferma, elencando cosa si perde;
+//   · ogni modifica ricalcola in tempo reale e salva — crudCommit() fa
+//     renderAll(), che rigira flow() e chiama saveLocal()/scheduleSync();
+//   · si agisce su UN elemento alla volta: niente reset, niente rigenerazioni,
+//     niente ri-seed. Le 30 aree ufficiali di §D restano quelle che sono.
+
+function crudCommit(msg){ renderAll(); if(msg) notify(msg); }
+
+// Prompt di rinomina condiviso: annullare lascia tutto com'era, un nome vuoto
+// non cancella il nome esistente (errore di battitura ≠ intenzione).
+function crudRename(labelPrompt,valoreAttuale,apply,okMsg){
+  const v=prompt(labelPrompt,valoreAttuale);
+  if(v===null)return false;                       // annullato
+  const nuovo=v.trim();
+  if(!nuovo){ notify('Nome vuoto — rinomina annullata'); return false; }
+  if(nuovo===valoreAttuale)return false;
+  apply(nuovo);
+  crudCommit(okMsg?okMsg+nuovo:null);
+  return true;
+}
+
+// ── PERSONE (dipendenti · soci · collaboratori P.IVA) ─────────────────────
+
+function renamePersona(pi){
+  const p=S.personale[pi]; if(!p)return;
+  crudRename('Nome della risorsa:',p.nome,v=>{p.nome=v;},'Rinominata: ');
+}
+
+// Cosa si porta dietro una persona: serve per la conferma FORTE (L1/L4 — la
+// cancellazione totale con storico sta qui, non sul cestino della griglia).
+function personaStorico(p){
+  const out=[];
+  const nSlot=(p.slots||[]).length;
+  if(nSlot)out.push(nSlot+' slot attività');
+  const nPremi=((p.variabile&&p.variabile.storico)||[]).length;
+  if(nPremi)out.push(nPremi+' voci di storico premi');
+  if((p.slots||[]).some(sl=>sl.comp&&sl.comp.generato_tecnico&&sl.comp.generato_tecnico.on))
+    out.push('la riga nella griglia Produzione tecnici');
+  Object.entries(S.datiArea||{}).forEach(([k,d])=>{
+    if(!d||typeof d!=='object')return;
+    if(d.agenti&&d.agenti[p.id])out.push('dati mensili come agente in "'+k+'"');
+    if(d._per&&d._per[p.id])out.push('dati mensili per-risorsa in "'+k+'"');
+  });
+  (S.areeCA||[]).forEach(ca=>{
+    if(ca.caId===p.id)out.push('il ruolo di capo area di "'+ca.nome+'"');
+    else if((ca.agentiIds||[]).includes(p.id))out.push('l\'assegnazione all\'area CA "'+ca.nome+'"');
+  });
+  return out;
+}
+
+// Elimina la persona OVUNQUE e ripulisce i riferimenti: senza questa pulizia
+// resterebbero capi area fantasma e righe di dati orfane che falsano i totali.
+function deletePersona(pi){
+  const p=S.personale[pi]; if(!p)return;
+  const st=personaStorico(p);
+  const testa='ELIMINA DEFINITIVAMENTE «'+p.nome+'»\n\n';
+  const corpo=st.length?'Verrà cancellato anche:\n• '+st.join('\n• ')+'\n\n':'';
+  if(!confirm(testa+corpo+'L\'operazione non è reversibile. Confermi?'))return;
+  // Seconda conferma solo quando c\'è davvero uno storico da perdere.
+  if(st.length&&!confirm('Ultima conferma: eliminare «'+p.nome+'» e tutto il suo storico?'))return;
+
+  (S.areeCA||[]).forEach(ca=>{
+    if(ca.caId===p.id)ca.caId='';
+    ca.agentiIds=(ca.agentiIds||[]).filter(id=>id!==p.id);
+  });
+  Object.values(S.datiArea||{}).forEach(d=>{
+    if(!d||typeof d!=='object')return;
+    if(d.agenti)delete d.agenti[p.id];
+    if(d._per)delete d._per[p.id];
+  });
+  Object.values((S.premi&&S.premi.aree)||{}).forEach(e=>{
+    if(e&&e.distribuzione)delete e.distribuzione[p.id];
+  });
+  S.personale.splice(pi,1);
+  crudCommit('Eliminata: '+p.nome);
+}
+
+// Sgancia la risorsa dall'area senza cancellarla (azione distinta e molto meno
+// grave dell'eliminazione: la persona resta, con i suoi dati e il garantito).
+function sganciaPersonaDaArea(pi,areaId){
+  const p=S.personale[pi]; if(!p)return false;
+  const a=S.aree.find(x=>x.id===areaId);
+  if(!confirm('Togliere «'+p.nome+'» da '+(a?a.nome:'quest\'area')+'?\n\nLa risorsa NON viene eliminata: resta in anagrafica senza area principale e si può riassegnare in qualsiasi momento.'))return false;
+  if(p.area===areaId)p.area='';
+  crudCommit('«'+p.nome+'» tolta dall\'area — non eliminata');
+  return true;
+}
+
+// ── AREE e CENTRI DI COSTO ────────────────────────────────────────────────
+// I 6 centri ufficiali restano il seed storico; il flag esplicito a.isCentro
+// vince su quella lista, così un centro creato a mano entra nei calcoli §6 e
+// uno rimosso ne esce — senza toccare la topologia delle 30 aree di §D.
+
+function renameArea(areaId){
+  const a=S.aree.find(x=>x.id===areaId); if(!a)return;
+  crudRename((isCentro(a)?'Nome del centro di costo:':'Nome dell\'area:'),a.nome,
+    v=>{a.nome=v;},(isCentro(a)?'Centro rinominato: ':'Area rinominata: '));
+}
+
+// Elimina UNA area alla volta. I figli non restano orfani: risalgono al nonno
+// (o diventano macro aree), così l'albero resta percorribile e il rollup §5.1
+// non perde pezzi per strada.
+function deleteArea(areaId){
+  const a=S.aree.find(x=>x.id===areaId); if(!a)return;
+  const figli=S.aree.filter(x=>x.parentId===areaId);
+  const padre=a.parentId?S.aree.find(x=>x.id===a.parentId):null;
+  const nPers=S.personale.filter(p=>p.area===areaId||p.areaResp===areaId
+    ||(p.slots||[]).some(sl=>sl.area===areaId)).length;
+  const bud=areaBudget(a);
+  const forn=(a.fornitori&&a.fornitori.length)?areaFornitoriTot(a):(a.fornitoreFisso||0);
+
+  const eff=[];
+  if(figli.length)eff.push(figli.length+' sotto-aree passano sotto «'+(padre?padre.nome:'nessun genitore — diventano macro aree')+'»');
+  if(nPers)eff.push(nPers+' risorse perdono il collegamento a quest\'area (restano in anagrafica)');
+  if(bud>0)eff.push('budget '+fmt(bud)+'/mese esce dalla cascata');
+  if(forn>0)eff.push('costi fornitore '+fmt(forn)+'/mese escono dal totale');
+  if((a.micro||[]).length)eff.push((a.micro||[]).length+' micro aree KPI');
+  if((a.kpiCustom||[]).length)eff.push((a.kpiCustom||[]).length+' KPI custom');
+
+  const tipo=isCentro(a)?'CENTRO DI COSTO':'AREA';
+  if(!confirm('ELIMINA '+tipo+' «'+a.nome+'»\n\n'
+    +(eff.length?'Conseguenze:\n• '+eff.join('\n• ')+'\n\n':'')
+    +'Viene eliminata solo questa, una alla volta. Confermi?'))return;
+
+  figli.forEach(c=>{ c.parentId=a.parentId||null; });
+  S.personale.forEach(p=>{
+    if(p.area===areaId)p.area='';
+    if(p.areaResp===areaId)p.areaResp='';
+    if(p.capoAreaDi===areaId)p.capoAreaDi='';
+    (p.slots||[]).forEach(sl=>{ if(sl.area===areaId)sl.area=''; });
+    if(p.ripartizioneCentri)delete p.ripartizioneCentri[areaId];
+    if(p.oreEffettiveCentro)delete p.oreEffettiveCentro[areaId];
+  });
+  if(S.premi&&S.premi.aree)delete S.premi.aree[areaId];
+  S.aree.splice(S.aree.indexOf(a),1);
+  crudCommit((isCentro(a)?'Centro eliminato: ':'Area eliminata: ')+a.nome);
+}
+
+// Nuovo centro di costo dall'interfaccia (prima esistevano solo come dato).
+// Nasce "chiuso" con valore e costi a zero: entra nel rollup di Produzione
+// senza spostare di un centesimo margine, budget o cascata.
+function centroParentDefault(){
+  const esistente=centriAree()[0];
+  if(esistente&&esistente.parentId)return esistente.parentId;
+  return S.aree.some(a=>a.id==='prod')?'prod':null;
+}
+function addCentro(){
+  const nome=prompt('Nome del nuovo centro di costo:');
+  if(nome===null)return;
+  const v=nome.trim();
+  if(!v){ notify('Nome vuoto — centro non creato'); return; }
+  S.aree.push({id:'c_new_'+Date.now(),nome:v,tipo:'RIC',desc:'',incPct:0,resp:'',
+    parentId:centroParentDefault(),natura:'produttiva',priorita:2,
+    budget:{fisso:0,variabilePct:0},chiusa:true,isCentro:true,
+    fornitoreFisso:0,ricavoModo:'manuale',ricavoManuale:0,ricavoPct:0,
+    fornitori:[],micro:[],kpiCustom:[]});
+  crudCommit('Centro di costo creato: '+v);
 }
 
 // ── SISTEMA PAGE ─────────────────────────
@@ -5523,7 +5699,7 @@ function renderCentriCostoPage(){
   const el=document.getElementById('centri-costo-cont');if(!el)return;
   const prodArea=S.aree.find(a=>a.id==='prod');
   const roll=prodArea?areaRollup(prodArea):null;
-  const centri=S.aree.filter(a=>CENTRI_IDS.includes(a.id));
+  const centri=centriAree();
   const warn=checkRipartizioneCentri();
   let html='';
   if(roll){
@@ -5632,7 +5808,7 @@ function renderProdSezioniExtra(){
   // può scegliere per ogni centro un valore manuale preciso o una % del
   // fatturato del mese — stessa logica di CRUD già usata per fornitori/KPI.
   mkCollapsible('ricavo','💹','Ricavo per centro (manuale / %)','#0F4499',body=>{
-    const centri=S.aree.filter(a=>CENTRI_IDS.includes(a.id));
+    const centri=centriAree();
     const pctCheck=checkRicavoPct();
     body.innerHTML=`<div style="font-size:11px;color:var(--ink3);margin-bottom:10px">Alternativa al calcolo da produzione tecnici: valore manuale preciso, oppure % del fatturato del mese (${fmt(S.incassato)}) — editabile per centro, switchabile in ogni momento senza perdere i dati dell'altro modo.</div>
       ${pctCheck.centri.length?`<div style="font-size:11px;color:var(--ink3);margin-bottom:8px">Centri in % oggi: somma ${pctCheck.sum.toFixed(1)}%</div>`:''}
@@ -6111,13 +6287,29 @@ function buildAgentRow(p, dat, totVend, incArea, bg, badge){
   const pesoVend = pct(vend, totVend);
   const pesoArea = pct(vend, incArea);
   const areaCA = (S.areeCA||[]).find(ca=>ca.agentiIds.includes(p.id)||ca.caId===p.id);
-  return `<tr style="background:${bg}">     <td style="${tdStyle('font-weight:500;padding:6px 10px;position:sticky;left:0;background:'+bg+';z-index:1;box-shadow:2px 0 4px rgba(0,0,0,.06)')}">       <div style="display:flex;align-items:center;gap:6px">         <div style="width:24px;height:24px;border-radius:50%;background:${avc(pi)[0]};           display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;flex-shrink:0">${p.nome[0]}</div>         <div>           <div style="font-size:11px">${p.nome}</div>           ${badge?`<span style="font-size:9px;padding:1px 4px;background:var(--green-bg);color:var(--green);border-radius:8px">${badge}</span>`:''}         </div>       </div>     </td>     <td style="${tdStyle('text-align:center;font-size:10px;color:var(--ink3)')}">       ${areaCA?`<span style="font-size:9px;padding:1px 5px;background:var(--blue-bg);color:var(--blue);border-radius:8px">${areaCA.nome}</span>`:'—'}     </td>     <td style="${tdStyle('text-align:right')}">${inpN(vend, 'S.datiArea.comm.agenti[\''+p.id+'\'].venduto=parseFloat(this.value)||0')}</td>     <td style="${tdStyle('text-align:right')}">${inpN(inc, 'S.datiArea.comm.agenti[\''+p.id+'\'].incassato=parseFloat(this.value)||0')}</td>     <td style="${tdStyle('text-align:right')}">${inpN(dat.provvigioni||0, 'S.datiArea.comm.agenti[\''+p.id+'\'].provvigioni=parseFloat(this.value)||0')}</td>     <td style="${tdStyle('text-align:right')}">${inpN(dat.premi||0, 'S.datiArea.comm.agenti[\''+p.id+'\'].premi=parseFloat(this.value)||0')}</td>     <td style="${tdStyle('text-align:right')}">${inpN(dat.clientiNuovi||0, 'S.datiArea.comm.agenti[\''+p.id+'\'].clientiNuovi=parseFloat(this.value)||0', 50)}</td>     <td style="${tdStyle('text-align:right')}">${inpN(dat.sinergie||0, 'S.datiArea.comm.agenti[\''+p.id+'\'].sinergie=parseFloat(this.value)||0', 50)}</td>     <td style="${tdStyle('text-align:right;font-size:10px;color:var(--ink3)')}">       ${pesoVend} vend.<br><span style="color:var(--ink4)">${pesoArea} area</span>     </td>   </tr>`;
+  return `<tr style="background:${bg}">     <td style="${tdStyle('font-weight:500;padding:6px 10px;position:sticky;left:0;background:'+bg+';z-index:1;box-shadow:2px 0 4px rgba(0,0,0,.06)')}">       <div style="display:flex;align-items:center;gap:6px">         <div style="width:24px;height:24px;border-radius:50%;background:${avc(pi)[0]};           display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;flex-shrink:0">${p.nome[0]}</div>         <div>           <div style="font-size:11px">${p.nome}</div>           ${badge?`<span style="font-size:9px;padding:1px 4px;background:var(--green-bg);color:var(--green);border-radius:8px">${badge}</span>`:''}         </div>         <div style="margin-left:auto;display:flex;gap:2px">           <button class="btn xs" style="padding:1px 4px" title="Rinomina" onclick="renamePersona(${pi})">✎</button>           <button class="btn xs" style="padding:1px 4px" title="Configura" onclick="openPersonaPop(${pi})">⚙</button>           <button class="btn xs danger" style="padding:1px 4px" title="Elimina definitivamente" onclick="deletePersona(${pi})">🗑</button>         </div>       </div>     </td>     <td style="${tdStyle('text-align:center;font-size:10px;color:var(--ink3)')}">       ${areaCA?`<span style="font-size:9px;padding:1px 5px;background:var(--blue-bg);color:var(--blue);border-radius:8px">${areaCA.nome}</span>`:'—'}     </td>     <td style="${tdStyle('text-align:right')}">${inpN(vend, 'S.datiArea.comm.agenti[\''+p.id+'\'].venduto=parseFloat(this.value)||0')}</td>     <td style="${tdStyle('text-align:right')}">${inpN(inc, 'S.datiArea.comm.agenti[\''+p.id+'\'].incassato=parseFloat(this.value)||0')}</td>     <td style="${tdStyle('text-align:right')}">${inpN(dat.provvigioni||0, 'S.datiArea.comm.agenti[\''+p.id+'\'].provvigioni=parseFloat(this.value)||0')}</td>     <td style="${tdStyle('text-align:right')}">${inpN(dat.premi||0, 'S.datiArea.comm.agenti[\''+p.id+'\'].premi=parseFloat(this.value)||0')}</td>     <td style="${tdStyle('text-align:right')}">${inpN(dat.clientiNuovi||0, 'S.datiArea.comm.agenti[\''+p.id+'\'].clientiNuovi=parseFloat(this.value)||0', 50)}</td>     <td style="${tdStyle('text-align:right')}">${inpN(dat.sinergie||0, 'S.datiArea.comm.agenti[\''+p.id+'\'].sinergie=parseFloat(this.value)||0', 50)}</td>     <td style="${tdStyle('text-align:right;font-size:10px;color:var(--ink3)')}">       ${pesoVend} vend.<br><span style="color:var(--ink4)">${pesoArea} area</span>     </td>   </tr>`;
 }
 
 function editCAArea(caId){
   const ca = (S.areeCA||[]).find(c=>c.id===caId); if(!ca) return;
-  const name = prompt('Nome area CA:', ca.nome);
-  if(name !== null){ ca.nome = name.trim()||ca.nome; renderAreaPage(); }
+  crudRename('Nome area CA:',ca.nome,v=>{ca.nome=v;},'Area CA rinominata: ');
+}
+
+// §L — le aree CA si creavano e si rinominavano, ma non si eliminavano.
+// Eliminare l'area CA NON elimina le persone: capo area e agenti restano in
+// anagrafica, semplicemente non sono più raggruppati sotto quell'etichetta.
+function deleteCAArea(caId){
+  const ca = (S.areeCA||[]).find(c=>c.id===caId); if(!ca) return;
+  const nAg = (ca.agentiIds||[]).length;
+  const capo = S.personale.find(p=>p.id===ca.caId);
+  const eff = [];
+  if(capo) eff.push('«'+capo.nome+'» non risulterà più capo di quest\'area');
+  if(nAg) eff.push(nAg+' agenti tornano non assegnati (nessuno viene eliminato)');
+  if(!confirm('ELIMINA AREA CA «'+ca.nome+'»\n\n'
+    +(eff.length?'Conseguenze:\n• '+eff.join('\n• ')+'\n\n':'')
+    +'Le persone NON vengono eliminate. Confermi?')) return;
+  S.areeCA = (S.areeCA||[]).filter(c=>c.id!==caId);
+  crudCommit('Area CA eliminata: '+ca.nome);
 }
 
 function addAgenteToCA(caId){
@@ -6611,7 +6803,7 @@ function renderMiniOrg(containerId, areaId){
       const subId=idx===0?'p12':'p11';
       const subP=S.personale.find(p=>p.id===subId);
       const nSub=mkN({type:'subarea',label:lbl,pct:'Micro area',
-        color:C.dir,bg:'#fff',bd:C.bd});
+        color:C.dir,bg:'#fff',bd:C.bd,areaId:idx===0?'sorvsan':'form'});
       link(nGio,nSub);
       if(subP){
         const nR=mkN({type:'agent',label:subP.nome.split(' ')[0],
@@ -6678,7 +6870,7 @@ function renderMiniOrg(containerId, areaId){
 
   } else if(areaId==='sorvsan'){
     const nSorv=mkN({type:'dir',label:'Sorveglianza Sanitaria',pct:'Area produttiva',
-      color:C.dir,bg:C.bg,bd:C.bd,pi:-1});
+      color:C.dir,bg:C.bg,bd:C.bd,pi:-1,areaId:'sorvsan'});
     S.personale.filter(p=>p.area==='sorvsan').forEach(p=>{
       const nP=mkN({type:'agent',label:p.nome.split(' ')[0],
         pct:'Sorv. Sanitaria',color:'#0F4499',bg:'#E2EDFC',bd:'#B5D2F8',
@@ -6689,7 +6881,7 @@ function renderMiniOrg(containerId, areaId){
 
   } else if(areaId==='sis'){
     const nSis=mkN({type:'dir',label:'Segreteria',pct:'Area sistema',
-      color:C.dir,bg:C.bg,bd:C.bd,pi:-1});
+      color:C.dir,bg:C.bg,bd:C.bd,pi:-1,areaId:'sis'});
     S.personale.filter(p=>p.area==='sis').forEach(p=>{
       const nP=mkN({type:'agent',
         label:p.id==='pBO1'?'Segr.Dir.':p.nome.split(' ')[0],
@@ -6830,50 +7022,57 @@ function renderMiniOrg(containerId, areaId){
       fg.appendChild(tg);
     }
 
-    // Edit button hover
-    if(n.pi>=0){
-      const eg=document.createElementNS(NS,'g');
-      eg.style.cssText='opacity:0;transition:opacity .12s;cursor:pointer';
-      const eb=document.createElementNS(NS,'rect');
-      eb.setAttribute('x',n.w-18);eb.setAttribute('y',2);
-      eb.setAttribute('width',16);eb.setAttribute('height',14);
-      eb.setAttribute('rx','3');eb.setAttribute('fill','rgba(255,255,255,.95)');
-      eb.setAttribute('stroke','#C8C6BE');eb.setAttribute('stroke-width','0.5');
-      eg.appendChild(eb);
-      const et=document.createElementNS(NS,'text');
-      et.setAttribute('x',n.w-10);et.setAttribute('y',12);
-      et.setAttribute('text-anchor','middle');et.setAttribute('font-size','9');
-      et.setAttribute('fill','#5A5850');et.textContent='✏';eg.appendChild(et);
-      eg.addEventListener('click',ev=>{ev.stopPropagation();openPersonaPop(n.pi);});
-      fg.addEventListener('mouseenter',()=>eg.style.opacity='1');
-      fg.addEventListener('mouseleave',()=>eg.style.opacity='0');
-      fg.appendChild(eg);
+    // ── §L — AZIONI SU HOVER ────────────────────────────────────────────────
+    // Stessi quattro gesti in ogni scheda: rinomina · configura · togli
+    // dall'area · elimina. Prima c'erano solo ✏ e un ✕ che sganciava senza
+    // dirlo, e le card di area (Segreteria, Sorv.Sanitaria) non avevano nulla.
+    const hoverBtns=[];
+    const azioni=[];   // riempito sotto, poi disposto da destra a sinistra
+    function miniBtn(slot,glyph,fill,stroke,title,onClick){
+      const gEl=document.createElementNS(NS,'g');
+      gEl.style.cssText='opacity:0;transition:opacity .12s;cursor:pointer';
+      const x=n.w-18-slot*16;
+      const bx=document.createElementNS(NS,'rect');
+      bx.setAttribute('x',x);bx.setAttribute('y',2);
+      bx.setAttribute('width',14);bx.setAttribute('height',14);
+      bx.setAttribute('rx','3');bx.setAttribute('fill','rgba(255,255,255,.95)');
+      bx.setAttribute('stroke',stroke);bx.setAttribute('stroke-width','0.5');
+      gEl.appendChild(bx);
+      const tx=document.createElementNS(NS,'text');
+      tx.setAttribute('x',x+7);tx.setAttribute('y',12);
+      tx.setAttribute('text-anchor','middle');tx.setAttribute('font-size','9');
+      tx.setAttribute('fill',fill);tx.textContent=glyph;gEl.appendChild(tx);
+      const tt=document.createElementNS(NS,'title');tt.textContent=title;gEl.appendChild(tt);
+      gEl.addEventListener('click',ev=>{ev.stopPropagation();onClick();});
+      fg.appendChild(gEl);hoverBtns.push(gEl);
+    }
 
-      // Delete
-      const dg=document.createElementNS(NS,'g');
-      dg.style.cssText='opacity:0;transition:opacity .12s;cursor:pointer';
-      const db=document.createElementNS(NS,'rect');
-      db.setAttribute('x',n.w-34);db.setAttribute('y',2);
-      db.setAttribute('width',14);db.setAttribute('height',14);
-      db.setAttribute('rx','3');db.setAttribute('fill','rgba(255,255,255,.95)');
-      db.setAttribute('stroke','#F0B8B8');db.setAttribute('stroke-width','0.5');
-      dg.appendChild(db);
-      const dt=document.createElementNS(NS,'text');
-      dt.setAttribute('x',n.w-27);dt.setAttribute('y',12);
-      dt.setAttribute('text-anchor','middle');dt.setAttribute('font-size','9');
-      dt.setAttribute('fill','#A32020');dt.textContent='✕';dg.appendChild(dt);
+    if(n.pi>=0){
       const piL=n.pi;
-      dg.addEventListener('click',ev=>{
-        ev.stopPropagation();
-        const p=S.personale[piL];
-        if(p&&confirm('Rimuovere '+p.nome+' da questa area?')){
-          S.personale[piL].area='';
-          renderMiniOrg(containerId,areaId);
-        }
-      });
-      fg.addEventListener('mouseenter',()=>dg.style.opacity='1');
-      fg.addEventListener('mouseleave',()=>dg.style.opacity='0');
-      fg.appendChild(dg);
+      azioni.push(['🗑','#A32020','#F0B8B8','Elimina definitivamente',()=>deletePersona(piL)]);
+      azioni.push(['⊖','#5A5850','#C8C6BE','Togli da quest\'area (non elimina)',
+        ()=>{ if(sganciaPersonaDaArea(piL,areaId))renderMiniOrg(containerId,areaId); }]);
+      azioni.push(['⚙','#5A5850','#C8C6BE','Configura risorsa',()=>openPersonaPop(piL)]);
+      azioni.push(['✎','#5A5850','#C8C6BE','Rinomina risorsa',()=>renamePersona(piL)]);
+    }
+    if(n.caId){
+      // Area CA (commerciale): rinominabile già da prima, ora anche eliminabile.
+      const cid=n.caId;
+      azioni.push(['🗑','#A32020','#F0B8B8','Elimina area CA',()=>deleteCAArea(cid)]);
+      azioni.push(['✎','#5A5850','#C8C6BE','Rinomina area CA',()=>editCAArea(cid)]);
+    }
+    if(n.areaId&&n.pi<0){
+      // Card di AREA dentro il mini-organigramma (es. Segreteria): fino a ieri
+      // era l'unica scheda senza alcuna azione — ora si rinomina e si elimina
+      // come tutte le altre, una alla volta.
+      const aid=n.areaId;
+      azioni.push(['🗑','#A32020','#F0B8B8','Elimina area',()=>deleteArea(aid)]);
+      azioni.push(['✎','#5A5850','#C8C6BE','Rinomina area',()=>renameArea(aid)]);
+    }
+    azioni.forEach((a,i)=>miniBtn(i,a[0],a[1],a[2],a[3],a[4]));
+    if(hoverBtns.length){
+      fg.addEventListener('mouseenter',()=>hoverBtns.forEach(b=>b.style.opacity='1'));
+      fg.addEventListener('mouseleave',()=>hoverBtns.forEach(b=>b.style.opacity='0'));
     }
 
     // Add button sotto area/group/ca nodes
