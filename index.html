@@ -4743,6 +4743,44 @@ function renderOrg(){
       fg.addEventListener('pointercancel',endDrag);
     }
 
+    // ── §L — AZIONI SULLA CARD AREA (rinomina · sotto-area · elimina) ───────
+    // Le 30 aree ufficiali di §D NON si resettano e NON si rigenerano: qui si
+    // rendono solo editabili UNA ALLA VOLTA, direttamente dall'organigramma
+    // (inclusa la card Segreteria, che finora non aveva alcuna azione).
+    // Compaiono in basso a destra su hover, dove non coprono la % di
+    // incidenza in alto; il pointerdown è fermato qui perché altrimenti
+    // farebbe partire il drag di riparentamento.
+    if(n.type==='area'&&n.areaId){
+      const aidL=n.areaId;
+      const azioniArea=[
+        ['🗑','#A32020','#F0B8B8','Elimina area',()=>deleteArea(aidL)],
+        ['+','#1A6B3C','#B8DBBF','Aggiungi sotto-area / centro',()=>addArea(aidL)],
+        ['✎','#5A5850','#C8C6BE','Rinomina area',()=>renameArea(aidL)],
+      ];
+      const btns=[];
+      azioniArea.forEach((az,i)=>{
+        const bg2=document.createElementNS(NS,'g');
+        bg2.style.cssText='opacity:0;transition:opacity .12s;cursor:pointer';
+        const bxx=n.w-18-i*16;
+        const rc=document.createElementNS(NS,'rect');
+        rc.setAttribute('x',bxx);rc.setAttribute('y',n.h-32);
+        rc.setAttribute('width',14);rc.setAttribute('height',14);
+        rc.setAttribute('rx','3');rc.setAttribute('fill','rgba(255,255,255,.97)');
+        rc.setAttribute('stroke',az[2]);rc.setAttribute('stroke-width','0.5');
+        bg2.appendChild(rc);
+        const tt2=document.createElementNS(NS,'text');
+        tt2.setAttribute('x',bxx+7);tt2.setAttribute('y',n.h-22);
+        tt2.setAttribute('text-anchor','middle');tt2.setAttribute('font-size','9');
+        tt2.setAttribute('fill',az[1]);tt2.textContent=az[0];bg2.appendChild(tt2);
+        const ti=document.createElementNS(NS,'title');ti.textContent=az[3];bg2.appendChild(ti);
+        bg2.addEventListener('pointerdown',ev=>ev.stopPropagation());
+        bg2.addEventListener('click',ev=>{ev.stopPropagation();az[4]();});
+        fg.appendChild(bg2);btns.push(bg2);
+      });
+      fg.addEventListener('mouseenter',()=>btns.forEach(b=>b.style.opacity='1'));
+      fg.addEventListener('mouseleave',()=>btns.forEach(b=>b.style.opacity='0'));
+    }
+
     if(n.pi>=0){
       fg.addEventListener('click',()=>openPersonaPop(n.pi));
       fg.style.cursor='pointer';
@@ -4755,7 +4793,7 @@ function renderOrg(){
 
   const info=document.createElement('div');
   info.style.cssText='font-size:11px;color:var(--ink3);margin-top:10px;padding:0 4px;display:flex;align-items:center;gap:10px;flex-wrap:wrap';
-  info.innerHTML='<span>Clicca su un\'area per aprirla, trascinala su un\'altra per spostarla (cambia il genitore).</span>'
+  info.innerHTML='<span>Clicca su un\'area per aprirla, trascinala su un\'altra per spostarla (cambia il genitore). Passa sopra una card per ✎ rinominare, + aggiungere una sotto-area, 🗑 eliminarla (una alla volta).</span>'
     +(orgLastReparent?`<button class="btn xs" onclick="undoReparent()">↺ Annulla: "${orgLastReparent.nome}" → "${orgLastReparent.parentNome}"</button>`:'');
 
   wrap.innerHTML='';
@@ -5001,7 +5039,7 @@ function renderStruttura(){
               <td style="padding:5px 6px;border-bottom:1px solid rgba(0,0,0,.04);text-align:right"><input type="number" value="${m.ke}" class="ki" onblur="S.aree[${ai}].micro[${mi}].ke=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()"></td>
               <td style="padding:5px 6px;border-bottom:1px solid rgba(0,0,0,.04);text-align:right" class="${kpiCls(km)}">${km!==null?km+'%':'—'}</td>
               <td style="padding:5px 6px;border-bottom:1px solid rgba(0,0,0,.04)"><button class="btn xs danger" onclick="S.aree[${ai}].micro.splice(${mi},1);renderAll()">✕</button></td>
-            </tr>`;}).join('')}</tbody>         </table>         <div style="display:flex;gap:6px;margin-top:8px">           <button class="btn xs prim" onclick="S.aree[${ai}].micro.push({nome:'Nuova micro area',fisso:0,bonus:0,kt:101,ke:0,note:''});renderAll()">+ Micro area</button>           <button class="btn xs" onclick="addArea('${a.id}')">+ Sotto-area / centro di costo</button>           <button class="btn xs danger" onclick="if(confirm('Eliminare area ${a.nome}?')){S.aree.splice(${ai},1);renderAll()}">Elimina area</button>         </div>       </div>`;
+            </tr>`;}).join('')}</tbody>         </table>         <div style="display:flex;gap:6px;margin-top:8px">           <button class="btn xs prim" onclick="S.aree[${ai}].micro.push({nome:'Nuova micro area',fisso:0,bonus:0,kt:101,ke:0,note:''});renderAll()">+ Micro area</button>           <button class="btn xs" onclick="addArea('${a.id}')">+ Sotto-area / centro di costo</button>           <button class="btn xs" onclick="renameArea('${a.id}')">✎ Rinomina</button>           <button class="btn xs danger" onclick="deleteArea('${a.id}')">🗑 Elimina area</button>         </div>       </div>`;
     cont.appendChild(sec);
   });
 }
