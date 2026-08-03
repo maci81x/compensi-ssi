@@ -2160,7 +2160,33 @@ const CAT_ICONS={affitto:'🏢',utenze:'⚡',software:'💻',assicurazione:'🛡
 // stato non ha). Vedi SCHEMA_MIGRATIONS più sotto per la logica di
 // migrazione — root cause del problema "una scheda vecchia sovrascrive dati
 // più recenti", non un cerotto sul sintomo.
-const CURRENT_SCHEMA_VERSION=8;
+const CURRENT_SCHEMA_VERSION=9;
+
+// ══════════════════════════════════════════════════════════════════════════
+// §L — VOCI/COLONNE della griglia Produzione tecnici
+// ══════════════════════════════════════════════════════════════════════════
+// Erano cablate in un `const VOCI_TEC` a fondo file: ora questo è solo il
+// SEED, la lista viva sta in S.vociTec ed è aggiungibile/rinominabile/
+// eliminabile dall'UI (vociTec() più sotto). Coefficienti identici a prima →
+// generato_tecnico invariato al centesimo su tutti gli stati esistenti.
+// `pf` = chiave del coefficiente dentro comp.generato_tecnico del singolo
+// slot; `def_pf` = fallback usato quando quello slot non ha il proprio.
+const VOCI_TEC_DEF=[
+  {k:'documenti',   lbl:'Documenti',  unit:'€', pf:'pct_doc',    def_pf:0.22, def_r:0},
+  {k:'ore_form_h',  lbl:'Formazione', unit:'h', pf:'eur_h',      def_pf:25,   def_r:0},
+  {k:'analisi',     lbl:'Analisi',    unit:'€', pf:'pct_analisi',def_pf:0.20, def_r:0},
+  {k:'rspp',        lbl:'RSPP',       unit:'€', pf:'pct_rspp',   def_pf:0.20, def_r:0},
+  {k:'pacchetti',   lbl:'Pacchetti',  unit:'€', pf:'pct_pac',    def_pf:0.20, def_r:0},
+  {k:'laika_ore',   lbl:'Laika',      unit:'h', pf:'eur_laika',  def_pf:150,  def_r:0},
+  {k:'cantieri',    lbl:'Cantieri',   unit:'€', pf:'pct_cant',   def_pf:0.15, def_r:0},
+  {k:'estintori',   lbl:'Estintori',  unit:'€', pf:'pct_est',    def_pf:0.02, def_r:0},
+  {k:'sorveglianza',lbl:'Sorv.San.',  unit:'€', pf:'pct_sorv',   def_pf:0.08, def_r:0},
+];
+// Lista viva: lo stato vince, il seed è il fallback (stato pre-v9 o array
+// svuotato per errore → si torna alle 9 voci storiche, mai a zero colonne).
+function vociTec(){
+  return (S&&Array.isArray(S.vociTec)&&S.vociTec.length)?S.vociTec:VOCI_TEC_DEF;
+}
 
 // ══════════════════════════════════════════════════════════════════════════
 // §D blocco finale — ORGANIGRAMMA UFFICIALE
@@ -2254,6 +2280,9 @@ function normalizzaOrgUfficiale(s){
 
 const DEF={
   schemaVersion:CURRENT_SCHEMA_VERSION,
+  // §L — colonne della griglia Produzione tecnici, ora dato di stato (CRUD
+  // dall'UI). Copia del seed: uno stato nuovo parte dalle 9 voci storiche.
+  vociTec:JSON.parse(JSON.stringify(VOCI_TEC_DEF)),
   // Default = media incassato reale 2026 (§A, blocco finale): 954.538 su 7 mesi
   // (gen-lug) = 136.363/mese. NON è il fatturato: la cascata gira sull'incassato.
   // Il vecchio default (200.000 in cloud / 130.000 in DEF) era un placeholder,
@@ -2803,7 +2832,10 @@ const DEF={
   // ── KPI OBIETTIVI MENSILI (per area, variabile ogni mese) ─────────────
   kpiObiettivi:{
     comm:{
-      nomeObiettivo:'DVR da chiudere',
+      // §L — il default era 'DVR da chiudere', che è un KPI da tecnici (resta
+      // semmai fra i KPI di Produzione). Qui il campo nasce VUOTO: il
+      // placeholder suggerisce un obiettivo commerciale, senza imporne uno.
+      nomeObiettivo:'',
       targetObiettivo:10,
       effettivoObiettivo:0,
       nrClientiNuovi:{target:0, effettivo:0},
@@ -3143,7 +3175,10 @@ function calcSlot(p, slot){
   }
 
   let generato_tec=0;
-  if(c.generato_tecnico?.on){const g=c.generato_tecnico;generato_tec=(g.documenti||0)*(g.pct_doc||0.22)+(g.ore_form_h||0)*(g.eur_h||25)+(g.analisi||0)*(g.pct_analisi||0.20)+(g.rspp||0)*(g.pct_rspp||0.20)+(g.pacchetti||0)*(g.pct_pac||0.20)+(g.laika_ore||0)*(g.eur_laika||150)+(g.cantieri||0)*(g.pct_cant||0.15)+(g.estintori||0)*(g.pct_est||0.02)+(g.sorveglianza||0)*(g.pct_sorv||0.08);}
+  // §L — somma generica sulle voci vive (S.vociTec): stessa formula di prima
+  // — quantità × coefficiente dello slot, con fallback al default della voce —
+  // ma sulle colonne configurabili invece che su nove termini cablati.
+  if(c.generato_tecnico?.on){const g=c.generato_tecnico;generato_tec=vociTec().reduce((s,v)=>s+(g[v.k]||0)*(g[v.pf]||v.def_pf||0),0);}
   let generato_rto=0;
   if(c.generato_rto?.on){const r=c.generato_rto;generato_rto=(r.documenti_gruppo||0)*(r.pct_doc||0.03)+(r.formazione_gruppo||0)*(r.pct_form||0.01)+(r.analisi_gruppo||0)*(r.pct_analisi||0.03)+(r.rspp_gruppo||0)*(r.pct_rspp||0.03)+(r.pacchetti_gruppo||0)*(r.pct_pac||0.03)+(r.sorveglianza_gr||0)*(r.pct_sorv||0.01)+(r.estintori_gr||0)*(r.pct_est||0.01)+(r.laika_gg||0)*(r.eur_laika||200)+(r.cantieri_gr||0)*(r.pct_cant||0.01);}
   let visite_mc=0;
@@ -3416,6 +3451,27 @@ const SCHEMA_MIGRATIONS=[
     // ereditati (Medici Competenti, Docenti) dal padre. Sistema resta
     // 43.994,28 e budget aree invariato (nuove aree a budget 0).
     normalizzaOrgUfficiale(s);
+  }},
+  {to:9,migrate(s){
+    // §L — CRUD ovunque. NON tocca la topologia delle aree: le 30 aree
+    // ufficiali validate in §D non si resettano, non si rigenerano e non si
+    // ri-seedano — questo step aggiunge solo le strutture che il CRUD usa.
+
+    // Voci/colonne della griglia Produzione tecnici, ora editabili (L5).
+    // Seed dalla lista storica cablata: stessi campi, stessi coefficienti →
+    // generato_tecnico invariato al centesimo.
+    if(!Array.isArray(s.vociTec)||!s.vociTec.length)
+      s.vociTec=JSON.parse(JSON.stringify(VOCI_TEC_DEF));
+
+    // KPI custom per area (L6): array PARALLELO a micro, minimale. Il refactor
+    // completo dei KPI per area è il blocco E — qui non si tocca a.micro.
+    (s.aree||[]).forEach(a=>{ if(!Array.isArray(a.kpiCustom))a.kpiCustom=[]; });
+
+    // Il default del KPI Commerciale era 'DVR da chiudere' — un KPI da
+    // tecnici. Si azzera SOLO se è ancora esattamente quel placeholder: un
+    // obiettivo scritto a mano è un dato reale e non va toccato.
+    if(s.kpiObiettivi&&s.kpiObiettivi.comm&&s.kpiObiettivi.comm.nomeObiettivo==='DVR da chiudere')
+      s.kpiObiettivi.comm.nomeObiettivo='';
   }},
 ];
 function migrateSchema(s){
@@ -5336,17 +5392,7 @@ function addPersona(){
 
 // ── INIT ──────────────────────────────────
 // ── PAGINA PRODUZIONE TECNICI ─────────────────────────────────────────────
-const VOCI_TEC = [
-  {k:'documenti',   lbl:'Documenti',  unit:'€', pf:'pct_doc',    def_pf:0.22, def_r:0},
-  {k:'ore_form_h',  lbl:'Formazione', unit:'h', pf:'eur_h',      def_pf:25,   def_r:0},
-  {k:'analisi',     lbl:'Analisi',    unit:'€', pf:'pct_analisi',def_pf:0.20, def_r:0},
-  {k:'rspp',        lbl:'RSPP',       unit:'€', pf:'pct_rspp',   def_pf:0.20, def_r:0},
-  {k:'pacchetti',   lbl:'Pacchetti',  unit:'€', pf:'pct_pac',    def_pf:0.20, def_r:0},
-  {k:'laika_ore',   lbl:'Laika',      unit:'h', pf:'eur_laika',  def_pf:150,  def_r:0},
-  {k:'cantieri',    lbl:'Cantieri',   unit:'€', pf:'pct_cant',   def_pf:0.15, def_r:0},
-  {k:'estintori',   lbl:'Estintori',  unit:'€', pf:'pct_est',    def_pf:0.02, def_r:0},
-  {k:'sorveglianza',lbl:'Sorv.San.',  unit:'€', pf:'pct_sorv',   def_pf:0.08, def_r:0},
-];
+// Le colonne non sono più cablate qui: vedi VOCI_TEC_DEF / vociTec() (§L).
 
 function renderProduzionePage(){
   const el=document.getElementById('prod-tec-grid');if(!el)return;
@@ -5354,7 +5400,7 @@ function renderProduzionePage(){
   const tecs=S.personale.filter(p=>(p.slots||[]).some(sl=>sl.comp?.generato_tecnico?.on));
   if(!tecs.length){el.innerHTML='<div class="empty">Nessun tecnico con generato attivo.</div>';return;}
 
-  let html=`<div style="overflow-x:auto">     <table style="width:100%;border-collapse:collapse;font-size:12px">     <thead>       <tr style="background:var(--ink);color:#fff">         <th style="padding:8px 10px;text-align:left;font-size:11px;font-weight:600;white-space:nowrap;border-radius:var(--r) 0 0 0;min-width:110px">Tecnico</th>         ${VOCI_TEC.map(v=>`<th style="padding:8px 8px;text-align:right;font-size:10px;font-weight:500;white-space:nowrap;min-width:80px">${v.lbl}<br><span style="opacity:.55;font-weight:400">${v.unit}</span></th>`).join('')}         <th style="padding:8px 10px;text-align:right;font-size:11px;font-weight:600;min-width:90px;border-radius:0 var(--r) 0 0">Generato</th>         <th style="padding:8px 8px;text-align:right;font-size:10px;font-weight:500;min-width:80px">Obiettivo</th>         <th style="padding:8px 8px;text-align:right;font-size:10px;font-weight:500;min-width:70px">Diff.</th>       </tr>     </thead>     <tbody>`;
+  let html=`<div style="overflow-x:auto">     <table style="width:100%;border-collapse:collapse;font-size:12px">     <thead>       <tr style="background:var(--ink);color:#fff">         <th style="padding:8px 10px;text-align:left;font-size:11px;font-weight:600;white-space:nowrap;border-radius:var(--r) 0 0 0;min-width:110px">Tecnico</th>         ${vociTec().map(v=>`<th style="padding:8px 8px;text-align:right;font-size:10px;font-weight:500;white-space:nowrap;min-width:80px">${v.lbl}<br><span style="opacity:.55;font-weight:400">${v.unit}</span></th>`).join('')}         <th style="padding:8px 10px;text-align:right;font-size:11px;font-weight:600;min-width:90px;border-radius:0 var(--r) 0 0">Generato</th>         <th style="padding:8px 8px;text-align:right;font-size:10px;font-weight:500;min-width:80px">Obiettivo</th>         <th style="padding:8px 8px;text-align:right;font-size:10px;font-weight:500;min-width:70px">Diff.</th>       </tr>     </thead>     <tbody>`;
 
   let tot_gen=0;
   tecs.forEach((p,rowIdx)=>{
@@ -5373,7 +5419,7 @@ function renderProduzionePage(){
     const pct=obj>0?Math.min((gen/obj)*100,100):0;
     const barColor=gen>=obj?'var(--green)':pct>60?'var(--amber)':'var(--red)';
 
-    html+=`<tr style="background:${rowBg}" id="tec-row-${pi}">       <td style="padding:7px 10px;font-weight:600;border-bottom:1px solid var(--lift)">         <div style="display:flex;align-items:center;gap:7px">           <div style="width:26px;height:26px;border-radius:50%;background:${bg};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0">${p.nome[0]}</div>           <div>             <div style="font-size:12px">${p.nome}</div>             ${obj>0?`<div style="width:60px;height:2px;background:var(--lift);border-radius:1px;margin-top:3px;overflow:hidden"><div style="height:100%;width:${pct.toFixed(0)}%;background:${barColor}"></div></div>`:''}           </div>         </div>       </td>       ${VOCI_TEC.map(v=>{         const raw=g[v.k]||0;         return `<td style="padding:4px 5px;border-bottom:1px solid var(--lift)">
+    html+=`<tr style="background:${rowBg}" id="tec-row-${pi}">       <td style="padding:7px 10px;font-weight:600;border-bottom:1px solid var(--lift)">         <div style="display:flex;align-items:center;gap:7px">           <div style="width:26px;height:26px;border-radius:50%;background:${bg};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0">${p.nome[0]}</div>           <div>             <div style="font-size:12px">${p.nome}</div>             ${obj>0?`<div style="width:60px;height:2px;background:var(--lift);border-radius:1px;margin-top:3px;overflow:hidden"><div style="height:100%;width:${pct.toFixed(0)}%;background:${barColor}"></div></div>`:''}           </div>         </div>       </td>       ${vociTec().map(v=>{         const raw=g[v.k]||0;         return `<td style="padding:4px 5px;border-bottom:1px solid var(--lift)">
           <input type="number" value="${raw}" min="0"
             style="width:72px;padding:4px 6px;border:1px solid var(--lift);border-radius:var(--r);font-size:11px;font-family:'DM Mono',monospace;text-align:right;background:${raw>0?'var(--blue-bg)':'var(--card)'};color:${raw>0?'var(--blue)':'var(--ink)'}"
             onblur="S.personale[${pi}].slots[${si}].comp.generato_tecnico['${v.k}']=parseFloat(this.value)||0;this.style.background=this.value>0?'var(--blue-bg)':'var(--card)';this.style.color=this.value>0?'var(--blue)':'var(--ink)';renderAll();updateProdRow(${pi},${si})"
@@ -5382,7 +5428,7 @@ function renderProduzionePage(){
   });
 
   // Totali
-  html+=`<tr style="background:var(--ink);color:#fff;font-weight:600">     <td style="padding:8px 10px;border-radius:0 0 0 var(--r)">TOTALE GRUPPO</td>     ${VOCI_TEC.map(v=>{       const tot=tecs.reduce((s,p)=>{const si=p.slots.findIndex(sl=>sl.comp?.generato_tecnico?.on);return si>=0?s+(p.slots[si].comp.generato_tecnico[v.k]||0):s;},0);       return `<td style="padding:8px 5px;text-align:right;font-family:'DM Mono',monospace;font-size:11px;opacity:.8">${tot>0?fnum(tot):'—'}</td>`;     }).join('')}     <td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace;font-size:14px" id="tec-tot">${fmt(tot_gen)}</td>     <td colspan="2" style="padding:8px 10px;text-align:right;font-size:11px;opacity:.7;border-radius:0 0 var(--r) 0">${tecs.length} tecnici</td>   </tr></tbody></table></div>`;
+  html+=`<tr style="background:var(--ink);color:#fff;font-weight:600">     <td style="padding:8px 10px;border-radius:0 0 0 var(--r)">TOTALE GRUPPO</td>     ${vociTec().map(v=>{       const tot=tecs.reduce((s,p)=>{const si=p.slots.findIndex(sl=>sl.comp?.generato_tecnico?.on);return si>=0?s+(p.slots[si].comp.generato_tecnico[v.k]||0):s;},0);       return `<td style="padding:8px 5px;text-align:right;font-family:'DM Mono',monospace;font-size:11px;opacity:.8">${tot>0?fnum(tot):'—'}</td>`;     }).join('')}     <td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace;font-size:14px" id="tec-tot">${fmt(tot_gen)}</td>     <td colspan="2" style="padding:8px 10px;text-align:right;font-size:11px;opacity:.7;border-radius:0 0 var(--r) 0">${tecs.length} tecnici</td>   </tr></tbody></table></div>`;
 
   el.innerHTML=html;
   renderProduzioneRiepilogo(tecs);
@@ -6055,7 +6101,7 @@ function renderAreaComm(el){
     });
   }
 
-  el.innerHTML = `   <div style="font-size:12px;font-weight:600;color:var(--blue);margin:14px 0 8px;padding-bottom:5px;border-bottom:2px solid var(--blue)">📊 KPI Obiettivi mese — Commerciale</div>   <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px">     <div style="background:var(--card);border:1px solid var(--lift);border-radius:var(--r);padding:10px 12px">       <div style="font-size:10px;color:var(--ink3);margin-bottom:5px;font-weight:600;text-transform:uppercase">Obiettivo mese (libero)</div>       <div style="display:flex;gap:6px;align-items:center;margin-bottom:5px">         ${inpTxt(ko.nomeObiettivo, "S.kpiObiettivi.comm.nomeObiettivo=this.value", 'es. DVR da chiudere')}       </div>       <div style="display:flex;gap:6px;align-items:center">         <span style="font-size:10px;color:var(--ink3);min-width:50px">Target</span>         ${inpN(ko.targetObiettivo, "S.kpiObiettivi.comm.targetObiettivo=parseFloat(this.value)||0", 60)}         <span style="font-size:10px;color:var(--ink3);min-width:50px">Effettivo</span>         ${inpN(ko.effettivoObiettivo, "S.kpiObiettivi.comm.effettivoObiettivo=parseFloat(this.value)||0", 60)}         <span style="font-size:11px;font-weight:600;color:${ko.effettivoObiettivo>=ko.targetObiettivo&&ko.targetObiettivo>0?'var(--green)':'var(--amber)'}">           ${ko.targetObiettivo>0?Math.round((ko.effettivoObiettivo/ko.targetObiettivo)*100)+'%':'—'}         </span>       </div>     </div>     <div style="background:var(--card);border:1px solid var(--lift);border-radius:var(--r);padding:10px 12px">       <div style="font-size:10px;color:var(--ink3);margin-bottom:5px;font-weight:600;text-transform:uppercase">Clienti Nuovi</div>       <div style="display:flex;gap:6px;align-items:center">         <span style="font-size:10px;color:var(--ink3)">Target</span>         ${inpN(ko.nrClientiNuovi.target, "S.kpiObiettivi.comm.nrClientiNuovi.target=parseFloat(this.value)||0", 55)}         <span style="font-size:10px;color:var(--ink3)">Effettivo</span>         ${inpN(totCN, "", 55)}         <span style="font-size:11px;font-weight:600;color:${totCN>=(ko.nrClientiNuovi.target||0)&&(ko.nrClientiNuovi.target||0)>0?'var(--green)':'var(--amber)'}">           ${ko.nrClientiNuovi.target>0?Math.round((totCN/ko.nrClientiNuovi.target)*100)+'%':'—'}         </span>       </div>       <div style="font-size:10px;color:var(--ink3);margin-top:4px">(totale da righe agenti sotto)</div>     </div>     <div style="background:var(--card);border:1px solid var(--lift);border-radius:var(--r);padding:10px 12px">       <div style="font-size:10px;color:var(--ink3);margin-bottom:5px;font-weight:600;text-transform:uppercase">Sinergie Contrattualizzate</div>       <div style="display:flex;gap:6px;align-items:center">         <span style="font-size:10px;color:var(--ink3)">Target</span>         ${inpN(ko.nrSinergie.target, "S.kpiObiettivi.comm.nrSinergie.target=parseFloat(this.value)||0", 55)}         <span style="font-size:10px;color:var(--ink3)">Effettivo</span>         ${inpN(totSin, "", 55)}       </div>     </div>   </div>    <div style="font-size:12px;font-weight:600;color:var(--green);margin:14px 0 8px;padding-bottom:5px;border-bottom:2px solid var(--green)">💰 Venduto & provvigioni — dettaglio agenti</div>   <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -4px;padding:0 4px 2px;width:100%">   <table style="width:max-content;min-width:100%;border-collapse:collapse;font-size:12px">   <thead><tr style="background:var(--ink);color:#fff">     <th style="padding:8px 10px;text-align:left;font-size:11px;min-width:130px;position:sticky;left:0;background:var(--ink);z-index:2;box-shadow:2px 0 6px rgba(0,0,0,.18)">Risorsa</th>     <th style="padding:8px 6px;text-align:center;font-size:10px;min-width:60px">Area CA</th>     <th style="${thStyle()}">Venduto €</th>     <th style="${thStyle()}">Incassato €</th>     <th style="${thStyle()}">Provvigioni €</th>     <th style="${thStyle()}">Premi €</th>     <th style="${thStyle()}">Clienti Nuovi</th>     <th style="${thStyle()}">Sinergie</th>     <th style="${thStyle()}">Peso</th>   </tr></thead>   <tbody>${areaRowsHtml}   <tr style="background:var(--ink);color:#fff;font-weight:600">     <td style="padding:8px 10px;position:sticky;left:0;background:var(--ink);z-index:1;box-shadow:2px 0 6px rgba(0,0,0,.18)" colspan="2">TOTALE COMMERCIALE</td>     <td style="padding:8px 6px;text-align:right;font-family:'DM Mono',monospace">${fmt(totVend)}</td>     <td style="padding:8px 6px;text-align:right;font-family:'DM Mono',monospace">${fmt(totInc)}</td>     <td style="padding:8px 6px;text-align:right;font-family:'DM Mono',monospace">${fmt(totProv)}</td>     <td style="padding:8px 6px;text-align:right;font-family:'DM Mono',monospace">${fmt(totPremi)}</td>     <td style="padding:8px 6px;text-align:right">${totCN}</td>     <td style="padding:8px 6px;text-align:right">${totSin}</td>     <td style="padding:8px 6px;text-align:right;font-size:10px;opacity:.8">100%</td>   </tr></tbody></table></div>    <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">     <button class="btn sm" onclick="addNewCAArea()">+ Nuova area CA</button>     <button class="btn sm" onclick="resetAreaDati('comm')">↺ Azzera mese</button>   </div>`;
+  el.innerHTML = `   <div style="font-size:12px;font-weight:600;color:var(--blue);margin:14px 0 8px;padding-bottom:5px;border-bottom:2px solid var(--blue)">📊 KPI Obiettivi mese — Commerciale</div>   <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px">     <div style="background:var(--card);border:1px solid var(--lift);border-radius:var(--r);padding:10px 12px">       <div style="font-size:10px;color:var(--ink3);margin-bottom:5px;font-weight:600;text-transform:uppercase">Obiettivo mese (libero)</div>       <div style="display:flex;gap:6px;align-items:center;margin-bottom:5px">         ${inpTxt(ko.nomeObiettivo, "S.kpiObiettivi.comm.nomeObiettivo=this.value", 'es. preventivi in trattativa da chiudere')}       </div>       <div style="display:flex;gap:6px;align-items:center">         <span style="font-size:10px;color:var(--ink3);min-width:50px">Target</span>         ${inpN(ko.targetObiettivo, "S.kpiObiettivi.comm.targetObiettivo=parseFloat(this.value)||0", 60)}         <span style="font-size:10px;color:var(--ink3);min-width:50px">Effettivo</span>         ${inpN(ko.effettivoObiettivo, "S.kpiObiettivi.comm.effettivoObiettivo=parseFloat(this.value)||0", 60)}         <span style="font-size:11px;font-weight:600;color:${ko.effettivoObiettivo>=ko.targetObiettivo&&ko.targetObiettivo>0?'var(--green)':'var(--amber)'}">           ${ko.targetObiettivo>0?Math.round((ko.effettivoObiettivo/ko.targetObiettivo)*100)+'%':'—'}         </span>       </div>     </div>     <div style="background:var(--card);border:1px solid var(--lift);border-radius:var(--r);padding:10px 12px">       <div style="font-size:10px;color:var(--ink3);margin-bottom:5px;font-weight:600;text-transform:uppercase">Clienti Nuovi</div>       <div style="display:flex;gap:6px;align-items:center">         <span style="font-size:10px;color:var(--ink3)">Target</span>         ${inpN(ko.nrClientiNuovi.target, "S.kpiObiettivi.comm.nrClientiNuovi.target=parseFloat(this.value)||0", 55)}         <span style="font-size:10px;color:var(--ink3)">Effettivo</span>         ${inpN(totCN, "", 55)}         <span style="font-size:11px;font-weight:600;color:${totCN>=(ko.nrClientiNuovi.target||0)&&(ko.nrClientiNuovi.target||0)>0?'var(--green)':'var(--amber)'}">           ${ko.nrClientiNuovi.target>0?Math.round((totCN/ko.nrClientiNuovi.target)*100)+'%':'—'}         </span>       </div>       <div style="font-size:10px;color:var(--ink3);margin-top:4px">(totale da righe agenti sotto)</div>     </div>     <div style="background:var(--card);border:1px solid var(--lift);border-radius:var(--r);padding:10px 12px">       <div style="font-size:10px;color:var(--ink3);margin-bottom:5px;font-weight:600;text-transform:uppercase">Sinergie Contrattualizzate</div>       <div style="display:flex;gap:6px;align-items:center">         <span style="font-size:10px;color:var(--ink3)">Target</span>         ${inpN(ko.nrSinergie.target, "S.kpiObiettivi.comm.nrSinergie.target=parseFloat(this.value)||0", 55)}         <span style="font-size:10px;color:var(--ink3)">Effettivo</span>         ${inpN(totSin, "", 55)}       </div>     </div>   </div>    <div style="font-size:12px;font-weight:600;color:var(--green);margin:14px 0 8px;padding-bottom:5px;border-bottom:2px solid var(--green)">💰 Venduto & provvigioni — dettaglio agenti</div>   <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -4px;padding:0 4px 2px;width:100%">   <table style="width:max-content;min-width:100%;border-collapse:collapse;font-size:12px">   <thead><tr style="background:var(--ink);color:#fff">     <th style="padding:8px 10px;text-align:left;font-size:11px;min-width:130px;position:sticky;left:0;background:var(--ink);z-index:2;box-shadow:2px 0 6px rgba(0,0,0,.18)">Risorsa</th>     <th style="padding:8px 6px;text-align:center;font-size:10px;min-width:60px">Area CA</th>     <th style="${thStyle()}">Venduto €</th>     <th style="${thStyle()}">Incassato €</th>     <th style="${thStyle()}">Provvigioni €</th>     <th style="${thStyle()}">Premi €</th>     <th style="${thStyle()}">Clienti Nuovi</th>     <th style="${thStyle()}">Sinergie</th>     <th style="${thStyle()}">Peso</th>   </tr></thead>   <tbody>${areaRowsHtml}   <tr style="background:var(--ink);color:#fff;font-weight:600">     <td style="padding:8px 10px;position:sticky;left:0;background:var(--ink);z-index:1;box-shadow:2px 0 6px rgba(0,0,0,.18)" colspan="2">TOTALE COMMERCIALE</td>     <td style="padding:8px 6px;text-align:right;font-family:'DM Mono',monospace">${fmt(totVend)}</td>     <td style="padding:8px 6px;text-align:right;font-family:'DM Mono',monospace">${fmt(totInc)}</td>     <td style="padding:8px 6px;text-align:right;font-family:'DM Mono',monospace">${fmt(totProv)}</td>     <td style="padding:8px 6px;text-align:right;font-family:'DM Mono',monospace">${fmt(totPremi)}</td>     <td style="padding:8px 6px;text-align:right">${totCN}</td>     <td style="padding:8px 6px;text-align:right">${totSin}</td>     <td style="padding:8px 6px;text-align:right;font-size:10px;opacity:.8">100%</td>   </tr></tbody></table></div>    <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">     <button class="btn sm" onclick="addNewCAArea()">+ Nuova area CA</button>     <button class="btn sm" onclick="resetAreaDati('comm')">↺ Azzera mese</button>   </div>`;
   renderAreaKPIInto(el,'comm');
 }
 
