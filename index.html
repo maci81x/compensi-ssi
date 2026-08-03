@@ -5612,9 +5612,14 @@ function renderProduzionePage(){
   const el=document.getElementById('prod-tec-grid');if(!el)return;
   // Solo tecnici con generato_tecnico attivo
   const tecs=S.personale.filter(p=>(p.slots||[]).some(sl=>sl.comp?.generato_tecnico?.on));
-  if(!tecs.length){el.innerHTML='<div class="empty">Nessun tecnico con generato attivo.</div>';return;}
+  if(!tecs.length){
+    el.innerHTML='<div class="empty">Nessun tecnico con generato attivo.</div>'
+      +renderSlotTecniciDisattivati();
+    renderProdSezioniExtra();
+    return;
+  }
 
-  let html=`<div style="overflow-x:auto">     <table style="width:100%;border-collapse:collapse;font-size:12px">     <thead>       <tr style="background:var(--ink);color:#fff">         <th style="padding:8px 10px;text-align:left;font-size:11px;font-weight:600;white-space:nowrap;border-radius:var(--r) 0 0 0;min-width:110px">Tecnico</th>         ${vociTec().map(v=>`<th style="padding:8px 8px;text-align:right;font-size:10px;font-weight:500;white-space:nowrap;min-width:80px">${v.lbl}<br><span style="opacity:.55;font-weight:400">${v.unit}</span></th>`).join('')}         <th style="padding:8px 10px;text-align:right;font-size:11px;font-weight:600;min-width:90px;border-radius:0 var(--r) 0 0">Generato</th>         <th style="padding:8px 8px;text-align:right;font-size:10px;font-weight:500;min-width:80px">Obiettivo</th>         <th style="padding:8px 8px;text-align:right;font-size:10px;font-weight:500;min-width:70px">Diff.</th>       </tr>     </thead>     <tbody>`;
+  let html=`<div style="overflow-x:auto">     <table style="width:100%;border-collapse:collapse;font-size:12px">     <thead>       <tr style="background:var(--ink);color:#fff">         <th style="padding:8px 10px;text-align:left;font-size:11px;font-weight:600;white-space:nowrap;border-radius:var(--r) 0 0 0;min-width:110px">Tecnico</th>         ${vociTec().map(v=>`<th style="padding:8px 8px;text-align:right;font-size:10px;font-weight:500;white-space:nowrap;min-width:80px">${v.lbl}<br><span style="opacity:.55;font-weight:400">${v.unit}</span></th>`).join('')}         <th style="padding:8px 10px;text-align:right;font-size:11px;font-weight:600;min-width:90px;border-radius:0 var(--r) 0 0">Generato</th>         <th style="padding:8px 8px;text-align:right;font-size:10px;font-weight:500;min-width:80px">Obiettivo</th>         <th style="padding:8px 8px;text-align:right;font-size:10px;font-weight:500;min-width:70px">Diff.</th>         <th style="padding:8px 6px;text-align:center;font-size:10px;font-weight:500;min-width:34px"></th>       </tr>     </thead>     <tbody>`;
 
   let tot_gen=0;
   tecs.forEach((p,rowIdx)=>{
@@ -5638,16 +5643,116 @@ function renderProduzionePage(){
             style="width:72px;padding:4px 6px;border:1px solid var(--lift);border-radius:var(--r);font-size:11px;font-family:'DM Mono',monospace;text-align:right;background:${raw>0?'var(--blue-bg)':'var(--card)'};color:${raw>0?'var(--blue)':'var(--ink)'}"
             onblur="S.personale[${pi}].slots[${si}].comp.generato_tecnico['${v.k}']=parseFloat(this.value)||0;this.style.background=this.value>0?'var(--blue-bg)':'var(--card)';this.style.color=this.value>0?'var(--blue)':'var(--ink)';renderAll();updateProdRow(${pi},${si})"
             onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">
-        </td>`;       }).join('')}       <td style="padding:7px 10px;border-bottom:1px solid var(--lift);text-align:right" id="tec-gen-${pi}"><span style="font-family:'DM Mono',monospace;font-weight:600;font-size:13px;color:var(--blue)">${fmt(gen)}</span> <button onclick="event.stopPropagation();showFormulaPopup(${pi},${si})" style="background:var(--blue-bg);border:none;border-radius:50%;width:16px;height:16px;font-size:9px;font-weight:700;color:var(--blue);cursor:pointer;padding:0;line-height:16px;vertical-align:middle" title="Dettaglio formula">ⓘ</button></td>       <td style="padding:7px 8px;border-bottom:1px solid var(--lift);text-align:right;font-size:11px">         <input type="number" value="${obj}" style="width:70px;padding:3px 6px;border:1px solid var(--lift);border-radius:var(--r);font-size:11px;font-family:'DM Mono',monospace;text-align:right;background:var(--sheet)"           onblur="S.personale[${pi}].slots[${si}].comp.generato_tecnico.obiettivo=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">       </td>       <td style="padding:7px 8px;border-bottom:1px solid var(--lift);text-align:right;font-family:'DM Mono',monospace;font-size:11px;color:${diff>=0?'var(--green)':'var(--red)'}" id="tec-diff-${pi}">${diff>=0?'+':''}${fmt(diff)}</td>     </tr>`;
+        </td>`;       }).join('')}       <td style="padding:7px 10px;border-bottom:1px solid var(--lift);text-align:right" id="tec-gen-${pi}"><span style="font-family:'DM Mono',monospace;font-weight:600;font-size:13px;color:var(--blue)">${fmt(gen)}</span> <button onclick="event.stopPropagation();showFormulaPopup(${pi},${si})" style="background:var(--blue-bg);border:none;border-radius:50%;width:16px;height:16px;font-size:9px;font-weight:700;color:var(--blue);cursor:pointer;padding:0;line-height:16px;vertical-align:middle" title="Dettaglio formula">ⓘ</button></td>       <td style="padding:7px 8px;border-bottom:1px solid var(--lift);text-align:right;font-size:11px">         <input type="number" value="${obj}" style="width:70px;padding:3px 6px;border:1px solid var(--lift);border-radius:var(--r);font-size:11px;font-family:'DM Mono',monospace;text-align:right;background:var(--sheet)"           onblur="S.personale[${pi}].slots[${si}].comp.generato_tecnico.obiettivo=parseFloat(this.value)||0;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">       </td>       <td style="padding:7px 8px;border-bottom:1px solid var(--lift);text-align:right;font-family:'DM Mono',monospace;font-size:11px;color:${diff>=0?'var(--green)':'var(--red)'}" id="tec-diff-${pi}">${diff>=0?'+':''}${fmt(diff)}</td>       <td style="padding:7px 6px;border-bottom:1px solid var(--lift);text-align:center">         <button class="btn xs danger" style="padding:2px 5px" title="Disattiva la riga (reversibile, i dati restano)" onclick="disattivaSlotTecnico(${pi},${si})">🗑</button>       </td>     </tr>`;
   });
 
   // Totali
-  html+=`<tr style="background:var(--ink);color:#fff;font-weight:600">     <td style="padding:8px 10px;border-radius:0 0 0 var(--r)">TOTALE GRUPPO</td>     ${vociTec().map(v=>{       const tot=tecs.reduce((s,p)=>{const si=p.slots.findIndex(sl=>sl.comp?.generato_tecnico?.on);return si>=0?s+(p.slots[si].comp.generato_tecnico[v.k]||0):s;},0);       return `<td style="padding:8px 5px;text-align:right;font-family:'DM Mono',monospace;font-size:11px;opacity:.8">${tot>0?fnum(tot):'—'}</td>`;     }).join('')}     <td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace;font-size:14px" id="tec-tot">${fmt(tot_gen)}</td>     <td colspan="2" style="padding:8px 10px;text-align:right;font-size:11px;opacity:.7;border-radius:0 0 var(--r) 0">${tecs.length} tecnici</td>   </tr></tbody></table></div>`;
+  html+=`<tr style="background:var(--ink);color:#fff;font-weight:600">     <td style="padding:8px 10px;border-radius:0 0 0 var(--r)">TOTALE GRUPPO</td>     ${vociTec().map(v=>{       const tot=tecs.reduce((s,p)=>{const si=p.slots.findIndex(sl=>sl.comp?.generato_tecnico?.on);return si>=0?s+(p.slots[si].comp.generato_tecnico[v.k]||0):s;},0);       return `<td style="padding:8px 5px;text-align:right;font-family:'DM Mono',monospace;font-size:11px;opacity:.8">${tot>0?fnum(tot):'—'}</td>`;     }).join('')}     <td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace;font-size:14px" id="tec-tot">${fmt(tot_gen)}</td>     <td colspan="3" style="padding:8px 10px;text-align:right;font-size:11px;opacity:.7;border-radius:0 0 var(--r) 0">${tecs.length} tecnici</td>   </tr></tbody></table></div>`;
 
-  el.innerHTML=html;
+  el.innerHTML=html+renderSlotTecniciDisattivati();
   renderProduzioneRiepilogo(tecs);
   setTimeout(()=>requestAnimationFrame(()=>renderProduzioneChart(tecs)),100);
   renderProdSezioniExtra();
+}
+
+// ── §L4 — CESTINO SULLA RIGA = DISATTIVA LO SLOT ─────────────────────────
+// Decisione presa (opzione 1): il cestino della griglia NON cancella la
+// persona. Spegne lo slot di produzione tecnica (comp.generato_tecnico.on),
+// coerente col delete-slot già esistente: la riga esce dalla griglia, lo
+// storico resta, l'operazione è reversibile dal pannello qui sotto.
+// La cancellazione TOTALE della persona (con storico) sta in deletePersona,
+// con conferma forte — vedi §L1.
+function disattivaSlotTecnico(pi,si){
+  const p=S.personale[pi]; if(!p)return;
+  const sl=(p.slots||[])[si]; if(!sl)return;
+  const g=sl.comp&&sl.comp.generato_tecnico; if(!g)return;
+  if(!confirm('Disattivare la produzione tecnica di «'+p.nome+'»?\n\n'
+    +'La riga esce dalla griglia ma NIENTE viene cancellato: quantità, '
+    +'coefficienti e obiettivo restano salvati e la riga si riattiva con un '
+    +'clic da "righe disattivate".\n\n'
+    +'Per eliminare la persona e tutto il suo storico usa il cestino sulla '
+    +'sua scheda risorsa.'))return;
+  g.on=false;
+  g._disattivataDaGriglia=true;   // distingue chi è stato spento qui da chi
+                                  // non ha mai avuto produzione tecnica
+  crudCommit('Riga disattivata: '+p.nome+' — dati conservati');
+}
+function riattivaSlotTecnico(pi,si){
+  const p=S.personale[pi]; if(!p)return;
+  const sl=(p.slots||[])[si]; if(!sl)return;
+  const g=sl.comp&&sl.comp.generato_tecnico; if(!g)return;
+  g.on=true;
+  delete g._disattivataDaGriglia;
+  crudCommit('Riga riattivata: '+p.nome);
+}
+function slotTecniciDisattivati(){
+  const out=[];
+  S.personale.forEach((p,pi)=>{
+    (p.slots||[]).forEach((sl,si)=>{
+      const g=sl.comp&&sl.comp.generato_tecnico;
+      if(g&&!g.on&&g._disattivataDaGriglia)out.push({p,pi,si});
+    });
+  });
+  return out;
+}
+// ── §L5 — COLONNE/VOCI DELLA GRIGLIA PRODUZIONE ──────────────────────────
+// Erano cablate (Documenti/Formazione/Analisi/RSPP/Pacchetti/Laika/Cantieri/
+// Estintori/Sorv.San.): ora si aggiungono, si rinominano e si eliminano.
+// La lista viva sta in S.vociTec; vociTec() la legge, vociTecStato() la
+// materializza alla prima modifica partendo dal seed storico.
+function vociTecStato(){
+  if(!Array.isArray(S.vociTec)||!S.vociTec.length)
+    S.vociTec=JSON.parse(JSON.stringify(VOCI_TEC_DEF));
+  return S.vociTec;
+}
+function addVoceTec(){
+  const nome=prompt('Nome della nuova voce/colonna (es. Consulenze):');
+  if(nome===null)return;
+  const lbl=nome.trim();
+  if(!lbl){ notify('Nome vuoto — voce non creata'); return; }
+  const inEuro=confirm('Unità di misura della voce «'+lbl+'»:\n\n'
+    +'OK = € (valore prodotto × coefficiente, es. 0,20 = 20%)\n'
+    +'Annulla = h (ore × tariffa oraria)');
+  const risposta=prompt(inEuro?'Coefficiente sul valore (es. 0,20 = 20%):':'Tariffa €/h:',inEuro?'0,20':'25');
+  if(risposta===null)return;
+  const coef=parseFloat(String(risposta).replace(',','.'))||0;
+  const key='v_'+Date.now();
+  vociTecStato().push({k:key,lbl,unit:inEuro?'€':'h',pf:'pf_'+key,def_pf:coef,def_r:0});
+  crudCommit('Voce aggiunta: '+lbl);
+}
+function renameVoceTec(i){
+  const v=vociTecStato()[i]; if(!v)return;
+  crudRename('Nome della voce:',v.lbl,nuovo=>{v.lbl=nuovo;},'Voce rinominata: ');
+}
+function setVoceTec(i,campo,valore){
+  const v=vociTecStato()[i]; if(!v)return;
+  v[campo]=campo==='def_pf'?(parseFloat(String(valore).replace(',','.'))||0):valore;
+  crudCommit(null);
+}
+function deleteVoceTec(i){
+  const lista=vociTecStato();
+  const v=lista[i]; if(!v)return;
+  if(lista.length<=1){ notify('Deve restare almeno una voce in griglia'); return; }
+  // Quante quantità già inserite si smettono di contare: va detto prima, non
+  // scoperto dopo guardando il totale generato che cala.
+  const conDati=S.personale.reduce((s,p)=>s+((p.slots||[]).some(sl=>{
+    const g=sl.comp&&sl.comp.generato_tecnico; return g&&(g[v.k]||0)>0;
+  })?1:0),0);
+  if(!confirm('ELIMINA LA VOCE «'+v.lbl+'» dalla griglia Produzione\n\n'
+    +(conDati?conDati+' tecnici hanno quantità inserite su questa voce: smetteranno di contribuire al generato.\n\n':'')
+    +'I valori già inseriti restano nello stato e tornano a contare se la voce '
+    +'viene ricreata con la stessa chiave. Confermi?'))return;
+  S.vociTec=lista.filter((_,j)=>j!==i);
+  crudCommit('Voce eliminata: '+v.lbl);
+}
+
+function renderSlotTecniciDisattivati(){
+  const off=slotTecniciDisattivati();
+  if(!off.length)return '';
+  return '<div style="margin-top:10px;padding:8px 12px;background:var(--sheet);border:1px solid var(--lift);border-radius:var(--r);font-size:11px;color:var(--ink3)">'
+    +'<strong>'+off.length+' righe disattivate</strong> — i dati sono conservati, la riga torna in griglia con un clic: '
+    +off.map(o=>'<button class="btn xs" style="margin:2px 3px 0 0" onclick="riattivaSlotTecnico('+o.pi+','+o.si+')">↺ '+o.p.nome+'</button>').join('')
+    +'</div>';
 }
 
 function updateProdRow(pi, si){
@@ -5839,6 +5944,34 @@ function renderProdSezioniExtra(){
   }
 
   wrap.innerHTML='';
+
+  // ── §L5 — COLONNE / VOCI DELLA GRIGLIA (aggiungi · rinomina · elimina) ──
+  mkCollapsible('vocitec','🧱','Colonne / voci della griglia Produzione','#7A4A08',body=>{
+    const voci=vociTec();
+    body.innerHTML=`<div style="font-size:11px;color:var(--ink3);margin-bottom:10px">Le colonne della griglia non sono più cablate nel codice: si aggiungono, si rinominano e si eliminano da qui. Il <strong>coefficiente</strong> è il default della voce (quota sul valore per le voci in €, tariffa oraria per quelle in h) e vale per gli slot che non hanno un coefficiente proprio — quelli già configurati mantengono il loro.</div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="color:var(--ink3);font-size:10px;text-transform:uppercase">
+          <th style="text-align:left;padding:4px 6px">Voce</th>
+          <th style="padding:4px 6px;text-align:left">Unità</th>
+          <th style="padding:4px 6px;text-align:right">Coefficiente</th>
+          <th style="padding:4px 6px;text-align:left">Chiave</th>
+          <th style="width:28px"></th>
+        </tr></thead>
+        <tbody>${voci.map((v,i)=>`<tr style="border-top:1px solid var(--lift)">
+          <td style="padding:4px 6px"><input value="${v.lbl}" class="inp" style="font-size:11px;padding:2px 5px;width:100%"
+            onblur="setVoceTec(${i},'lbl',this.value.trim()||'${v.lbl}')" onkeydown="if(event.keyCode===13)this.blur()"></td>
+          <td style="padding:4px 6px"><select class="inp" style="width:auto;font-size:11px;padding:1px 4px" onchange="setVoceTec(${i},'unit',this.value)">
+            <option value="€" ${v.unit==='€'?'selected':''}>€</option>
+            <option value="h" ${v.unit==='h'?'selected':''}>h</option>
+          </select></td>
+          <td style="padding:4px 6px;text-align:right"><input type="number" step="0.01" value="${v.def_pf}" class="inp n" style="width:80px;font-size:11px;padding:2px 5px"
+            onblur="setVoceTec(${i},'def_pf',this.value)" onkeydown="if(event.keyCode===13)this.blur()"></td>
+          <td style="padding:4px 6px;font-family:'DM Mono',monospace;font-size:10px;color:var(--ink3)">${v.k}</td>
+          <td style="padding:4px 6px;text-align:center"><button class="btn xs danger" style="padding:2px 5px" title="Elimina voce" onclick="deleteVoceTec(${i})">🗑</button></td>
+        </tr>`).join('')}</tbody>
+      </table>
+      <button class="btn sm prim" style="margin-top:8px" onclick="addVoceTec()">+ Aggiungi voce/colonna</button>`;
+  });
 
   // ── RICAVO PER CENTRO (manuale / % — SPEC-v10 §D, Fase 6) ───────────────
   // Il fatturato nei file sorgente non è mai spezzato per servizio: oltre al
