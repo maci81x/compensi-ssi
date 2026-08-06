@@ -2160,7 +2160,25 @@ const CAT_ICONS={affitto:'🏢',utenze:'⚡',software:'💻',assicurazione:'🛡
 // stato non ha). Vedi SCHEMA_MIGRATIONS più sotto per la logica di
 // migrazione — root cause del problema "una scheda vecchia sovrascrive dati
 // più recenti", non un cerotto sul sintomo.
-const CURRENT_SCHEMA_VERSION=9;
+const CURRENT_SCHEMA_VERSION=10;
+
+// §I — Erogato per servizio. Le 6 tipologie sono cablate qui (chiave stabile +
+// etichetta): sono la tassonomia concordata, non dati, quindi non stanno in S.
+const TIPOLOGIE_SERVIZIO=[
+  {k:'spot',      label:'SPOT'},
+  {k:'docenza',   label:'Docenza'},
+  {k:'analisi',   label:'Analisi'},
+  {k:'pacchetti', label:'Pacchetti'},
+  {k:'rspp',      label:'RSPP'},
+  {k:'gestione',  label:'Gestione'},
+];
+// Riga vuota: nessun numero inventato, si parte da zero e si compila a mano.
+function erogatoRigaVuota(){ return {n:0,ore:0,valore:0,costo:0}; }
+function erogatoAreaVuoto(){
+  const o={};
+  TIPOLOGIE_SERVIZIO.forEach(t=>{o[t.k]=erogatoRigaVuota();});
+  return o;
+}
 
 // ══════════════════════════════════════════════════════════════════════════
 // §L — VOCI/COLONNE della griglia Produzione tecnici
@@ -2280,6 +2298,8 @@ function normalizzaOrgUfficiale(s){
 
 const DEF={
   schemaVersion:CURRENT_SCHEMA_VERSION,
+  // §I — erogato per servizio, per area. Nasce vuoto: si compila a mano.
+  erogato:{},
   // §L — colonne della griglia Produzione tecnici, ora dato di stato (CRUD
   // dall'UI). Copia del seed: uno stato nuovo parte dalle 9 voci storiche.
   vociTec:JSON.parse(JSON.stringify(VOCI_TEC_DEF)),
@@ -3484,6 +3504,19 @@ const SCHEMA_MIGRATIONS=[
     // obiettivo scritto a mano è un dato reale e non va toccato.
     if(s.kpiObiettivi&&s.kpiObiettivi.comm&&s.kpiObiettivi.comm.nomeObiettivo==='DVR da chiudere')
       s.kpiObiettivi.comm.nomeObiettivo='';
+  }},
+  {to:10,migrate(s){
+    // §I — erogato per servizio. Additiva e condizionale: crea solo ciò che
+    // manca, non tocca una riga già compilata. Non entra in flow() né nei
+    // premi — è registrazione di produzione, per ora solo da leggere.
+    if(!s.erogato||typeof s.erogato!=='object')s.erogato={};
+    (s.aree||[]).forEach(a=>{
+      if(!s.erogato[a.id]||typeof s.erogato[a.id]!=='object')s.erogato[a.id]=erogatoAreaVuoto();
+      else TIPOLOGIE_SERVIZIO.forEach(t=>{
+        const r=s.erogato[a.id][t.k];
+        if(!r||typeof r!=='object')s.erogato[a.id][t.k]=erogatoRigaVuota();
+      });
+    });
   }},
 ];
 function migrateSchema(s){
@@ -5062,6 +5095,113 @@ function areaCardAzioni(a){
     +'</div>';
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// §I — EROGATO PER SERVIZIO (inserimento manuale per area)
+// ═══════════════════════════════════════════════════════════════════════════
+// Registrazione a sé: NON entra in flow(), non tocca la cascata liquidità né
+// i premi. È il "1° margine" del PF (valore − costo) per tipologia di
+// servizio, che finora non aveva dove essere scritto.
+// L'accessore crea la riga al volo: un'area aggiunta dall'UI dopo la
+// migrazione v10 non ha ancora la sua voce in S.erogato.
+function erogatoArea(areaId){
+  if(!S.erogato||typeof S.erogato!=='object')S.erogato={};
+  if(!S.erogato[areaId]||typeof S.erogato[areaId]!=='object')S.erogato[areaId]=erogatoAreaVuoto();
+  const e=S.erogato[areaId];
+  TIPOLOGIE_SERVIZIO.forEach(t=>{ if(!e[t.k]||typeof e[t.k]!=='object')e[t.k]=erogatoRigaVuota(); });
+  return e;
+}
+function erogatoTotali(areaId){
+  const e=erogatoArea(areaId);
+  return TIPOLOGIE_SERVIZIO.reduce((acc,t)=>{
+    const r=e[t.k];
+    acc.n+=+r.n||0; acc.ore+=+r.ore||0; acc.valore+=+r.valore||0; acc.costo+=+r.costo||0;
+    return acc;
+  },{n:0,ore:0,valore:0,costo:0});
+}
+function erogatoMarginePct(valore,margine){ return valore>0?(margine/valore)*100:null; }
+
+function setErogato(areaId,tipo,campo,valore){
+  const r=erogatoArea(areaId)[tipo]; if(!r)return;
+  const v=parseFloat(valore);
+  r[campo]=isFinite(v)?v:0;
+  renderAll();                       // ricalcolo + salvataggio, come ovunque
+  refreshErogatoBlock(areaId);       // la modale non è una .page: si aggiorna qui
+}
+// "Eliminabile" = la riga torna a zero. Le 6 tipologie sono la tassonomia
+// concordata e restano tutte: toglierne una nasconderebbe una voce di
+// servizio invece di azzerarla.
+function azzeraErogatoRiga(areaId,tipo){
+  const t=TIPOLOGIE_SERVIZIO.find(x=>x.k===tipo); if(!t)return;
+  const r=erogatoArea(areaId)[tipo];
+  if(!(+r.n||+r.ore||+r.valore||+r.costo))return;   // già vuota
+  if(!confirm('Azzerare la riga «'+t.label+'»?\n\nN°, ore, valore e costo tornano a 0.'))return;
+  erogatoArea(areaId)[tipo]=erogatoRigaVuota();
+  renderAll(); refreshErogatoBlock(areaId);
+  notify('Riga azzerata: '+t.label);
+}
+function refreshErogatoBlock(areaId){
+  const el=document.getElementById('areaCardErogato');
+  if(el)el.innerHTML=renderErogatoBlock(areaId);
+}
+
+function erogatoCella(areaId,tipo,campo,val,width){
+  return '<td style="padding:2px 3px;text-align:right">'
+    +'<input type="number" value="'+(+val||0)+'" class="inp n" style="width:'+width+'px;font-size:11px;padding:2px 4px"'
+    +' onblur="setErogato(\''+areaId+'\',\''+tipo+'\',\''+campo+'\',this.value)"'
+    +' onkeydown="if(event.keyCode===13)this.blur()"></td>';
+}
+
+function renderErogatoBlock(areaId){
+  const e=erogatoArea(areaId);
+  const tot=erogatoTotali(areaId);
+  const totMargine=tot.valore-tot.costo;
+  const totPct=erogatoMarginePct(tot.valore,totMargine);
+  let h='<div style="margin-top:14px;padding-top:8px;border-top:1px dashed var(--lift)">'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'
+    +'<span style="font-size:11px;font-weight:600">Erogato per tipologia di servizio</span>'
+    +'<span style="font-size:10px;color:var(--ink3)">inserimento manuale · 1° margine = valore − costo · non entra nella cascata</span></div>'
+    +'<div style="overflow-x:auto">'
+    +'<table style="width:100%;min-width:430px;border-collapse:collapse;font-size:11px">'
+    +'<thead><tr style="color:var(--ink3);font-size:10px;text-transform:uppercase">'
+    +'<th style="text-align:left;padding:3px 4px">Tipologia</th>'
+    +'<th style="padding:3px 3px;text-align:right">N°</th>'
+    +'<th style="padding:3px 3px;text-align:right">Ore</th>'
+    +'<th style="padding:3px 3px;text-align:right">Valore €</th>'
+    +'<th style="padding:3px 3px;text-align:right">Costo €</th>'
+    +'<th style="padding:3px 3px;text-align:right">1° Margine</th>'
+    +'<th style="width:26px"></th></tr></thead><tbody>';
+  TIPOLOGIE_SERVIZIO.forEach(function(t){
+    const r=e[t.k];
+    const margine=(+r.valore||0)-(+r.costo||0);
+    const pct=erogatoMarginePct(+r.valore||0,margine);
+    const vuota=!(+r.n||+r.ore||+r.valore||+r.costo);
+    h+='<tr style="border-top:1px solid var(--lift)">'
+      +'<td style="padding:3px 4px">'+t.label+'</td>'
+      +erogatoCella(areaId,t.k,'n',r.n,44)
+      +erogatoCella(areaId,t.k,'ore',r.ore,52)
+      +erogatoCella(areaId,t.k,'valore',r.valore,72)
+      +erogatoCella(areaId,t.k,'costo',r.costo,72)
+      +'<td style="padding:3px 4px;text-align:right;white-space:nowrap" class="mono">'
+        +'<span style="color:'+(margine>=0?'var(--green)':'var(--red)')+'">'+fmt(margine)+'</span>'
+        +'<span style="font-size:9px;color:var(--ink3);margin-left:4px">'+(pct!==null?pct.toFixed(1)+'%':'—')+'</span></td>'
+      +'<td style="padding:3px 2px;text-align:right">'
+        +'<button class="btn xs danger" style="padding:1px 4px" title="Azzera la riga"'
+        +(vuota?' disabled':'')+' onclick="azzeraErogatoRiga(\''+areaId+'\',\''+t.k+'\')">🗑</button></td>'
+      +'</tr>';
+  });
+  h+='<tr style="border-top:2px solid var(--lift);font-weight:600">'
+    +'<td style="padding:4px">Totale</td>'
+    +'<td style="padding:4px 3px;text-align:right" class="mono">'+tot.n+'</td>'
+    +'<td style="padding:4px 3px;text-align:right" class="mono">'+(+tot.ore.toFixed(1))+'</td>'
+    +'<td style="padding:4px 3px;text-align:right" class="mono">'+fmt(tot.valore)+'</td>'
+    +'<td style="padding:4px 3px;text-align:right" class="mono">'+fmt(tot.costo)+'</td>'
+    +'<td style="padding:4px;text-align:right;white-space:nowrap" class="mono">'
+      +'<span style="color:'+(totMargine>=0?'var(--green)':'var(--red)')+'">'+fmt(totMargine)+'</span>'
+      +'<span style="font-size:9px;color:var(--ink3);margin-left:4px">'+(totPct!==null?totPct.toFixed(1)+'%':'—')+'</span></td>'
+    +'<td></td></tr>';
+  return h+'</tbody></table></div></div>';
+}
+
 function openAreaCard(areaId){
   const ai=S.aree.findIndex(x=>x.id===areaId); if(ai<0)return;
   const a=S.aree[ai];
@@ -5072,6 +5212,10 @@ function openAreaCard(areaId){
 
   document.getElementById('pop-title').textContent=a.nome;
   document.getElementById('pop-act').style.display='none';
+  // La scheda area è molto più densa delle altre modali (griglia erogato a 7
+  // colonne): i 340px del popover la taglierebbero. Larghezza solo per questa,
+  // ripristinata da closePop() — le altre modali restano come sono.
+  document.getElementById('popover').style.width='min(560px,94vw)';
   document.getElementById('pop-body').innerHTML=
      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">'
     +'<span class="badge '+(a.tipo==='RIC'?'b-ok':'b-nd')+'">'+escAttr(a.tipo||'')+'</span>'
@@ -5087,10 +5231,7 @@ function openAreaCard(areaId){
     +'<div id="areaCardMiniOrg"></div>'
     +areaCardKpiMicro(a)
     +renderKpiCustomBlock(areaId)
-    +'<div style="margin-top:12px;padding:8px 10px;background:var(--sheet);border-radius:var(--r);'
-    +'font-size:11px;color:var(--ink3);border:1px dashed var(--lift)">'
-    +'<strong>Erogato per tipologia di servizio</strong> (SPOT · Docenza · Analisi · Pacchetti · RSPP · Gestione), '
-    +'tempi e margine per servizio — <em>in arrivo col blocco I</em>. Lo slot è pronto: qui non ci sono numeri stimati.</div>'
+    +'<div id="areaCardErogato">'+renderErogatoBlock(areaId)+'</div>'
     +areaCardAzioni(a);
   openPopover();
 
@@ -5123,7 +5264,9 @@ function openPopover(){
 }
 function closePop(){
   document.getElementById('pop-ov').classList.remove('show');
-  document.getElementById('popover').classList.remove('show');
+  const pop=document.getElementById('popover');
+  pop.classList.remove('show');
+  pop.style.width='';   // §I — annulla l'allargamento della scheda area
   popCb=null;
 }
 function savePop(){if(popCb){popCb();popCb=null;}closePop();renderAll();notify('Salvato');}
