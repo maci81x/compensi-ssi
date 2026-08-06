@@ -4956,6 +4956,160 @@ function openOrgPop(type,pi){
   if(type==='persona'&&pi>=0)openPersonaPop(pi);
   else if(type==='edit'&&pi>=0)openPersonaPop(pi);
 }
+// ═══════════════════════════════════════════════════════════════════════════
+// §H — SCHEDA AREA (sola lettura + azioni CRUD)
+// ═══════════════════════════════════════════════════════════════════════════
+// Prima, cliccando una card dell'organigramma si apriva la scheda della
+// PERSONA responsabile ("Configura Giovanna Panti"): il nodo area si portava
+// dietro l'indice del responsabile (n.pi) e il click finiva su
+// openPersonaPop. Qui c'è la scheda dell'AREA.
+// È modellata su openOrgPopFlow, non su openPersonaPop: NON assegna popCb e
+// tiene nascosta la barra azioni del popover, così è impossibile salvare
+// campi persona per sbaglio. Nessun onblur scrive su S da questa scheda:
+// l'editing fine delle aree resta in "Struttura & aree" (unica fonte di
+// verità), raggiungibile con un bottone in fondo alla scheda.
+
+// Le 7 aree che hanno una pagina operativa dedicata. Le altre 23 non ne hanno
+// una: prima il click ci finiva comunque dentro (goPage con un id inesistente
+// nascondeva tutte le .page senza riaprirne nessuna) — ora aprono la scheda.
+const AREA_PAGE_MAP={comm:'comm_page',prod:'produzione',form:'form_page',
+                     amm:'amm_page',mkt:'mkt_page',sorvsan:'sorvsan_page',sis:'seg_page'};
+
+// Stesso criterio già usato dall'organigramma (renderOrg/mkAreaNode) per
+// marcare il responsabile di un'area: il legame vero è persona.areaResp, non
+// il campo di testo a.resp. Nessuna nuova convenzione inventata qui.
+function areaResponsabile(areaId){
+  return S.personale.find(p=>p.areaResp===areaId&&p.livello==='C')
+      || S.personale.find(p=>p.areaResp===areaId&&p.isResp&&!p.isCapoArea)
+      || null;
+}
+
+// Numeri chiave — stesse formule di renderStruttura (bud/cost/ratio), così i
+// due posti non possono divergere.
+function areaCardNumeri(a){
+  const bud=areaBudget(a),cost=areaCosto(a);
+  const ratio=bud>0?(cost/bud)*100:0;
+  const celle=[
+    ['Incidenza',(+(a.incPct||0).toFixed(4))+'%'],
+    ['Budget €/mese',fmt(bud)],
+    ['Costo effettivo',fmt(cost)],
+  ];
+  if(a.natura==='produttiva')celle.push(['Fornitore fisso',fmt(centroCostoFisso(a))]);
+  return{ratio,html:'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-bottom:10px;padding:8px 10px;background:var(--sheet);border-radius:var(--r)">'
+    +celle.map(c=>'<div><div style="font-size:9px;color:var(--ink3);text-transform:uppercase">'+c[0]+'</div>'
+      +'<div class="mono" style="font-size:13px">'+c[1]+'</div></div>').join('')
+    +'</div>'};
+}
+
+// Rollup delle sotto-aree chiuse (§5.1) — è l'unico margine già calcolato per
+// un'area, lo stesso mostrato in Struttura. Assente se l'area non ha figli
+// chiusi: in quel caso non si mostra nulla, non si inventa uno zero.
+function areaCardRollup(a){
+  const r=areaRollup(a); if(!r)return '';
+  const celle=[
+    ['Valore prodotto ('+r.nFigli+')',fmt(r.valore)],
+    ['Costo sotto-aree',fmt(r.costo)],
+    ['Margine',fmt(r.margine)],
+    ['Margine %',r.marginePct!==null?r.marginePct.toFixed(1)+'%':'—'],
+    ['Peso su SSI',r.pesoPct.toFixed(1)+'%'],
+  ];
+  return '<div style="font-size:12px;font-weight:600;margin-bottom:6px">Rollup sotto-aree chiuse</div>'
+    +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-bottom:10px;padding:8px 10px;background:var(--sheet);border-radius:var(--r)">'
+    +celle.map((c,i)=>'<div><div style="font-size:9px;color:var(--ink3);text-transform:uppercase">'+c[0]+'</div>'
+      +'<div class="mono" style="font-size:13px'+(i===2?';color:'+(r.margine>=0?'var(--green)':'var(--red)'):'')+'">'+c[1]+'</div></div>').join('')
+    +'</div>';
+}
+
+// Micro KPI in SOLA LETTURA — stessi valori di Struttura (kpiM/kpiCls), senza
+// gli input: si modificano da Struttura o dai ✎/🗑 di §L.
+function areaCardKpiMicro(a){
+  const micro=a.micro||[];
+  if(!micro.length)return '<div style="font-size:11px;color:var(--ink3);margin-bottom:10px">Nessun KPI micro su quest\'area.</div>';
+  return '<div style="font-size:12px;font-weight:600;margin-bottom:6px">Micro aree KPI</div>'
+    +'<table style="width:100%;border-collapse:collapse;font-size:12px">'
+    +'<thead><tr style="color:var(--ink3);font-size:10px;text-transform:uppercase">'
+    +'<th style="text-align:left;padding:4px 6px;border-bottom:1px solid var(--lift)">Nome</th>'
+    +'<th style="padding:4px 6px;text-align:right;border-bottom:1px solid var(--lift)">Target</th>'
+    +'<th style="padding:4px 6px;text-align:right;border-bottom:1px solid var(--lift)">Effettivo</th>'
+    +'<th style="padding:4px 6px;text-align:right;border-bottom:1px solid var(--lift)">%</th></tr></thead><tbody>'
+    +micro.map(function(m){const km=kpiM(m);
+      return '<tr><td style="padding:5px 6px;border-bottom:1px solid rgba(0,0,0,.04)">'+escAttr(m.nome)+'</td>'
+        +'<td style="padding:5px 6px;text-align:right;border-bottom:1px solid rgba(0,0,0,.04)" class="mono">'+(m.kt||0)+'</td>'
+        +'<td style="padding:5px 6px;text-align:right;border-bottom:1px solid rgba(0,0,0,.04)" class="mono">'+(m.ke||0)+'</td>'
+        +'<td style="padding:5px 6px;text-align:right;border-bottom:1px solid rgba(0,0,0,.04)" class="'+kpiCls(km)+'">'+(km!==null?km+'%':'—')+'</td></tr>';
+    }).join('')
+    +'</tbody></table>';
+}
+
+// Azioni: chiudono il popover PRIMA di agire (come i bottoni della scheda
+// persona), altrimenti prompt/confirm resterebbero sotto una modale già
+// aperta e il re-render li lascerebbe indietro.
+function areaCardAzioni(a){
+  const id=a.id,pag=AREA_PAGE_MAP[id];
+  return '<div class="pop-div"></div><div style="display:flex;gap:6px;flex-wrap:wrap">'
+    +'<button class="btn sm" onclick="closePop();renameArea(\''+id+'\')">✎ Rinomina area</button>'
+    +'<button class="btn sm" onclick="closePop();addArea(\''+id+'\')">+ Sotto-area / centro</button>'
+    +(pag?'<button class="btn sm" onclick="closePop();goPage(\''+pag+'\')">↗ Apri pagina '+escAttr(a.nome)+'</button>':'')
+    +'<button class="btn sm" onclick="closePop();goPage(\'struttura\')">Modifica dettagli in Struttura</button>'
+    +'<button class="btn danger sm" onclick="closePop();deleteArea(\''+id+'\')">🗑 Elimina area</button>'
+    +'</div>';
+}
+
+function openAreaCard(areaId){
+  const ai=S.aree.findIndex(x=>x.id===areaId); if(ai<0)return;
+  const a=S.aree[ai];
+  const num=areaCardNumeri(a);
+  const resp=areaResponsabile(areaId);
+  const badge=num.ratio>100?['b-crit','OVER']:num.ratio>80?['b-warn','OK']:['b-ok','OK'];
+  const padre=a.parentId?S.aree.find(x=>x.id===a.parentId):null;
+
+  document.getElementById('pop-title').textContent=a.nome;
+  document.getElementById('pop-act').style.display='none';
+  document.getElementById('pop-body').innerHTML=
+     '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">'
+    +'<span class="badge '+(a.tipo==='RIC'?'b-ok':'b-nd')+'">'+escAttr(a.tipo||'')+'</span>'
+    +'<span style="font-size:11px;color:var(--ink3)">'+escAttr(a.natura||'')+'</span>'
+    +(a.chiusa?'<span style="font-size:11px;color:var(--ink3)">· chiusa (confine di rollup)</span>':'')
+    +(padre?'<span style="font-size:11px;color:var(--ink3)">· ↳ sotto '+escAttr(padre.nome)+'</span>':'')
+    +'<span class="badge '+badge[0]+'" style="margin-left:auto">'+badge[1]+'</span></div>'
+    +(a.desc?'<div style="font-size:11px;color:var(--ink3);margin-bottom:8px">'+escAttr(a.desc)+'</div>':'')
+    +'<div style="font-size:12px;margin-bottom:8px">Responsabile: <strong>'+(resp?escAttr(resp.nome):'— non assegnato')+'</strong></div>'
+    +num.html
+    +areaCardRollup(a)
+    +'<div style="font-size:12px;font-weight:600;margin-bottom:6px">Persone dell\'area</div>'
+    +'<div id="areaCardMiniOrg"></div>'
+    +areaCardKpiMicro(a)
+    +renderKpiCustomBlock(areaId)
+    +'<div style="margin-top:12px;padding:8px 10px;background:var(--sheet);border-radius:var(--r);'
+    +'font-size:11px;color:var(--ink3);border:1px dashed var(--lift)">'
+    +'<strong>Erogato per tipologia di servizio</strong> (SPOT · Docenza · Analisi · Pacchetti · RSPP · Gestione), '
+    +'tempi e margine per servizio — <em>in arrivo col blocco I</em>. Lo slot è pronto: qui non ci sono numeri stimati.</div>'
+    +areaCardAzioni(a);
+  openPopover();
+
+  // Dopo openPopover: il contenitore deve essere già nel DOM e visibile.
+  // renderMiniOrg conosce solo le 7 aree storiche; per le altre 23 lascia il
+  // contenitore vuoto — in quel caso si mostra l'elenco piatto delle persone
+  // assegnate, senza inventare una gerarchia che non esiste.
+  renderMiniOrg('areaCardMiniOrg',areaId);
+  const mini=document.getElementById('areaCardMiniOrg');
+  if(!mini)return;
+  if(!mini.childElementCount){
+    const persone=S.personale.filter(p=>p.area===areaId);
+    mini.innerHTML=persone.length
+      ?'<div style="font-size:11px;padding:6px 8px;background:var(--sheet);border-radius:var(--r)">'
+        +persone.map(p=>escAttr(p.nome)+' <span style="color:var(--ink3)">('+escAttr(p.ruolo_principale||'—')+')</span>').join(' · ')+'</div>'
+      :'<div style="font-size:11px;color:var(--ink3);padding:2px 0 8px">Nessuna persona assegnata a quest\'area.</div>';
+    return;
+  }
+  // renderMiniOrg centra la radice sull'ampiezza dei figli e si dimensiona a
+  // piacere: dentro il popover, stretto, il responsabile finirebbe fuori vista
+  // a destra e un albero alto allungherebbe la scheda. Si limita l'altezza e
+  // si porta la vista al centro, dove sta la radice.
+  mini.style.maxHeight='260px';
+  mini.style.overflowY='auto';
+  mini.scrollLeft=Math.max(0,(mini.scrollWidth-mini.clientWidth)/2);
+}
 function openPopover(){
   document.getElementById('pop-ov').classList.add('show');
   document.getElementById('popover').classList.add('show');
