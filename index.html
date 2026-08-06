@@ -1589,21 +1589,52 @@ const STORICO_SEZIONI={'VENDUTO':'venduto','TACITI RINNOVI':'taciti','INCASSATO'
 const MESI_KEY=['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
 const PF_SUBTOTAL_KEYWORDS=['VENDUTO','FATTURATO','INCASSATO','ANTICIPI','COSTI FISSI','COSTO SOCI','COSTI VARIABILI'];
 
+// Il foglio del consuntivo ha cambiato nome nei file nuovi: era '2026 PF',
+// ora è 'Verifica 2026 PF'. Con il match esatto il consuntivo non veniva
+// importato affatto (il PREVISIONALE sì, perché il suo nome non è cambiato):
+// il file si allegava ma i costi non venivano ridistribuiti. Si cerca il primo
+// foglio che CONTIENE '2026 PF', così valgono entrambi i nomi.
+function trovaFoglioPF(wb){
+  const nome=(wb.SheetNames||[]).find(n=>String(n).toUpperCase().includes('2026 PF'));
+  return nome?wb.Sheets[nome]:null;
+}
+
+// Le colonne non stanno sempre nello stesso posto: nei file più vecchi la
+// tabella parte da A (A=TIPOLOGIA COSTI), in quelli più recenti la colonna A è
+// vuota e tutto è spostato di uno (B=TIPOLOGIA COSTI). Invece di indovinare
+// dal fatto che A sia vuota, si legge la RIGA DI INTESTAZIONE e si prendono le
+// colonne per nome: regge entrambi i layout e anche un eventuale terzo.
+// Se l'intestazione non si trova si torna agli indici storici (B/C/D/E).
+const PF_COL_DEFAULT={areaPF:0,cat:1,voce:2,annuo:3,pct:4};
+function trovaColonnePF(rows){
+  for(let i=0;i<Math.min(rows.length,15);i++){
+    const r=rows[i]||[];
+    const cat=r.findIndex(c=>String(c||'').trim().toUpperCase()==='TIPOLOGIA COSTI');
+    if(cat<0)continue;
+    const idx=(etichetta)=>r.findIndex(c=>String(c||'').trim().toUpperCase().startsWith(etichetta));
+    const voce=idx('DESCRIZIONE'), annuo=idx('RISULTATO GESTIONE'), pct=r.findIndex(c=>String(c||'').trim()==='%');
+    if(voce<0||annuo<0)continue;                 // intestazione incompleta: non ci si fida
+    return{
+      areaPF:cat>0?cat-1:-1,                     // colonna area macro solo se esiste a sinistra
+      cat, voce, annuo,
+      pct:pct>=0?pct:annuo+1,
+      headerRow:i,
+    };
+  }
+  return null;
+}
+
 function parsePFSheet(wb){
-  const sheet=wb.Sheets['2026 PF'];
+  const sheet=trovaFoglioPF(wb);
   if(!sheet)return null;
   const rows=XLSX.utils.sheet_to_json(sheet,{header:1,raw:true,defval:''});
-  // Colonne del file reale: A=area macro (Sistema/Commerciale/Produzione/…),
-  // B=categoria, C=voce/fornitore, D=totale annuo, E=%. (Bug fix: prima si
-  // leggeva un colonna troppo a sinistra — C invece di D come annuo — quindi
-  // "annuo" era quasi sempre testo e la riga veniva scartata: da qui i
-  // "46 voci/15.266€" molto sotto il reale.)
+  const COL=trovaColonnePF(rows)||Object.assign({headerRow:1},PF_COL_DEFAULT);
   // La riga che apre "COSTI VARIABILI" divide fisso/variabile — rilevata dinamicamente
   // (nel file reale è ~riga 151, non un numero fisso: non hardcodare la posizione).
   let marker=-1;
   for(let i=0;i<rows.length;i++){
-    const cat=String(rows[i][1]||'').trim().toUpperCase();
-    const voce=String(rows[i][2]||'').trim().toUpperCase();
+    const cat=String(rows[i][COL.cat]||'').trim().toUpperCase();
+    const voce=String(rows[i][COL.voce]||'').trim().toUpperCase();
     if(cat==='COSTI VARIABILI'&&voce.includes('TOTAL')){marker=i;break;}
   }
   const voci=[];
@@ -1618,13 +1649,16 @@ function parsePFSheet(wb){
   // interno restano invece prioritarie (obbligo aziendale, non individuale).
   let inServiziPersonale=false;
   let lastArea='';
-  for(let i=2;i<rows.length;i++){
+  for(let i=COL.headerRow+1;i<rows.length;i++){
     const r=rows[i];
-    let areaPF=String(r[0]||'').trim();
-    const cat=String(r[1]||'').trim();
-    const voce=String(r[2]||'').trim();
-    const annuo=r[3];
-    const pct=r[4];
+    // La colonna area macro esiste solo in alcuni layout: dove non c'è
+    // (areaPF<0) resta vuota e la classificazione si regge su cat/voce, come
+    // già faceva per le righe con la cella unita.
+    let areaPF=COL.areaPF>=0?String(r[COL.areaPF]||'').trim():'';
+    const cat=String(r[COL.cat]||'').trim();
+    const voce=String(r[COL.voce]||'').trim();
+    const annuo=r[COL.annuo];
+    const pct=r[COL.pct];
     if(/MACROAREE/i.test(areaPF)||/MACROAREE/i.test(cat))inRecap=true;
     if(!cat&&!voce)continue;
     if(typeof annuo!=='number')continue;
