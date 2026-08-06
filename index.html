@@ -960,7 +960,7 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
 
       <!-- INCIDENZA AREE -->
       <div class="sim-wrap">
-        <div class="sim-title">🏗 Incidenza aree — sull'incassato simulato</div>
+        <div class="sim-title">🏗 Incidenza aree — sull'incassato simulato<span class="tip-icon">i<span class="tip-text">Incidenza: quota % dell'incassato assegnata all'area (da Struttura). Budget: incidenza × incassato simulato. Ratio costo/budget: OK ≤80%, attenzione 80–100%, OVER se il costo supera il budget. Clicca una macro-area per vedere le sotto-aree.</span></span></div>
         <div class="sim-area-grid" id="sim-aree-grid"></div>
         <div style="margin-top:12px;position:relative;height:200px"><canvas id="sim-area-chart"></canvas></div>
       </div>
@@ -5533,7 +5533,7 @@ function renderStimeTasse(){
     return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--lift);font-size:12px">'+
       '<span style="flex:1">'+s.nome+'</span>'+
       '<span class="mono" style="color:var(--amber)">'+fmt(val)+'</span>'+
-      '<span style="font-size:10px;color:var(--ink3)">'+P(s.pct)+'%</span>'+
+      '<span style="font-size:10px;color:var(--ink3)">'+P(s.pct)+'</span>'+
       '</div>';
   }).join('')+'<button class="btn sm" style="margin-top:8px" onclick="calcolaStimeTasse()">Applica stime a tasse →</button>';
 }
@@ -7714,20 +7714,71 @@ function renderSimWaterfall(f){
   el.innerHTML = items.map(r => `<div class="wf-row">     <span class="wf-label">${r.l}</span>     <div class="wf-bar-wrap">       <div class="wf-bar" style="width:${Math.min(Math.abs(r.bar),100).toFixed(1)}%;background:${r.color};opacity:${r.l==='= Utili'?1:.75}"></div>     </div>     <span class="wf-val">${fmt(r.v)}</span>     <span class="wf-pct">${P((r.v/Math.max(1,f.inc))*100)}</span>   </div>`).join('');
 }
 
+// §G — colore del ratio costo/budget, identico ovunque nella dashboard.
+function simRatioColor(ratio){
+  return ratio>100?'var(--red)':ratio>80?'var(--amber)':'var(--green)';
+}
+
+// §G — riga compatta di una sotto-area dentro l'accordion di una macro.
+// Se ha figli propri non si esplode qui (la dashboard resta a due livelli):
+// si rimanda alla scheda area di §H, che mostra la profondità per intero.
+function simAreaFiglioRow(x){
+  const bud=areaBudget(x), cost=areaCosto(x);
+  const ratio=bud>0?(cost/bud)*100:0;
+  const nipoti=S.aree.filter(y=>y.parentId===x.id).length;
+  // Due righe e non una: la colonna di una macro è stretta (~210px) e su una
+  // riga sola il nome veniva compresso a zero dai numeri e dal bottone.
+  return '<div style="padding:4px 4px 5px;font-size:11px;border-top:1px solid var(--lift)">'
+    +'<div style="display:flex;align-items:center;gap:4px">'
+    +'<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">↳ '+escAttr(x.nome)+'</span>'
+    +(nipoti?'<button class="btn xs" style="padding:0 4px;font-size:9px;flex-shrink:0" title="'+nipoti+' sotto-aree — apri la scheda" onclick="event.stopPropagation();openAreaCard(\''+x.id+'\')">apri scheda</button>':'')
+    +'</div>'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:1px">'
+    +'<span class="mono" style="font-size:10px">'+fmt(bud)+'</span>'
+    +'<span style="font-size:9px;color:var(--ink3)">'+P(x.incPct)+' inc.</span>'
+    +'<span style="font-size:9px;color:'+simRatioColor(ratio)+'">'+(ratio>100?'OVER':P(ratio))+'</span>'
+    +'</div></div>';
+}
+
 function renderSimAree(f){
   const el = document.getElementById('sim-aree-grid'); if(!el) return;
-  el.innerHTML = S.aree.map(a => {
+  // §G — la dashboard mostra SOLO le macro (parentId nullo); le sotto-aree
+  // compaiono nell'accordion di ciascuna. Prima erano tutte e 30 in fila:
+  // dopo §D la griglia era illeggibile e il doughnut aveva 30 spicchi.
+  const macro = S.aree.filter(a => !a.parentId);
+  // Le 6 colonne fisse servivano a 30 celle: ora la colonna è per GRUPPO
+  // (card macro + pannello figli), quindi si adatta al numero di macro.
+  el.style.gridTemplateColumns = 'repeat(auto-fit,minmax(210px,1fr))';
+  el.style.alignItems = 'start';
+  el.innerHTML = macro.map(a => {
     const bud = areaBudget(a);
     const cost = areaCosto(a);
     const ratio = bud > 0 ? (cost/bud)*100 : 0;
-    return `<div class="sim-area-item" style="border-color:${ratio>100?'var(--red-bd)':ratio>80?'var(--amber-bd)':'var(--lift)'}">       <div class="an">${a.nome}</div>       <div class="av">${fmt(bud)}</div>       <div class="ap">${P(a.incPct)}%</div>       <div class="ap" style="color:${ratio>100?'var(--red)':ratio>80?'var(--amber)':'var(--green)'}">${ratio>100?'OVER':P(ratio)}</div>     </div>`;
+    const figli = S.aree.filter(x => x.parentId === a.id);
+    // Accordion come in Struttura: l'onclick alterna il display del fratello
+    // successivo, nessuna libreria e nessuno stato da tenere.
+    const card = '<div class="sim-area-item" style="border-color:'
+      +(ratio>100?'var(--red-bd)':ratio>80?'var(--amber-bd)':'var(--lift)')+';'
+      +(figli.length?'cursor:pointer':'')+'"'
+      +(figli.length?' onclick="const p=this.nextElementSibling;p.style.display=p.style.display===\'none\'?\'\':\'none\'"':'')+'>'
+      +'<div class="an">'+escAttr(a.nome)+'</div>'
+      +'<div class="av">'+fmt(bud)+'</div>'
+      +'<div class="ap">'+P(a.incPct)+'</div>'
+      +'<div class="ap" style="color:'+simRatioColor(ratio)+'">'+(ratio>100?'OVER':P(ratio))+'</div>'
+      +(figli.length?'<div class="ap" style="margin-top:3px">'+figli.length+' sotto-aree ▾</div>':'')
+      +'</div>';
+    const pannello = figli.length
+      ? '<div style="display:none;background:var(--card);border:1px solid var(--lift);border-top:none;'
+        +'border-radius:0 0 var(--r) var(--r);padding:2px 4px 4px">'+figli.map(simAreaFiglioRow).join('')+'</div>'
+      : '<div style="display:none"></div>';
+    return '<div>'+card+pannello+'</div>';
   }).join('');
-  // Grafico torta aree
+  // Grafico torta aree — solo le macro, come la griglia sopra.
   const ctx = document.getElementById('sim-area-chart');
   if(!ctx) return;
   if(simAreaChart) simAreaChart.destroy();
-  const labels = S.aree.map(a => a.nome);
-  const data = S.aree.map(a => Math.round(areaBudget(a)));
+  const labels = macro.map(a => a.nome);
+  const data = macro.map(a => Math.round(areaBudget(a)));
   const colors = ['#4A38B0','#1A6B3C','#0F4499','#7A4A08','#A32020','#5A5850'];
   simAreaChart = new Chart(ctx, {
     type: 'doughnut',
