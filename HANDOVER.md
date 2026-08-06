@@ -1,14 +1,14 @@
 # HANDOVER — Compensi SSI
 
-Stato del lavoro al **2026-08-06** (blocco finale A–D, **L** e **H** completati
-e validati), per continuare su un altro portatile.
+Stato del lavoro al **2026-08-06** — **BLOCCO FINALE COMPLETO**: A, B, C, D, E,
+F, G, H, I, L fatti e validati. Restano solo i job residui elencati in fondo.
 
 ## Come ripartire
 
 ```bash
 git clone https://github.com/maci81x/compensi-ssi.git
 cd compensi-ssi
-git checkout blocco-finale        # branch del blocco finale (A–D, L e H fatti)
+git checkout blocco-finale        # blocco finale COMPLETO (A-I, L)
 python3 -m http.server 8791
 # poi apri http://localhost:8791/
 ```
@@ -18,10 +18,11 @@ python3 -m http.server 8791
 > negli appunti di avvio).
 
 Repo: **https://github.com/maci81x/compensi-ssi**
-Branch di lavoro attuale: **`blocco-finale`** (contiene A–D, L e H; parte da
+Branch di lavoro attuale: **`blocco-finale`** (contiene tutto A–L; parte da
 `ssi-compensi-import-phase`). **Non è mergiato su `main`, non toccare Pages** —
-il sito live resta quello attuale su `main`. Nessun merge finché il blocco
-finale non è validato tutto insieme.
+il sito live resta quello attuale su `main`. Il blocco finale ora è validato:
+il merge è una decisione da prendere, non un passo automatico — prima serve il
+diff `origin/main` vs v12 e la migrazione del cloud (job residuo 4).
 
 Server locale già attivo in dev su `http://localhost:8791/`.
 
@@ -29,9 +30,15 @@ Nota: i tre file Excel sorgente (`PF SI 2026.xlsx`, `26_Dettaglio costi dipenden
 
 ---
 
-## BLOCCO FINALE (A–L) — stato al 2026-08-06
+## BLOCCO FINALE (A–L) — ✅ COMPLETO al 2026-08-06
 
-Branch **`blocco-finale`**. Commit in ordine: A → fix flusso → B → C → D → fix D → L → H.
+Branch **`blocco-finale`**. Commit in ordine: A → fix flusso → B → C → D → fix D
+→ L → H → G → G rollup → I → E → F.
+
+Schema **v9 → v12** (v10 §I, v11 §E, v12 §F), ogni bump con il suo step additivo
+in `SCHEMA_MIGRATIONS`. Invarianti riconfermati dopo **ogni** blocco: Sistema
+**43.994,28** · garantito **40.916,15** · liquidità **3.536,75** · fornitori
+**20.356,43** · 30 aree · 18 pagine con **0 errori JS**.
 
 ### ✅ FATTI E VALIDATI (numeri prima → dopo, verificati con Playwright)
 
@@ -151,6 +158,95 @@ Branch **`blocco-finale`**. Commit in ordine: A → fix flusso → B → C → D
     **78.013,27**, 30 aree, 18 pagine con **0 errori JS** — invariati anche
     dopo le interazioni di test (la scheda non scrive su `S`).
 
+- **G — Dashboard incidenza a 2 livelli** (`15dac34` + `665b06f`): "Incidenza
+  aree" mostrava tutte e 30 le aree in fila e il doughnut aveva 30 spicchi.
+  Ora **solo le 4 macro** (Commerciale, Produzione, Amministrazione,
+  Segreteria), ognuna cliccabile: accordion con i **figli diretti** (valore
+  DIRETTO, come dettaglio). Un figlio che ha figli propri non si esplode qui:
+  ha un bottone "apri scheda" che chiama `openAreaCard` (§H) — la profondità
+  sta lì e in Struttura, la dashboard resta leggibile.
+  - **Card macro e doughnut in rollup** (`budgetRollup`/`costoRollup`/
+    `incPctRollup` + `_discendenti`): lo spicchio è il totale del ramo, così i
+    4 spicchi tornano al totale budget aree (**78.014** su 78.013,27; lo scarto
+    di 0,73 è solo `Math.round` sui 4 valori). Verificato a runtime che le 4
+    macro coprono **30/30 aree**, nessuna orfana e nessuna in due rami.
+    Aggregazione di **sola visualizzazione**: `flow()` continua a sommare
+    `S.aree` una per una, nessun doppio conteggio nella cascata.
+  - **Fix doppio `%`**: `P()` aggiunge già il simbolo. Due punti lo
+    concatenavano di nuovo (`renderStimeTasse`, `renderSimAree`) → `0.00%%`.
+    Corretti; grep finale: **0** occorrenze di `P(...)` seguito da `%` letterale
+    (in tutte le sintassi) e **0** occorrenze di `%%` nel sorgente.
+  - **"i" esplicativa** sul titolo (pattern `tip-icon`/`tip-text` già esistente).
+
+- **I — Erogato per servizio** (`bf054be`): `S.erogato[areaId][tipologia] =
+  {n, ore, valore, costo}` sulle 6 tipologie concordate — **SPOT · Docenza ·
+  Analisi · Pacchetti · RSPP · Gestione** (`TIPOLOGIE_SERVIZIO`). Schema
+  **v9→v10**, migrazione condizionale: crea solo ciò che manca, una riga già
+  compilata non si tocca (verificato su stato v9 con dati dentro).
+  - Griglia editabile nella **scheda area** (ha preso il posto del placeholder
+    di §H): N° · Ore · Valore € · Costo € come input `onblur`, **1° Margine**
+    calcolato (valore − costo, con margine %), riga **Totale**, 🗑 per azzerare
+    una riga (conferma; disabilitato se già vuota). Le 6 tipologie restano
+    sempre tutte: "eliminare" azzera, non nasconde una voce di servizio.
+  - **Non entra in `flow()` né nei premi**: registrazione di produzione a sé.
+    Verificato che gli invarianti non si muovono dopo la scrittura.
+  - La scheda area si allarga a `min(560px,94vw)` (erano 340px fissi, la
+    tabella a 7 colonne veniva tagliata); `closePop()` ripristina, le altre
+    modali restano com'erano.
+  - *Ancora da fare (era nella richiesta originale di I): il margine col metodo
+    "Marginalità" del PF (prezzo netto − var. commerciali − var. interni −
+    incidenza costi fissi). Oggi c'è il 1° margine (valore − costo).*
+
+- **E — KPI per area** (`67f4cb6`): `S.kpiPerArea[areaId] = [{id, nome, target,
+  effettivo, tipo, fonte, stag, note, origine}]`. Schema **v10→v11**.
+  - **Seeding da `micro` + `kpiCustom` con i valori attuali**: nulla di
+    digitato va perso (verificato: un `kt` editato a 4242 arriva come target
+    4242). Una lista già presente non viene toccata. `kpiSeedDaArea()` è usata
+    sia dalla migrazione sia dall'accesso pigro, così stato nuovo e stato
+    migrato coincidono; un'area i cui KPI §E sono stati eliminati tutti resta
+    vuota e non si ri-popola da sola.
+  - **Calcolabili vs manuali**: `KPI_FONTI` — 11 fonti, tutte agganciate a
+    numeri che l'app calcola già (erogato valore/margine/ore di §I, costo e
+    budget area, valore e margine rollup, valore e margine centro, venduto e
+    incassato agenti). Se la fonte non si applica all'area restituisce `null` e
+    il KPI mostra **"—"**, non uno zero che sembrerebbe un dato.
+  - **Pannello target unico** in "Struttura & aree" (sopra l'editor
+    stagionalità): tutte le aree con i loro KPI, target editabile, stagionalità
+    per KPI, selettore mese e **Soglia CDA** (`S.soglia`, la stessa del cancello
+    premi — cambiarla lì la cambia ovunque). Il target del mese riusa
+    `targetDestag()`/`stagIndice()` di §C, nessuna seconda formula: 5.000 ×
+    indice Mar 136 = **6.800**, esatto.
+  - **Il cancello premi non è stato toccato**: resta su `a.micro`/`kpiA`/
+    `areaKpiOk` (§9.1). Verificato `kpiA('prod')`, `areaKpiOk('prod')` e
+    `premiTotaleRichiesto()` identici prima e dopo. *Il collegamento dei KPI §E
+    al cancello premi resta una decisione da prendere, non è stato fatto.*
+
+- **F — Compensi responsabili** (`3226ae7`): `S.compensiResp = {params, voci}`,
+  schema **v11→v12**, tutto a **zero** di default.
+  - **Variabile continuo** (`aliquotaVariabile`): KPI < soglia → 0; da soglia a
+    100 rampa lineare fino a `base`; oltre 100 `base + incremento×(KPI−100)`;
+    cap. Coi default (80 · 1,0% · 0,05% · 2,5%) il cap cade **esattamente a
+    KPI 130**. Verificata punto per punto: 70→0 · 80→0 · 90→0,5% · 100→1,0% ·
+    110→1,5% · 120→2,0% · 130→2,5% · 150→2,5%. **Continua davvero**: salto
+    misurato ai raccordi 80 e 100 = **0,0000**. Parametri tutti editabili dal
+    CDA, con la formula scritta in chiaro sotto i campi.
+  - **Fisso riproporzionabile**: si cambia il monte e i singoli si riscalano
+    mantenendo le proporzioni (1.000/3.000 → monte 8.000 → 2.000/6.000, rapporto
+    3 invariato). Se il monte è a zero non inventa una ripartizione: lo dice.
+  - **RTO/ASF sul PROPRIO ramo**: `kpiRamo(areaId)` legge i KPI §E di quel nodo,
+    mai del padre. Verificato: prod 110%, RTO 130% → 2,5%, ASF senza KPI → "—"
+    e variabile 0. Le righe RTO/ASF ci sono anche senza persona assegnata, così
+    il CDA può già configurarle.
+  - Tabella in **Premi & direttori**: fisso · base concordata · KPI ramo ·
+    % variabile · variabile € · totale, più riga totale.
+  - **Voce a sé**: `flow()` non legge `S.compensiResp`. Verificato che con
+    compensi valorizzati (fissi 8.000, variabile 750) Sistema, garantito,
+    liquidità, fornitori e premi restano **identici**. *L'aliquota si applica
+    alla "base concordata" per responsabile, parametro esplicito: l'aggancio
+    all'incassato dell'area e il vincolo "somma = 100% incassato" della
+    richiesta originale NON sono stati implementati — sono una decisione del
+    CDA, non un effetto collaterale di questo blocco.*
+
 ### Risposte di Roberto ai 5 punti aperti di D (validazione 2026-07-24)
 
 1. **Nesting RTO→ASF**: confermato. ASF sotto RTO, servizi sotto ASF.
@@ -166,40 +262,49 @@ Branch **`blocco-finale`**. Commit in ordine: A → fix flusso → B → C → D
    confini "chiusa".
 5. Persone ed erogato per le nuove aree arrivano con **E** e **I**.
 
-### ⏳ DA FARE — blocchi E, F, G, I
+### ⏳ JOB RESIDUI (il blocco finale A–L è chiuso)
 
-- **E — KPI**: precaricare la proposta KPI per ogni area (marcati calcolabili vs
-  manuali), tutti creabili/modificabili/monitorabili/eliminabili; **pannello
-  target unico** dove il CDA imposta i target per tutte le aree con peso di
-  stagionalità applicato in automatico (§C già pronta). *Il CRUD minimale sui
-  KPI c'è già (§L: `a.kpiCustom` + ✎/🗑 sui micro); qui manca la proposta
-  precaricata, la distinzione calcolabile/manuale, il pannello target unico e
-  il collegamento dei KPI custom al cancello premi.*
-- **F — Compensi responsabili**: fisso a mano modificabile (riproporziona tutto
-  in tempo reale); variabile con **crescita continua** (no scaglioni): KPI<80→0;
-  80–100 → aliquota 1,0%×(KPI−80)/20; ≥100 → 1,0%+0,05%×(KPI−100); cap 2,5% a
-  130%. Aliquota sull'incassato dell'area. Parametri (soglia 80, base 1,0%,
-  incremento 0,05%, cap) modificabili dal CDA. Vincolo: somma = 100% incassato;
-  totale premi ≤ liquidità (già c'è la compressione §8). Responsabili intermedi
-  (RTO/ASF/micro) prendono sul LORO ramo. *(GRFM 2% già fatto nel fix flusso.)*
-- **G — Dashboard incidenza a 2 livelli**: "Incidenza aree" mostra SOLO le macro;
-  click → esplode le sotto-aree. "i" cliccabile per spiegare i numeri. **Fix bug
-  `0.00%%`** (doppio simbolo percentuale).
-- **I — Erogato per servizio**: inserimento manuale per centro (tempi, valore
-  erogato, tipologia, centro di costo), modificabile/eliminabile. *Lo slot in
-  cui montarlo è già nella scheda area di §H (placeholder esplicito).* Margine col
-  metodo "Marginalità" del PF: prezzo vendita netto − var. commerciali − var.
-  interni − incidenza costi fissi.
+Nessuno di questi è un blocco del piano originale: sono lavori nuovi, emersi
+strada facendo. L'app è completa e funzionante senza.
+
+1. **Ri-taratura incassato 162k + costi reali per categoria** (revisione di §A).
+   Il default oggi è **136.363** = media incassato reale 2026 su 7 mesi
+   (gen–lug). Va rifatta con il dato aggiornato a **162k** e, insieme, vanno
+   riviste le categorie di costo reali. Attenzione: cambiare `S.incassato`
+   muove tutta la cascata (budget aree = incidenza × incassato, liquidità,
+   capienza premi) — quindi **gli invarianti attesi cambiano** e vanno
+   ri-verificati e ri-annotati qui, non trattati come regressione.
+2. **Import storico produzione**. Esiste l'import storico *vendite* (§B,
+   `template_import_storico_vendite.xlsx`). Manca l'equivalente per la
+   produzione, che oggi si inserisce a mano nella griglia Produzione tecnici e,
+   per servizio, nella griglia erogato di §I.
+3. **Spacchettare `altriCostiOperativi` (15.000/mese)**. Oggi è **una voce
+   unica** in P1 (aggiunta dal fix flusso, `c975d9e`): è un costo reale che
+   esce dall'azienda, ma non si sa di cosa è fatto. Va scomposto nelle voci
+   vere e portato dove ciascuna appartiene (Sistema, tasse, prioritari, aree).
+   Vincolo: la somma deve restare 15.000 finché non ci sono dati nuovi,
+   altrimenti la liquidità 3.536,75 si muove senza che nessuno l'abbia deciso.
+4. **Diff `origin/main` vs v12**. Pages serve `main`, fermo a `d72f51b` (schema
+   pre-v6). `blocco-finale` è a **v12**. Prima di qualunque merge serve il diff
+   completo e una decisione sul cloud: `compensi_stato` è ancora a
+   `schemaVersion: 6` e va migrato v6→v12 (le migrazioni sono additive e
+   idempotenti, ma il salto non è mai stato fatto in produzione).
+
+**Merge su `main` / Pages: ancora NON fatto, deliberatamente.** Il sito live
+resta quello attuale. Vedi anche il punto 5 dei "Punti aperti".
 
 ### Note tecniche per continuare
 
-- Schema attuale **v9**. Ogni bump di `CURRENT_SCHEMA_VERSION` richiede un nuovo
+- Schema attuale **v12** (v10 §I · v11 §E · v12 §F). Ogni bump di
+  `CURRENT_SCHEMA_VERSION` richiede un nuovo
   step in `SCHEMA_MIGRATIONS` (migra aggiungendo solo ciò che manca, mai
   sovrascrive dati reali).
 - Verifica rapida senza toccare il cloud condiviso: Playwright con rete Supabase
   **bloccata** (`ctx.route('**://*.supabase.co/**', r=>r.abort())`), poi
-  `localStorage.clear()`. Vedi gli script in `/tmp/ssi-*.mjs` usati per validare
-  A–D (import di `playwright` per path assoluto dalla cache npx).
+  `localStorage.clear()`, poi `doLogin()` — **senza `doLogin()` la schermata di
+  login (z-index 9999) copre tutto e i click reali non arrivano mai alla
+  pagina**. Gli script di verifica sono usa-e-getta, si riscrivono ogni volta
+  (import di `playwright` per path assoluto dalla cache npx).
 - Controllo sintassi JS: estrai lo `<script>` principale e `node --check`.
 
 ---
