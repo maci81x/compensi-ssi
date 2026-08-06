@@ -2160,7 +2160,13 @@ const CAT_ICONS={affitto:'🏢',utenze:'⚡',software:'💻',assicurazione:'🛡
 // stato non ha). Vedi SCHEMA_MIGRATIONS più sotto per la logica di
 // migrazione — root cause del problema "una scheda vecchia sovrascrive dati
 // più recenti", non un cerotto sul sintomo.
-const CURRENT_SCHEMA_VERSION=11;
+const CURRENT_SCHEMA_VERSION=12;
+
+// §F — parametri della curva del variabile responsabili, modificabili dal CDA.
+// Continua per costruzione: sotto soglia 0, poi rampa lineare fino a 100, poi
+// incremento costante fino al cap. Con i default (80 · 1,0% · 0,05% · 2,5%) il
+// cap cade esattamente a KPI 130: 1,0 + 0,05×30 = 2,5.
+const COMPENSI_RESP_DEF={soglia:80,base:1.0,incremento:0.05,cap:2.5};
 
 // §I — Erogato per servizio. Le 6 tipologie sono cablate qui (chiave stabile +
 // etichetta): sono la tassonomia concordata, non dati, quindi non stanno in S.
@@ -2303,6 +2309,8 @@ const DEF={
   // §E — KPI per area. Si popola dalla migrazione v11 (da micro/kpiCustom) o
   // a mano dall'UI; su uno stato nuovo si costruisce al primo accesso.
   kpiPerArea:{},
+  // §F — compensi responsabili: curva del variabile + voci per ramo, a zero.
+  compensiResp:{params:Object.assign({},COMPENSI_RESP_DEF),voci:{}},
   // §L — colonne della griglia Produzione tecnici, ora dato di stato (CRUD
   // dall'UI). Copia del seed: uno stato nuovo parte dalle 9 voci storiche.
   vociTec:JSON.parse(JSON.stringify(VOCI_TEC_DEF)),
@@ -3532,6 +3540,18 @@ const SCHEMA_MIGRATIONS=[
       if(Array.isArray(s.kpiPerArea[a.id]))return;      // già presente: non si tocca
       s.kpiPerArea[a.id]=kpiSeedDaArea(a);
     });
+  }},
+  {to:12,migrate(s){
+    // §F — compensi responsabili. Additiva: parametri della curva + voci per
+    // ramo, tutte a ZERO. A zero i compensi non spostano nulla, e infatti
+    // flow()/garantito/Sistema non li leggono affatto: sono una voce a sé.
+    if(!s.compensiResp||typeof s.compensiResp!=='object')s.compensiResp={};
+    if(!s.compensiResp.params||typeof s.compensiResp.params!=='object')
+      s.compensiResp.params=Object.assign({},COMPENSI_RESP_DEF);
+    else Object.keys(COMPENSI_RESP_DEF).forEach(k=>{
+      if(typeof s.compensiResp.params[k]!=='number')s.compensiResp.params[k]=COMPENSI_RESP_DEF[k];
+    });
+    if(!s.compensiResp.voci||typeof s.compensiResp.voci!=='object')s.compensiResp.voci={};
   }},
 ];
 function migrateSchema(s){
@@ -5108,6 +5128,164 @@ function areaCardAzioni(a){
     +'<button class="btn sm" onclick="closePop();goPage(\'struttura\')">Modifica dettagli in Struttura</button>'
     +'<button class="btn danger sm" onclick="closePop();deleteArea(\''+id+'\')">🗑 Elimina area</button>'
     +'</div>';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// §F — COMPENSI RESPONSABILI (fisso riproporzionante + variabile continuo)
+// ═══════════════════════════════════════════════════════════════════════════
+// Voce a sé: NON entra in flow(), nel garantito, in Sistema né nei premi §9.
+// A default è tutta a zero, quindi gli invarianti non si muovono di un
+// centesimo — e non si muoverebbero comunque, perché la cascata non legge
+// S.compensiResp. Qui si calcola e si mostra: l'eventuale aggancio alla
+// cascata è una decisione del CDA, non un effetto collaterale di questo blocco.
+function compensiRespParams(){
+  if(!S.compensiResp||typeof S.compensiResp!=='object')S.compensiResp={};
+  if(!S.compensiResp.params)S.compensiResp.params=Object.assign({},COMPENSI_RESP_DEF);
+  if(!S.compensiResp.voci)S.compensiResp.voci={};
+  return S.compensiResp.params;
+}
+function compensoRespVoce(areaId){
+  compensiRespParams();
+  if(!S.compensiResp.voci[areaId])S.compensiResp.voci[areaId]={fisso:0,base:0};
+  const v=S.compensiResp.voci[areaId];
+  if(typeof v.fisso!=='number')v.fisso=0;
+  if(typeof v.base!=='number')v.base=0;
+  return v;
+}
+
+// Curva continua (nessuno scalino): 0 sotto soglia, rampa lineare da soglia a
+// 100, poi incremento costante, cap finale. Con i default il cap è a KPI 130.
+function aliquotaVariabile(kpiPct){
+  const p=compensiRespParams();
+  if(kpiPct===null||!isFinite(kpiPct))return null;
+  if(kpiPct<p.soglia)return 0;
+  let a;
+  if(kpiPct<100){
+    const span=100-p.soglia;
+    a=span>0?p.base*((kpiPct-p.soglia)/span):p.base;
+  } else {
+    a=p.base+p.incremento*(kpiPct-100);
+  }
+  return Math.min(a,p.cap);
+}
+
+// KPI del ramo: media dei KPI §E dell'area, CALCOLATA SUL PROPRIO RAMO.
+// RTO e ASF sono aree con KPI propri: prendono i loro, non quelli del padre.
+// Se il ramo non ha KPI valutabili → null, e il compenso variabile è "—".
+function kpiRamo(areaId){
+  const vals=kpiAreaLista(areaId).map(k=>kpiAreaPct(areaId,k)).filter(v=>v!==null);
+  return vals.length?Math.round(vals.reduce((s,v)=>s+v,0)/vals.length):null;
+}
+
+function compensoResp(areaId){
+  const v=compensoRespVoce(areaId);
+  const kpi=kpiRamo(areaId);
+  const aliq=aliquotaVariabile(kpi);
+  const variabile=(aliq===null||!v.base)?0:(aliq/100)*v.base;
+  return{fisso:v.fisso||0,base:v.base||0,kpi,aliquota:aliq,variabile,totale:(v.fisso||0)+variabile};
+}
+
+// Aree che entrano nel pannello: quelle con un responsabile identificato, i
+// nodi intermedi RTO/ASF (premio sul proprio ramo, §F.3) e qualunque ramo per
+// cui il CDA abbia già inserito un importo.
+function areeCompensoResp(){
+  return S.aree.filter(a=>
+    areaResponsabile(a.id)||a.id==='rto'||a.id==='asf'||
+    ((S.compensiResp&&S.compensiResp.voci&&S.compensiResp.voci[a.id])&&
+      ((S.compensiResp.voci[a.id].fisso||0)||(S.compensiResp.voci[a.id].base||0))));
+}
+function monteFissoResp(){
+  return areeCompensoResp().reduce((s,a)=>s+(compensoRespVoce(a.id).fisso||0),0);
+}
+
+function setCompensoResp(areaId,campo,valore){
+  const v=compensoRespVoce(areaId);
+  const n=parseFloat(valore);
+  v[campo]=isFinite(n)?n:0;
+  renderAll();
+}
+function setParamResp(campo,valore){
+  const p=compensiRespParams();
+  const n=parseFloat(valore);
+  if(isFinite(n))p[campo]=n;
+  renderAll();
+}
+// Riproporzionamento: si cambia il MONTE e i fissi si riscalano mantenendo le
+// proporzioni fra loro. Se il monte attuale è zero non c'è una proporzione da
+// mantenere: si dice e non si inventa una ripartizione.
+function riproporzionaFissiResp(){
+  const monte=monteFissoResp();
+  if(monte<=0){ alert('Monte fisso a zero: non c\'è una proporzione da mantenere.\nInserisci prima i fissi dei singoli responsabili.'); return; }
+  const v=prompt('Nuovo monte fisso totale €/mese (i singoli si riscalano in proporzione):',Math.round(monte));
+  if(v===null)return;
+  const nuovo=parseFloat(v);
+  if(!isFinite(nuovo)||nuovo<0){ notify('Valore non valido'); return; }
+  const k=nuovo/monte;
+  areeCompensoResp().forEach(a=>{
+    const voce=compensoRespVoce(a.id);
+    voce.fisso=Math.round((voce.fisso||0)*k*100)/100;
+  });
+  renderAll();
+  notify('Fissi riproporzionati: monte '+fmt(nuovo));
+}
+
+function renderCompensiRespPanel(){
+  const p=compensiRespParams();
+  const aree=areeCompensoResp();
+  const tot=aree.reduce((acc,a)=>{
+    const c=compensoResp(a.id);
+    acc.fisso+=c.fisso; acc.variabile+=c.variabile; acc.totale+=c.totale; return acc;
+  },{fisso:0,variabile:0,totale:0});
+  const param=(label,campo,step,suffisso)=>
+    '<span style="font-size:11px;color:var(--ink3)">'+label+': '
+    +'<input type="number" step="'+step+'" value="'+p[campo]+'" class="inp n" style="width:62px;font-size:11px;padding:2px 4px;display:inline-block"'
+    +' onblur="setParamResp(\''+campo+'\',this.value)" onkeydown="if(event.keyCode===13)this.blur()">'+(suffisso||'')+'</span>';
+  const righe=aree.map(a=>{
+    const c=compensoResp(a.id);
+    const resp=areaResponsabile(a.id);
+    return '<tr style="border-top:1px solid var(--lift)">'
+      +'<td style="padding:4px 8px;font-size:12px">'+(resp?escAttr(resp.nome):'<span style="color:var(--ink3)">— nessun responsabile</span>')
+        +'<div style="font-size:9px;color:var(--ink3)">'+escAttr(a.nome)+(a.id==='rto'||a.id==='asf'?' · nodo intermedio, premio sul proprio ramo':'')+'</div></td>'
+      +'<td style="padding:4px;text-align:right">'
+        +'<input type="number" value="'+c.fisso+'" class="inp n" style="width:84px;font-size:11px;padding:2px 4px"'
+        +' onblur="setCompensoResp(\''+a.id+'\',\'fisso\',this.value)" onkeydown="if(event.keyCode===13)this.blur()"></td>'
+      +'<td style="padding:4px;text-align:right">'
+        +'<input type="number" value="'+c.base+'" class="inp n" style="width:92px;font-size:11px;padding:2px 4px"'
+        +' onblur="setCompensoResp(\''+a.id+'\',\'base\',this.value)" onkeydown="if(event.keyCode===13)this.blur()"></td>'
+      +'<td style="padding:4px 6px;text-align:right;font-weight:600" class="'+kpiCls(c.kpi)+'">'+(c.kpi!==null?c.kpi+'%':'—')+'</td>'
+      +'<td style="padding:4px 6px;text-align:right;font-size:11px" class="mono">'+(c.aliquota===null?'—':c.aliquota.toFixed(3)+'%')+'</td>'
+      +'<td style="padding:4px 6px;text-align:right" class="mono">'+fmt(c.variabile)+'</td>'
+      +'<td style="padding:4px 8px;text-align:right;font-weight:600" class="mono">'+fmt(c.totale)+'</td></tr>';
+  }).join('');
+  return '<div class="mc" style="margin-bottom:14px">'
+    +'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">'
+    +'<span style="font-size:13px;font-weight:600">🧭 Compensi responsabili (§F)</span>'
+    +'<span style="font-size:11px;color:var(--ink3)">fisso + variabile continuo sul KPI del ramo</span>'
+    +'<span style="margin-left:auto;font-size:11px;color:var(--ink3)">Monte fisso: <strong class="mono">'+fmt(tot.fisso)+'</strong></span>'
+    +'<button class="btn xs" onclick="riproporzionaFissiResp()">⇔ Riproporziona monte</button></div>'
+    +'<div style="display:flex;gap:12px;flex-wrap:wrap;padding:6px 8px;background:var(--sheet);border-radius:var(--r);margin-bottom:8px">'
+    +param('Soglia KPI','soglia','1','%')+param('Aliquota a 100','base','0.1','%')
+    +param('Incremento oltre 100','incremento','0.01','% per punto')+param('Cap','cap','0.1','%')
+    +'<span style="font-size:10px;color:var(--ink3);flex-basis:100%">'
+    +'KPI &lt; '+p.soglia+'% → 0 · da '+p.soglia+'% a 100% rampa lineare fino a '+p.base+'% · oltre 100% +'+p.incremento+'% per punto · cap '+p.cap+'% '
+    +'(raggiunto a KPI '+(p.incremento>0?(100+(p.cap-p.base)/p.incremento).toFixed(0):'—')+'%). '
+    +'L\'aliquota si applica alla base concordata del responsabile. Voce a sé: non entra nella cascata liquidità.</span></div>'
+    +'<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">'
+    +'<thead><tr style="color:var(--ink3);font-size:10px;text-transform:uppercase">'
+    +'<th style="text-align:left;padding:3px 8px">Responsabile</th>'
+    +'<th style="padding:3px 4px;text-align:right">Fisso €</th>'
+    +'<th style="padding:3px 4px;text-align:right">Base concordata €</th>'
+    +'<th style="padding:3px 6px;text-align:right">KPI ramo</th>'
+    +'<th style="padding:3px 6px;text-align:right">% variabile</th>'
+    +'<th style="padding:3px 6px;text-align:right">Variabile €</th>'
+    +'<th style="padding:3px 8px;text-align:right">Totale</th></tr></thead><tbody>'
+    +(righe||'<tr><td colspan="7" style="padding:8px;font-size:11px;color:var(--ink3)">Nessun responsabile identificato.</td></tr>')
+    +'<tr style="border-top:2px solid var(--lift);font-weight:600">'
+    +'<td style="padding:5px 8px">Totale</td><td style="padding:5px 4px;text-align:right" class="mono">'+fmt(tot.fisso)+'</td>'
+    +'<td></td><td></td><td></td>'
+    +'<td style="padding:5px 6px;text-align:right" class="mono">'+fmt(tot.variabile)+'</td>'
+    +'<td style="padding:5px 8px;text-align:right" class="mono">'+fmt(tot.totale)+'</td></tr>'
+    +'</tbody></table></div></div>';
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -8463,7 +8641,7 @@ function renderPremiPage(){
     <div class="mv">${fmt(effettivo)} <span style="font-size:12px;color:var(--ink3);font-weight:400">disponibili di ${fmt(richiesto)} richiesti da tutte le aree</span></div>
     ${over?`<div class="ms" style="color:var(--red)">⚠ Sforamento di ${fmt(richiesto-effettivo)} — la cascata a priorità comprime proporzionalmente (§8), vedi Dashboard CDA</div>`:''}
   </div>`;
-  cont.innerHTML=capBanner+aree.map(a=>premiAreaCard(a,f)).join('');
+  cont.innerHTML=capBanner+renderCompensiRespPanel()+aree.map(a=>premiAreaCard(a,f)).join('');
 }
 function premiAreaCard(a,f){
   const entry=premiAreaEntry(a.id);
