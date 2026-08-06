@@ -7740,6 +7740,35 @@ function simAreaFiglioRow(x){
     +'</div></div>';
 }
 
+// §G — aggregazione di SOLA VISUALIZZAZIONE per la dashboard incidenza.
+// Non entra in flow(): la cascata continua a sommare S.aree una per una
+// (`f.budgetAreeVar`), quindi qui non si crea nessun doppio conteggio —
+// questi numeri servono solo a far tornare il totale nel grafico e nelle
+// card macro, dove le sotto-aree non hanno una fetta propria.
+// areaBudget()/areaCosto() restano per-area e non vengono toccate.
+function _discendenti(areaId){
+  const out=[], stack=S.aree.filter(x=>x.parentId===areaId);
+  while(stack.length){
+    const a=stack.pop();
+    out.push(a);
+    stack.push(...S.aree.filter(x=>x.parentId===a.id));
+  }
+  return out;
+}
+function budgetRollup(a){
+  return areaBudget(a)+_discendenti(a.id).reduce((s,d)=>s+areaBudget(d),0);
+}
+function costoRollup(a){
+  return areaCosto(a)+_discendenti(a.id).reduce((s,d)=>s+areaCosto(d),0);
+}
+// L'incidenza deve seguire il budget: areaBudget = incPct/100 × incassato, per
+// cui sommare i budget del ramo equivale a sommare le incPct. Senza questo la
+// card mostrerebbe "17.25% · € 31.391", due numeri che non tornano tra loro e
+// che smentiscono la "i" ("Budget: incidenza × incassato simulato").
+function incPctRollup(a){
+  return (a.incPct||0)+_discendenti(a.id).reduce((s,d)=>s+(d.incPct||0),0);
+}
+
 function renderSimAree(f){
   const el = document.getElementById('sim-aree-grid'); if(!el) return;
   // §G — la dashboard mostra SOLO le macro (parentId nullo); le sotto-aree
@@ -7751,10 +7780,14 @@ function renderSimAree(f){
   el.style.gridTemplateColumns = 'repeat(auto-fit,minmax(210px,1fr))';
   el.style.alignItems = 'start';
   el.innerHTML = macro.map(a => {
-    const bud = areaBudget(a);
-    const cost = areaCosto(a);
+    // Card macro: totale del ramo (macro + tutti i discendenti). Le sotto-aree
+    // non hanno una card propria qui, quindi senza rollup il loro budget
+    // sparirebbe dalla vista. Il dettaglio per figlio resta nell'accordion.
+    const bud = budgetRollup(a);
+    const cost = costoRollup(a);
     const ratio = bud > 0 ? (cost/bud)*100 : 0;
     const figli = S.aree.filter(x => x.parentId === a.id);
+    const rami = _discendenti(a.id);   // per l'etichetta: solo se c'è davvero un ramo
     // Accordion come in Struttura: l'onclick alterna il display del fratello
     // successivo, nessuna libreria e nessuno stato da tenere.
     const card = '<div class="sim-area-item" style="border-color:'
@@ -7763,9 +7796,10 @@ function renderSimAree(f){
       +(figli.length?' onclick="const p=this.nextElementSibling;p.style.display=p.style.display===\'none\'?\'\':\'none\'"':'')+'>'
       +'<div class="an">'+escAttr(a.nome)+'</div>'
       +'<div class="av">'+fmt(bud)+'</div>'
-      +'<div class="ap">'+P(a.incPct)+'</div>'
+      +(rami.length?'<div class="ap" style="font-size:10px">incl. sotto-aree</div>':'')
+      +'<div class="ap">'+P(incPctRollup(a))+'</div>'
       +'<div class="ap" style="color:'+simRatioColor(ratio)+'">'+(ratio>100?'OVER':P(ratio))+'</div>'
-      +(figli.length?'<div class="ap" style="margin-top:3px">'+figli.length+' sotto-aree ▾</div>':'')
+      +(figli.length?'<div class="ap" style="margin-top:3px">'+figli.length+(figli.length===1?' sotto-area ▾':' sotto-aree ▾')+'</div>':'')
       +'</div>';
     const pannello = figli.length
       ? '<div style="display:none;background:var(--card);border:1px solid var(--lift);border-top:none;'
@@ -7773,12 +7807,14 @@ function renderSimAree(f){
       : '<div style="display:none"></div>';
     return '<div>'+card+pannello+'</div>';
   }).join('');
-  // Grafico torta aree — solo le macro, come la griglia sopra.
+  // Grafico torta aree — solo le macro, come la griglia sopra, ma col budget
+  // dell'intero ramo: così i 4 spicchi tornano al totale budget aree e non
+  // lasciano fuori le sotto-aree.
   const ctx = document.getElementById('sim-area-chart');
   if(!ctx) return;
   if(simAreaChart) simAreaChart.destroy();
   const labels = macro.map(a => a.nome);
-  const data = macro.map(a => Math.round(areaBudget(a)));
+  const data = macro.map(a => Math.round(budgetRollup(a)));
   const colors = ['#4A38B0','#1A6B3C','#0F4499','#7A4A08','#A32020','#5A5850'];
   simAreaChart = new Chart(ctx, {
     type: 'doughnut',
