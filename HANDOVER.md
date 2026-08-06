@@ -1,14 +1,14 @@
 # HANDOVER — Compensi SSI
 
-Stato del lavoro al **2026-08-03** (blocco finale A–D **e L** completati e
-validati), per continuare su un altro portatile.
+Stato del lavoro al **2026-08-06** (blocco finale A–D, **L** e **H** completati
+e validati), per continuare su un altro portatile.
 
 ## Come ripartire
 
 ```bash
 git clone https://github.com/maci81x/compensi-ssi.git
 cd compensi-ssi
-git checkout blocco-finale        # branch del blocco finale (A–D e L fatti)
+git checkout blocco-finale        # branch del blocco finale (A–D, L e H fatti)
 python3 -m http.server 8791
 # poi apri http://localhost:8791/
 ```
@@ -18,7 +18,7 @@ python3 -m http.server 8791
 > negli appunti di avvio).
 
 Repo: **https://github.com/maci81x/compensi-ssi**
-Branch di lavoro attuale: **`blocco-finale`** (contiene A–D e L; parte da
+Branch di lavoro attuale: **`blocco-finale`** (contiene A–D, L e H; parte da
 `ssi-compensi-import-phase`). **Non è mergiato su `main`, non toccare Pages** —
 il sito live resta quello attuale su `main`. Nessun merge finché il blocco
 finale non è validato tutto insieme.
@@ -29,9 +29,9 @@ Nota: i tre file Excel sorgente (`PF SI 2026.xlsx`, `26_Dettaglio costi dipenden
 
 ---
 
-## BLOCCO FINALE (A–L) — stato al 2026-08-03
+## BLOCCO FINALE (A–L) — stato al 2026-08-06
 
-Branch **`blocco-finale`**. Commit in ordine: A → fix flusso → B → C → D → fix D → L.
+Branch **`blocco-finale`**. Commit in ordine: A → fix flusso → B → C → D → fix D → L → H.
 
 ### ✅ FATTI E VALIDATI (numeri prima → dopo, verificati con Playwright)
 
@@ -118,6 +118,39 @@ Branch **`blocco-finale`**. Commit in ordine: A → fix flusso → B → C → D
     budget aree var **78.013,27**, 30 aree, 18 pagine renderizzate con 0
     errori JS.
 
+- **H — Click su area = scheda AREA** (`aef28f9` → `8c8c37e`): cliccando una
+  card dell'organigramma si apriva la scheda della **persona** responsabile
+  ("Configura Giovanna Panti"). Causa: il nodo area si porta dietro l'indice
+  del responsabile (`n.pi`, da `persona.areaResp`) e finiva nel ramo generico
+  `if(n.pi>=0)` che aggancia `openPersonaPop`; in parallelo il `pointerup`
+  faceva `goPage(areaPageMap[id]||id)`, quindi i due effetti si sommavano — e
+  per le **23 aree senza pagina dedicata** `goPage` riceveva un id inesistente,
+  nascondendo tutte le `.page` senza riaprirne nessuna (schermo vuoto).
+  - Ora il ramo persona esclude i nodi area (`n.pi>=0&&n.type!=='area'`) e il
+    ramo "click senza movimento" di `endDrag` chiama `openAreaCard(areaId)`.
+    Il routing resta in `endDrag` e **non** in un listener `click`: col pointer
+    capture del drag&drop il `click` scatta comunque a fine trascinamento e
+    aprirebbe la scheda dopo ogni riparentamento.
+  - **`openAreaCard(areaId)`** è modellata su `openOrgPopFlow`, non su
+    `openPersonaPop`: **non assegna `popCb`** e tiene nascosta la barra azioni
+    del popover, quindi non può salvare campi persona per sbaglio. Contiene:
+    badge tipo/natura/chiusa/padre + OK-OVER, **Responsabile** (da
+    `areaResponsabile()`, stesso criterio dell'organigramma — `a.resp` è testo
+    libero e non viene usato), incidenza/budget/costo effettivo/fornitore fisso
+    (stesse formule di `renderStruttura`), rollup delle sotto-aree chiuse se
+    presente, mini-organigramma delle persone (`renderMiniOrg`, con fallback a
+    elenco piatto per le 23 aree che non ha cablate), micro KPI **in sola
+    lettura**, blocco KPI custom di §L, placeholder onesto per l'erogato per
+    tipologia di servizio (blocco **I**) e azioni: ✎ rinomina · + sotto-area ·
+    ↗ apri pagina dedicata (solo per le 7 che ce l'hanno) · Modifica dettagli
+    in Struttura · 🗑 elimina.
+  - `renderStruttura` **non è stata toccata**: resta l'unica fonte di verità
+    per l'editing fine delle aree, e la scheda ci rimanda con un bottone.
+  - **Invarianti confermati**: Sistema **43.994,28**, garantito **40.916,15**,
+    liquidità **3.536,75**, fornitori **20.356,43**, budget aree var
+    **78.013,27**, 30 aree, 18 pagine con **0 errori JS** — invariati anche
+    dopo le interazioni di test (la scheda non scrive su `S`).
+
 ### Risposte di Roberto ai 5 punti aperti di D (validazione 2026-07-24)
 
 1. **Nesting RTO→ASF**: confermato. ASF sotto RTO, servizi sotto ASF.
@@ -133,7 +166,7 @@ Branch **`blocco-finale`**. Commit in ordine: A → fix flusso → B → C → D
    confini "chiusa".
 5. Persone ed erogato per le nuove aree arrivano con **E** e **I**.
 
-### ⏳ DA FARE — blocchi E, F, G, H, I
+### ⏳ DA FARE — blocchi E, F, G, I
 
 - **E — KPI**: precaricare la proposta KPI per ogni area (marcati calcolabili vs
   manuali), tutti creabili/modificabili/monitorabili/eliminabili; **pannello
@@ -152,11 +185,9 @@ Branch **`blocco-finale`**. Commit in ordine: A → fix flusso → B → C → D
 - **G — Dashboard incidenza a 2 livelli**: "Incidenza aree" mostra SOLO le macro;
   click → esplode le sotto-aree. "i" cliccabile per spiegare i numeri. **Fix bug
   `0.00%%`** (doppio simbolo percentuale).
-- **H — Click su area = scheda AREA** (erogato/tipologia/costi/tempi/margine/
-  incidenza), non "Configura Giovanna Panti". Il responsabile è un campo della
-  scheda. Stesso comportamento per tutte le aree.
 - **I — Erogato per servizio**: inserimento manuale per centro (tempi, valore
-  erogato, tipologia, centro di costo), modificabile/eliminabile. Margine col
+  erogato, tipologia, centro di costo), modificabile/eliminabile. *Lo slot in
+  cui montarlo è già nella scheda area di §H (placeholder esplicito).* Margine col
   metodo "Marginalità" del PF: prezzo vendita netto − var. commerciali − var.
   interni − incidenza costi fissi.
 
