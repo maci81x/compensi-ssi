@@ -2160,7 +2160,7 @@ const CAT_ICONS={affitto:'🏢',utenze:'⚡',software:'💻',assicurazione:'🛡
 // stato non ha). Vedi SCHEMA_MIGRATIONS più sotto per la logica di
 // migrazione — root cause del problema "una scheda vecchia sovrascrive dati
 // più recenti", non un cerotto sul sintomo.
-const CURRENT_SCHEMA_VERSION=10;
+const CURRENT_SCHEMA_VERSION=11;
 
 // §I — Erogato per servizio. Le 6 tipologie sono cablate qui (chiave stabile +
 // etichetta): sono la tassonomia concordata, non dati, quindi non stanno in S.
@@ -2300,6 +2300,9 @@ const DEF={
   schemaVersion:CURRENT_SCHEMA_VERSION,
   // §I — erogato per servizio, per area. Nasce vuoto: si compila a mano.
   erogato:{},
+  // §E — KPI per area. Si popola dalla migrazione v11 (da micro/kpiCustom) o
+  // a mano dall'UI; su uno stato nuovo si costruisce al primo accesso.
+  kpiPerArea:{},
   // §L — colonne della griglia Produzione tecnici, ora dato di stato (CRUD
   // dall'UI). Copia del seed: uno stato nuovo parte dalle 9 voci storiche.
   vociTec:JSON.parse(JSON.stringify(VOCI_TEC_DEF)),
@@ -3516,6 +3519,18 @@ const SCHEMA_MIGRATIONS=[
         const r=s.erogato[a.id][t.k];
         if(!r||typeof r!=='object')s.erogato[a.id][t.k]=erogatoRigaVuota();
       });
+    });
+  }},
+  {to:11,migrate(s){
+    // §E — KPI per area in una lista unica. Additiva e CONDIZIONALE: la lista
+    // di un'area si costruisce solo se non esiste già, e i KPI si copiano
+    // dalle strutture esistenti CON I LORO VALORI ATTUALI — così un target o
+    // un effettivo digitato a mano sopravvive alla migrazione. a.micro resta
+    // dov'è (è il cancello sui premi, §9.1) e non viene toccato.
+    if(!s.kpiPerArea||typeof s.kpiPerArea!=='object')s.kpiPerArea={};
+    (s.aree||[]).forEach(a=>{
+      if(Array.isArray(s.kpiPerArea[a.id]))return;      // già presente: non si tocca
+      s.kpiPerArea[a.id]=kpiSeedDaArea(a);
     });
   }},
 ];
@@ -5096,6 +5111,238 @@ function areaCardAzioni(a){
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// §E — KPI PER AREA (CRUD · calcolabili vs manuali · target unico)
+// ═══════════════════════════════════════════════════════════════════════════
+// Lista unica per area in S.kpiPerArea[areaId]. NON tocca il cancello sui
+// premi: quello resta su a.micro/kpiA/areaKpiOk come da §9.1, quindi flow(),
+// la cascata e i premi non cambiano di un centesimo.
+//
+// Un KPI 'calcolabile' non ha un effettivo digitato: lo legge da un numero che
+// l'app calcola già. Le fonti qui sotto sono SOLO quelle realmente esistenti —
+// niente stime, niente fonti inventate. Se una fonte non è applicabile
+// all'area (es. venduto su un centro tecnico) restituisce null e il KPI si
+// mostra come "—" invece di uno zero che sembrerebbe un dato.
+const KPI_FONTI=[
+  {k:'erogato_valore', label:'Erogato — valore (§I)',   calc:id=>erogatoTotali(id).valore},
+  {k:'erogato_margine',label:'Erogato — 1° margine (§I)',calc:id=>{const t=erogatoTotali(id);return t.valore-t.costo;}},
+  {k:'erogato_ore',    label:'Erogato — ore (§I)',      calc:id=>erogatoTotali(id).ore},
+  {k:'area_costo',     label:'Costo area (persone)',    calc:id=>{const a=areaById(id);return a?areaCosto(a):null;}},
+  {k:'area_budget',    label:'Budget area',             calc:id=>{const a=areaById(id);return a?areaBudget(a):null;}},
+  {k:'rollup_valore',  label:'Valore prodotto (rollup)',calc:id=>{const a=areaById(id),r=a&&areaRollup(a);return r?r.valore:null;}},
+  {k:'rollup_margine', label:'Margine (rollup)',        calc:id=>{const a=areaById(id),r=a&&areaRollup(a);return r?r.margine:null;}},
+  {k:'centro_valore',  label:'Valore centro (§6)',      calc:id=>{const a=areaById(id);return(a&&isCentro(a))?centroValore(a):null;}},
+  {k:'centro_margine', label:'Margine centro (§6)',     calc:id=>{const a=areaById(id);return(a&&isCentro(a))?centroMargine(a):null;}},
+  {k:'venduto_area',   label:'Venduto agenti (§B)',     calc:id=>{const d=(S.datiArea||{})[id];
+    return(d&&d.agenti)?Object.values(d.agenti).reduce((s,x)=>s+(+x.venduto||0),0):null;}},
+  {k:'incassato_area', label:'Incassato agenti (§B)',   calc:id=>{const d=(S.datiArea||{})[id];
+    return(d&&d.agenti)?Object.values(d.agenti).reduce((s,x)=>s+(+x.incassato||0),0):null;}},
+];
+function areaById(id){ return S.aree.find(a=>a.id===id)||null; }
+function kpiFonte(k){ return KPI_FONTI.find(f=>f.k===k)||null; }
+
+// Seed di un'area dalle strutture esistenti, con i VALORI ATTUALI: quello che
+// l'utente ha già digitato nei micro/kpiCustom arriva qui intatto.
+// Stessa funzione usata dalla migrazione v11 e dall'accesso pigro, così uno
+// stato nuovo (che non passa dalla migrazione) e uno migrato sono identici.
+function kpiSeedDaArea(a){
+  const lista=[];
+  (a.micro||[]).forEach((m,i)=>lista.push({
+    id:'k_'+a.id+'_m'+i, nome:m.nome||'KPI', target:+m.kt||0, effettivo:+m.ke||0,
+    tipo:'manuale', fonte:'', stag:m.stag||'', note:m.note||'', origine:'micro',
+  }));
+  (a.kpiCustom||[]).forEach((k,i)=>lista.push({
+    id:'k_'+a.id+'_c'+i, nome:k.nome||'KPI', target:+k.target||0, effettivo:+k.effettivo||0,
+    tipo:'manuale', fonte:'', stag:'', note:'', origine:'custom',
+  }));
+  return lista;
+}
+// Accessore pigro. Seeda SOLO se la chiave manca del tutto: un'area i cui KPI
+// §E sono stati eliminati tutti resta vuota, non si ri-popola da sola.
+function kpiAreaLista(areaId){
+  if(!S.kpiPerArea||typeof S.kpiPerArea!=='object')S.kpiPerArea={};
+  if(!Array.isArray(S.kpiPerArea[areaId])){
+    const a=areaById(areaId);
+    S.kpiPerArea[areaId]=a?kpiSeedDaArea(a):[];
+  }
+  return S.kpiPerArea[areaId];
+}
+function kpiAreaTrova(areaId,kid){ return kpiAreaLista(areaId).find(k=>k.id===kid)||null; }
+
+// Effettivo: dalla fonte se calcolabile (null se la fonte non si applica),
+// altrimenti il valore inserito a mano.
+function kpiEffettivo(areaId,k){
+  if(k.tipo!=='calcolabile')return +k.effettivo||0;
+  const f=kpiFonte(k.fonte); if(!f)return null;
+  const v=f.calc(areaId);
+  return(typeof v==='number'&&isFinite(v))?v:null;
+}
+// Target del mese: se il KPI ha un peso di stagionalità, si applica quello già
+// esistente (§C) — stessa funzione usata dai micro, non una seconda formula.
+function kpiTargetMese(k,mese){
+  return k.stag?targetDestag(+k.target||0,k.stag,mese):(+k.target||0);
+}
+function kpiAreaPct(areaId,k,mese){
+  const t=kpiTargetMese(k,mese), e=kpiEffettivo(areaId,k);
+  if(!(t>0)||e===null)return null;
+  return Math.round((e/t)*100);
+}
+
+// ── CRUD (stesso stile del blocco condiviso §L) ───────────────────────────
+function addKpiArea(areaId){
+  const a=areaById(areaId); if(!a)return;
+  const nome=prompt('Nome del nuovo KPI per «'+a.nome+'»:','Nuovo KPI');
+  if(nome===null)return;
+  const n=nome.trim(); if(!n){ notify('Nome vuoto — KPI non creato'); return; }
+  kpiAreaLista(areaId).push({id:'k_'+areaId+'_'+Date.now(),nome:n,target:0,effettivo:0,
+    tipo:'manuale',fonte:'',stag:'',note:'',origine:'nuovo'});
+  crudCommit('KPI aggiunto: '+n);
+  refreshKpiAreaBlock(areaId);
+}
+function renameKpiArea(areaId,kid){
+  const k=kpiAreaTrova(areaId,kid); if(!k)return;
+  if(crudRename('Nome del KPI:',k.nome,v=>{k.nome=v;},'KPI rinominato: '))refreshKpiAreaBlock(areaId);
+}
+function deleteKpiArea(areaId,kid){
+  const k=kpiAreaTrova(areaId,kid); if(!k)return;
+  if(!confirm('Eliminare il KPI «'+k.nome+'»?\n\nSi perdono target ed effettivo inseriti.'))return;
+  S.kpiPerArea[areaId]=kpiAreaLista(areaId).filter(x=>x.id!==kid);
+  crudCommit('KPI eliminato: '+k.nome);
+  refreshKpiAreaBlock(areaId);
+}
+function setKpiArea(areaId,kid,campo,valore){
+  const k=kpiAreaTrova(areaId,kid); if(!k)return;
+  if(campo==='target'||campo==='effettivo'){
+    const v=parseFloat(valore); k[campo]=isFinite(v)?v:0;
+  } else if(campo==='tipo'){
+    k.tipo=valore==='calcolabile'?'calcolabile':'manuale';
+    if(k.tipo==='manuale')k.fonte='';
+  } else if(campo==='fonte'){
+    k.fonte=valore||''; if(k.fonte)k.tipo='calcolabile';
+  } else if(campo==='stag'){
+    k.stag=(valore==='venduto'||valore==='incassato')?valore:'';
+  } else if(campo==='note'){ k.note=valore||''; }
+  renderAll();
+  refreshKpiAreaBlock(areaId);
+}
+function refreshKpiAreaBlock(areaId){
+  const el=document.getElementById('areaCardKpiE');
+  if(el)el.innerHTML=renderKpiAreaBlock(areaId);
+}
+
+// ── Scheda area: blocco KPI §E, accanto ai micro esistenti ────────────────
+function renderKpiAreaRiga(areaId,k){
+  const eff=kpiEffettivo(areaId,k);
+  const pct=kpiAreaPct(areaId,k);
+  const tMese=kpiTargetMese(k);
+  const calc=k.tipo==='calcolabile';
+  return '<tr style="border-top:1px solid var(--lift)">'
+    +'<td style="padding:3px 4px">'+escAttr(k.nome)
+      +'<div style="font-size:9px;color:var(--ink3)">'+(calc?('calcolabile'+(kpiFonte(k.fonte)?' · '+kpiFonte(k.fonte).label:' · fonte non impostata')):'manuale')
+      +(k.stag?' · stag. '+(k.stag==='venduto'?'vendita':'cassa'):'')+'</div></td>'
+    +'<td style="padding:3px 3px;text-align:right">'
+      +'<input type="number" value="'+(+k.target||0)+'" class="inp n" style="width:66px;font-size:11px;padding:2px 4px"'
+      +' onblur="setKpiArea(\''+areaId+'\',\''+k.id+'\',\'target\',this.value)" onkeydown="if(event.keyCode===13)this.blur()">'
+      +(k.stag&&k.target>0?'<div style="font-size:9px;color:var(--blue)">mese: '+(+tMese.toFixed(1))+'</div>':'')+'</td>'
+    +'<td style="padding:3px 3px;text-align:right">'
+      +(calc
+        ?'<span class="mono" style="font-size:11px">'+(eff===null?'—':(+eff.toFixed(2)))+'</span>'
+        :'<input type="number" value="'+(+k.effettivo||0)+'" class="inp n" style="width:66px;font-size:11px;padding:2px 4px"'
+          +' onblur="setKpiArea(\''+areaId+'\',\''+k.id+'\',\'effettivo\',this.value)" onkeydown="if(event.keyCode===13)this.blur()">')
+      +'</td>'
+    +'<td style="padding:3px 4px;text-align:right;font-weight:600" class="'+kpiCls(pct)+'">'+(pct!==null?pct+'%':'—')+'</td>'
+    +'<td style="padding:3px 2px;text-align:right;white-space:nowrap">'
+      +'<select class="inp" style="width:auto;font-size:9px;padding:1px 2px" onchange="setKpiArea(\''+areaId+'\',\''+k.id+'\',\'fonte\',this.value)">'
+      +'<option value="" '+(!k.fonte?'selected':'')+'>manuale</option>'
+      +KPI_FONTI.map(f=>'<option value="'+f.k+'" '+(k.fonte===f.k?'selected':'')+'>'+f.label+'</option>').join('')
+      +'</select> '
+      +'<button class="btn xs" style="padding:1px 4px" title="Rinomina" onclick="renameKpiArea(\''+areaId+'\',\''+k.id+'\')">✎</button> '
+      +'<button class="btn xs danger" style="padding:1px 4px" title="Elimina" onclick="deleteKpiArea(\''+areaId+'\',\''+k.id+'\')">🗑</button></td>'
+    +'</tr>';
+}
+function renderKpiAreaBlock(areaId){
+  const lista=kpiAreaLista(areaId);
+  let h='<div style="margin-top:14px;padding-top:8px;border-top:1px dashed var(--lift)">'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'
+    +'<span style="font-size:11px;font-weight:600">KPI dell\'area (§E)</span>'
+    +'<span style="font-size:10px;color:var(--ink3)">calcolabili o manuali · target destagionalizzabile · monitoraggio, non cancello premi</span></div>';
+  if(lista.length){
+    h+='<div style="overflow-x:auto"><table style="width:100%;min-width:430px;border-collapse:collapse;font-size:11px">'
+      +'<thead><tr style="color:var(--ink3);font-size:10px;text-transform:uppercase">'
+      +'<th style="text-align:left;padding:3px 4px">KPI</th>'
+      +'<th style="padding:3px 3px;text-align:right">Target</th>'
+      +'<th style="padding:3px 3px;text-align:right">Effettivo</th>'
+      +'<th style="padding:3px 4px;text-align:right">%</th>'
+      +'<th style="padding:3px 2px"></th></tr></thead><tbody>'
+      +lista.map(k=>renderKpiAreaRiga(areaId,k)).join('')
+      +'</tbody></table></div>';
+  } else {
+    h+='<div style="font-size:10px;color:var(--ink3);padding:2px">Nessun KPI §E su quest\'area.</div>';
+  }
+  return h+'<button class="btn xs" style="margin-top:6px" onclick="addKpiArea(\''+areaId+'\')">+ KPI area</button></div>';
+}
+
+// ── Pannello target unico (§E.3) ──────────────────────────────────────────
+// Un solo posto dove il CDA vede e imposta i target di TUTTE le aree. La
+// stagionalità non è una nuova formula: è targetDestag()/stagIndice() di §C,
+// applicata al mese scelto qui. Il parametro CDA è S.soglia, la stessa soglia
+// del cancello premi (§9.1) — si modifica qui o in Passo 3, è lo stesso dato.
+function setPannelloMese(v){ S.meseCorrente=parseInt(v)||1; renderAll(); }
+function renderPannelloTargetKpi(){
+  const mese=S.meseCorrente||1;
+  const sec=document.createElement('div');
+  sec.style.cssText='background:var(--card);border:1px solid var(--lift);border-radius:var(--rl);margin-bottom:10px;overflow:hidden';
+  const aree=S.aree.filter(a=>kpiAreaLista(a.id).length);
+  const nKpi=aree.reduce((s,a)=>s+kpiAreaLista(a.id).length,0);
+  let righe='';
+  aree.forEach(a=>{
+    righe+='<tr style="background:var(--sheet)"><td colspan="6" style="padding:4px 8px;font-size:11px;font-weight:600">'
+      +escAttr(a.nome)+' <span style="font-size:9px;color:var(--ink3)">'+kpiAreaLista(a.id).length+' KPI</span>'
+      +' <button class="btn xs" style="padding:0 4px;font-size:9px" onclick="openAreaCard(\''+a.id+'\')">apri scheda</button></td></tr>';
+    kpiAreaLista(a.id).forEach(k=>{
+      const pct=kpiAreaPct(a.id,k,mese), eff=kpiEffettivo(a.id,k);
+      righe+='<tr style="border-top:1px solid var(--lift)">'
+        +'<td style="padding:3px 8px;font-size:11px">'+escAttr(k.nome)+'</td>'
+        +'<td style="padding:3px 4px;font-size:10px;color:var(--ink3)">'+(k.tipo==='calcolabile'?'calcolabile':'manuale')+'</td>'
+        +'<td style="padding:3px 4px;text-align:right">'
+          +'<input type="number" value="'+(+k.target||0)+'" class="inp n" style="width:80px;font-size:11px;padding:2px 4px"'
+          +' onblur="setKpiArea(\''+a.id+'\',\''+k.id+'\',\'target\',this.value);renderStruttura()" onkeydown="if(event.keyCode===13)this.blur()"></td>'
+        +'<td style="padding:3px 4px;text-align:right">'
+          +'<select class="inp" style="width:auto;font-size:9px;padding:1px 3px" onchange="setKpiArea(\''+a.id+'\',\''+k.id+'\',\'stag\',this.value);renderStruttura()">'
+          +'<option value="" '+(!k.stag?'selected':'')+'>—</option>'
+          +'<option value="venduto" '+(k.stag==='venduto'?'selected':'')+'>vendita</option>'
+          +'<option value="incassato" '+(k.stag==='incassato'?'selected':'')+'>cassa</option></select></td>'
+        +'<td style="padding:3px 4px;text-align:right;font-size:11px" class="mono">'
+          +(k.stag?'<strong>'+(+kpiTargetMese(k,mese).toFixed(1))+'</strong> <span style="font-size:9px;color:var(--ink3)">(idx '+stagIndice(k.stag,mese)+')</span>':'<span style="color:var(--ink3)">= target</span>')+'</td>'
+        +'<td style="padding:3px 8px;text-align:right;font-weight:600" class="'+kpiCls(pct)+'">'
+          +(eff===null?'—':(pct!==null?pct+'%':'—'))+'</td></tr>';
+    });
+  });
+  sec.innerHTML='<div style="padding:12px 15px;border-bottom:1px solid var(--lift)">'
+    +'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
+    +'<span style="font-size:13px;font-weight:600">🎯 Pannello target KPI — tutte le aree</span>'
+    +'<span style="font-size:11px;color:var(--ink3)">'+aree.length+' aree · '+nKpi+' KPI</span>'
+    +'<span style="margin-left:auto;font-size:11px;color:var(--ink3)">Mese destagionalizz.: '
+    +'<select class="inp" style="width:auto;display:inline-block;font-size:11px;padding:1px 4px" onchange="setPannelloMese(this.value)">'
+    +MESI_NOMI.map((m,i)=>'<option value="'+(i+1)+'" '+(mese===i+1?'selected':'')+'>'+m+'</option>').join('')
+    +'</select></span>'
+    +'<span style="font-size:11px;color:var(--ink3)">Soglia CDA: '
+    +'<input type="number" value="'+S.soglia+'" class="inp n" style="width:58px;font-size:11px;padding:2px 4px;display:inline-block"'
+    +' onblur="S.soglia=parseFloat(this.value)||80;renderAll()" onkeydown="if(event.keyCode===13)this.blur()"> %</span>'
+    +'</div>'
+    +'<div style="font-size:10px;color:var(--ink3);margin-top:5px">Il target del mese è il target medio × indice di stagionalità del mese (§C). '
+    +'La soglia CDA è la stessa del cancello premi (§9.1): cambiarla qui la cambia ovunque.</div></div>'
+    +(nKpi
+      ?'<div style="padding:8px 0;overflow-x:auto"><table style="width:100%;border-collapse:collapse">'
+        +'<thead><tr style="color:var(--ink3);font-size:10px;text-transform:uppercase">'
+        +'<th style="text-align:left;padding:3px 8px">KPI</th><th style="text-align:left;padding:3px 4px">Tipo</th>'
+        +'<th style="padding:3px 4px;text-align:right">Target medio</th><th style="padding:3px 4px;text-align:right">Stag.</th>'
+        +'<th style="padding:3px 4px;text-align:right">Target '+MESI_NOMI[mese-1]+'</th>'
+        +'<th style="padding:3px 8px;text-align:right">%</th></tr></thead><tbody>'+righe+'</tbody></table></div>'
+      :'<div style="padding:12px 15px;font-size:11px;color:var(--ink3)">Nessun KPI ancora definito. Aggiungine dalle schede area.</div>');
+  return sec;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // §I — EROGATO PER SERVIZIO (inserimento manuale per area)
 // ═══════════════════════════════════════════════════════════════════════════
 // Registrazione a sé: NON entra in flow(), non tocca la cascata liquidità né
@@ -5230,6 +5477,7 @@ function openAreaCard(areaId){
     +'<div style="font-size:12px;font-weight:600;margin-bottom:6px">Persone dell\'area</div>'
     +'<div id="areaCardMiniOrg"></div>'
     +areaCardKpiMicro(a)
+    +'<div id="areaCardKpiE">'+renderKpiAreaBlock(areaId)+'</div>'
     +renderKpiCustomBlock(areaId)
     +'<div id="areaCardErogato">'+renderErogatoBlock(areaId)+'</div>'
     +areaCardAzioni(a);
@@ -5311,6 +5559,7 @@ function renderStagionalitaEditor(){
 function renderStruttura(){
   const cont=document.getElementById('str-cont');if(!cont)return;
   cont.innerHTML='';
+  cont.appendChild(renderPannelloTargetKpi());   // §E — target di tutte le aree
   cont.appendChild(renderStagionalitaEditor());
   S.aree.forEach((a,ai)=>{
     const bud=areaBudget(a);const cost=areaCosto(a);const ratio=bud>0?(cost/bud)*100:0;
