@@ -4684,14 +4684,12 @@ function renderOrg(){
       pctBadge.setAttribute('font-family','DM Mono,monospace');pctBadge.setAttribute('font-weight','600');
       pctBadge.textContent=n.incPct+'%';fg.appendChild(pctBadge);
 
-      const areaPageMap={comm:'comm_page',prod:'produzione',form:'form_page',
-                         amm:'amm_page',mkt:'mkt_page',sorvsan:'sorvsan_page',sis:'seg_page'};
       fg.style.cursor='grab';
       fg.addEventListener('mouseenter',()=>{if(!orgDragState)bf.setAttribute('fill',n.color);});
       fg.addEventListener('mouseleave',()=>{if(!orgDragState)bf.setAttribute('fill',n.over?'#A32020':n.budPct>80?'#7A4A08':'#1A6B3C');});
 
       // ── DRAG & DROP REPARENTING (SPEC-v10 §E, Fase 6) ───────────────────
-      // Click semplice (nessun movimento) apre la pagina area come prima;
+      // Click semplice (nessun movimento) apre la SCHEDA DELL'AREA (§H);
       // un trascinamento su un'altra card ne cambia il parentId, con
       // evidenza visiva del bersaglio, flash di conferma e possibilità di
       // annullare (isSelfOrDescendant blocca le mosse illegali).
@@ -4744,7 +4742,12 @@ function renderOrg(){
         });
         orgDragState=null;
         if(wasDrag&&overId)applyReparent(n.areaId,overId);
-        else if(!wasDrag)goPage(areaPageMap[n.areaId]||n.areaId);
+        // §H — click "vero" (nessun movimento) sul corpo della card: scheda
+        // dell'AREA, non più goPage(). Il routing passa da qui e non da un
+        // listener 'click' perché dopo un drag con pointer capture il 'click'
+        // scatta comunque sull'elemento catturante: aprirebbe la scheda anche
+        // al termine di un riparentamento. Il ramo !wasDrag lo esclude.
+        else if(!wasDrag)openAreaCard(n.areaId);
       };
       fg.addEventListener('pointerup',endDrag);
       fg.addEventListener('pointercancel',endDrag);
@@ -4788,7 +4791,10 @@ function renderOrg(){
       fg.addEventListener('mouseleave',()=>btns.forEach(b=>b.style.opacity='0'));
     }
 
-    if(n.pi>=0){
+    // §H — le card AREA hanno un responsabile (n.pi>=0) ma NON devono più
+    // aprire la sua scheda persona: il loro click apre la scheda dell'area
+    // (vedi endDrag). Le persone-foglia dell'organigramma restano invariate.
+    if(n.pi>=0&&n.type!=='area'){
       fg.addEventListener('click',()=>openPersonaPop(n.pi));
       fg.style.cursor='pointer';
     }
@@ -4956,6 +4962,7 @@ function openOrgPop(type,pi){
   if(type==='persona'&&pi>=0)openPersonaPop(pi);
   else if(type==='edit'&&pi>=0)openPersonaPop(pi);
 }
+
 // ═══════════════════════════════════════════════════════════════════════════
 // §H — SCHEDA AREA (sola lettura + azioni CRUD)
 // ═══════════════════════════════════════════════════════════════════════════
