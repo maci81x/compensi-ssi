@@ -6102,6 +6102,52 @@ function deleteKpiMicro(areaId,mi){
 }
 
 // ── SISTEMA PAGE ─────────────────────────
+// ── Costi fissi vs variabili (sola lettura) ───────────────────────────────
+// Legge la natura già presente su ogni voce di S.sistemaFissi (impostata
+// dall'import PF: le righe dopo il marcatore "COSTI VARIABILI" sono
+// variabili). È solo una lettura aggregata dello stesso dato che la pagina
+// mostra voce per voce: non tocca flow(), il seed né l'import.
+// I valori in S.sistemaFissi sono già MENSILI (l'import divide per 12) e
+// S.incassato è mensile: la % è diretta, senza riproporzionare.
+function fissiVariabiliTotali(){
+  const voci=S.sistemaFissi||[];
+  const somma=f=>voci.filter(f).reduce((s,v)=>s+(v.val||0),0);
+  const fisso=somma(v=>v.natura==='fisso');
+  const variabile=somma(v=>v.natura==='variabile');
+  // Le voci senza natura (inserite a mano, o da un seed precedente all'import)
+  // non sono né l'una né l'altra: si contano a parte invece di attribuirle
+  // d'ufficio ai fissi, che falserebbe il rapporto.
+  const senzaNatura=somma(v=>v.natura!=='fisso'&&v.natura!=='variabile');
+  return{fisso,variabile,senzaNatura,totale:fisso+variabile+senzaNatura};
+}
+function renderFissiVariabiliBox(){
+  const t=fissiVariabiliTotali();
+  const inc=S.incassato||0;
+  const pct=v=>inc>0?P((v/inc)*100):'—';
+  const rapporto=t.variabile>0
+    ? (t.fisso/t.variabile).toFixed(1).replace('.',',')+' : 1'
+    : (t.fisso>0?'— (nessun costo variabile)':'—');
+  const tile=(label,val,extra)=>'<div class="mc"><div class="ml">'+label+'</div>'
+    +'<div class="mv">'+fmt(val)+'</div>'
+    +'<div class="ms">'+extra+'</div></div>';
+  return '<div style="background:var(--card);border:1px solid var(--lift);border-radius:var(--rl);padding:14px;margin-bottom:14px">'
+    +'<div style="font-size:13px;font-weight:600;margin-bottom:2px">Costi fissi vs variabili</div>'
+    +'<div style="font-size:11px;color:var(--ink3);margin-bottom:10px">Valori mensili, dalla natura delle voci qui sotto. Le percentuali sono sull\'incassato di '+fmt(inc)+'/mese.</div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap">'
+    +tile('Fissi',t.fisso,pct(t.fisso)+' su incassato')
+    +tile('Variabili',t.variabile,pct(t.variabile)+' su incassato')
+    +tile('Totale',t.totale,pct(t.totale)+' su incassato')
+    +'</div>'
+    +(t.senzaNatura>0
+      ?'<div style="font-size:11px;color:var(--ink3);margin-top:8px">Di cui <strong class="mono">'+fmt(t.senzaNatura)+'</strong> ('+pct(t.senzaNatura)+') su voci senza natura assegnata: contano nel totale ma non nel rapporto qui sotto.</div>'
+      :'')
+    +'<div style="display:flex;align-items:center;gap:8px;margin-top:10px;padding-top:8px;border-top:1px solid var(--lift);font-size:12px">'
+    +'<span style="flex:1">Rapporto fisso/variabile</span>'
+    +'<strong class="mono" style="font-size:14px">'+rapporto+'</strong>'
+    +'<span style="font-size:11px;color:var(--ink3)">(leva operativa)</span>'
+    +'</div></div>';
+}
+
 function renderSistemaPage(){
   const el=document.getElementById('sistema-page-cont');if(!el)return;
   // Group by category
@@ -6112,7 +6158,9 @@ function renderSistemaPage(){
   });
   const totSis=S.sistemaFissi.reduce((s,v)=>s+(v.val||0),0);
 
-  let html=`     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">       <div style="font-size:13px;font-weight:600">Costi fissi sistema — ${Object.keys(cats).length} categorie, ${S.sistemaFissi.length} voci</div>       <div style="font-family:'DM Mono',monospace;font-size:16px;font-weight:300">${fmt(totSis)} <span style="font-size:11px;color:var(--ink3)">/mese</span></div>     </div>`;
+  let html=renderFissiVariabiliBox();
+
+  html+=`     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">       <div style="font-size:13px;font-weight:600">Costi fissi sistema — ${Object.keys(cats).length} categorie, ${S.sistemaFissi.length} voci</div>       <div style="font-family:'DM Mono',monospace;font-size:16px;font-weight:300">${fmt(totSis)} <span style="font-size:11px;color:var(--ink3)">/mese</span></div>     </div>`;
 
   Object.entries(cats).forEach(([cat,voci])=>{
     const catTot=voci.reduce((s,v)=>s+(v.val||0),0);
