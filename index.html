@@ -2244,7 +2244,7 @@ const CAT_ICONS={affitto:'🏢',utenze:'⚡',software:'💻',assicurazione:'🛡
 // stato non ha). Vedi SCHEMA_MIGRATIONS più sotto per la logica di
 // migrazione — root cause del problema "una scheda vecchia sovrascrive dati
 // più recenti", non un cerotto sul sintomo.
-const CURRENT_SCHEMA_VERSION=12;
+const CURRENT_SCHEMA_VERSION=13;
 
 // §F — parametri della curva del variabile responsabili, modificabili dal CDA.
 // Continua per costruzione: sotto soglia 0, poi rampa lineare fino a 100, poi
@@ -2261,6 +2261,9 @@ const TIPOLOGIE_SERVIZIO=[
   {k:'pacchetti', label:'Pacchetti'},
   {k:'rspp',      label:'RSPP'},
   {k:'gestione',  label:'Gestione'},
+  {k:'visite_mediche',  label:'Visite mediche'},
+  {k:'sorveglianza_san',label:'Sorveglianza sanitaria'},
+  {k:'corsi',           label:'Corsi'},
 ];
 // Riga vuota: nessun numero inventato, si parte da zero e si compila a mano.
 function erogatoRigaVuota(){ return {n:0,ore:0,valore:0,costo:0}; }
@@ -3636,6 +3639,20 @@ const SCHEMA_MIGRATIONS=[
       if(typeof s.compensiResp.params[k]!=='number')s.compensiResp.params[k]=COMPENSI_RESP_DEF[k];
     });
     if(!s.compensiResp.voci||typeof s.compensiResp.voci!=='object')s.compensiResp.voci={};
+  }},
+  {to:13,migrate(s){
+    // §I — tipologie di servizio PER AREA. Prima catalogo unico uguale per tutte;
+    // ora ogni area sceglie le sue (a.tipologieErogato). Default sensato per le
+    // aree che erogano servizi, riconosciute dal nome, e SOLO se non hanno già
+    // una scelta (undefined) ⇒ una configurazione manuale successiva non viene
+    // sovrascritta. Le altre aree restano senza (niente sezione erogato).
+    (s.aree||[]).forEach(a=>{
+      if(a.tipologieErogato!==undefined)return;
+      const n=(a.nome||'').toLowerCase();
+      if(n.indexOf('produzione')>=0)       a.tipologieErogato=['spot','analisi','rspp','pacchetti','gestione'];
+      else if(n.indexOf('sorveglianza')>=0)a.tipologieErogato=['visite_mediche','sorveglianza_san'];
+      else if(n.indexOf('formazione')>=0)  a.tipologieErogato=['docenza','corsi'];
+    });
   }},
 ];
 function migrateSchema(s){
@@ -5635,10 +5652,17 @@ function erogatoArea(areaId){
   TIPOLOGIE_SERVIZIO.forEach(t=>{ if(!e[t.k]||typeof e[t.k]!=='object')e[t.k]=erogatoRigaVuota(); });
   return e;
 }
+// §I — le tipologie ATTIVE di un'area = quelle scelte in a.tipologieErogato,
+// nell'ordine del catalogo. Nessuna scelta ⇒ l'erogato non compare.
+function tipologieAttive(a){
+  const keys=a&&Array.isArray(a.tipologieErogato)?a.tipologieErogato:[];
+  return TIPOLOGIE_SERVIZIO.filter(t=>keys.indexOf(t.k)>=0);
+}
 function erogatoTotali(areaId){
   const e=erogatoArea(areaId);
-  return TIPOLOGIE_SERVIZIO.reduce((acc,t)=>{
-    const r=e[t.k];
+  const a=S.aree.find(x=>x.id===areaId);
+  return tipologieAttive(a).reduce((acc,t)=>{
+    const r=e[t.k]||erogatoRigaVuota();
     acc.n+=+r.n||0; acc.ore+=+r.ore||0; acc.valore+=+r.valore||0; acc.costo+=+r.costo||0;
     return acc;
   },{n:0,ore:0,valore:0,costo:0});
@@ -5678,6 +5702,9 @@ function erogatoCella(areaId,tipo,campo,val,width){
 
 function renderErogatoBlock(areaId){
   const e=erogatoArea(areaId);
+  const a=S.aree.find(x=>x.id===areaId);
+  const tips=tipologieAttive(a);
+  if(tips.length===0) return '';   // area senza servizi erogati: sezione assente
   const tot=erogatoTotali(areaId);
   const totMargine=tot.valore-tot.costo;
   const totPct=erogatoMarginePct(tot.valore,totMargine);
@@ -5695,7 +5722,7 @@ function renderErogatoBlock(areaId){
     +'<th style="padding:3px 3px;text-align:right">Costo €</th>'
     +'<th style="padding:3px 3px;text-align:right">1° Margine</th>'
     +'<th style="width:26px"></th></tr></thead><tbody>';
-  TIPOLOGIE_SERVIZIO.forEach(function(t){
+  tips.forEach(function(t){
     const r=e[t.k];
     const margine=(+r.valore||0)-(+r.costo||0);
     const pct=erogatoMarginePct(+r.valore||0,margine);
