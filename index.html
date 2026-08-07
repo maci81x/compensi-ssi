@@ -6164,7 +6164,11 @@ function renderSistemaPage(){
 
   Object.entries(cats).forEach(([cat,voci])=>{
     const catTot=voci.reduce((s,v)=>s+(v.val||0),0);
-    html+=`<div style="margin-bottom:10px;background:var(--card);border:1px solid var(--lift);border-radius:var(--r)">       <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--lift);cursor:pointer"         onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">         <span style="font-size:12px;font-weight:600">${cat}</span>         <div style="display:flex;align-items:center;gap:8px">           <span style="font-family:'DM Mono',monospace;font-size:12px;color:var(--ink3)">${fmt(catTot)}/mese</span>           <span style="font-size:10px;color:var(--ink3)">▲</span>         </div>       </div>       <div style="padding:4px 0">       ${voci.map(v=>`
+    html+=`<div style="margin-bottom:10px;background:var(--card);border:1px solid var(--lift);border-radius:var(--r)">       <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--lift);cursor:pointer"         onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">         <div style="display:flex;align-items:center;gap:6px">
+          <span style="font-size:12px;font-weight:600">${cat}</span>
+          <button class="btn xs" title="Rinomina categoria" onclick="event.stopPropagation();rinominaSistemaCategoria('${cat.replace(/'/g,"\\'")}')">✎</button>
+          <button class="btn xs" title="Aggiungi voce a questa categoria" onclick="event.stopPropagation();addSistemaVoce('${cat.replace(/'/g,"\\'")}')">+ voce</button>
+        </div>         <div style="display:flex;align-items:center;gap:8px">           <span style="font-family:'DM Mono',monospace;font-size:12px;color:var(--ink3)">${fmt(catTot)}/mese</span>           <span style="font-size:10px;color:var(--ink3)">▲</span>         </div>       </div>       <div style="padding:4px 0">       ${voci.map(v=>`
         <div style="display:flex;align-items:center;gap:8px;padding:5px 12px;border-bottom:1px solid rgba(0,0,0,.03)">
           <input type="text" value="${v.nome}" style="flex:1;border:none;background:transparent;font-size:12px;outline:none;font-family:'DM Sans',sans-serif;color:var(--ink)"
             onblur="S.sistemaFissi[${v._i}].nome=this.value;renderAll()" onkeydown="if(event.keyCode===13||event.keyCode===13)this.blur()">
@@ -6197,18 +6201,40 @@ function addPrioritario(){
   notify('Voce prioritaria aggiunta');
 }
 
-function addSistemaVoce(){
-  const cats=[...new Set(S.sistemaFissi.map(v=>v.cat))];
-  const opts=cats.map((c,i)=>`${i+1}. ${c}`).join('\n');
-  const catIdx=parseInt(prompt('Categoria:\n'+opts+'\n'+(cats.length+1)+'. Nuova categoria'))-1;
-  let cat;
-  if(catIdx>=0&&catIdx<cats.length) cat=cats[catIdx];
-  else if(catIdx===cats.length){cat=prompt('Nome nuova categoria:');if(!cat)return;}
-  else return;
+function addSistemaVoce(catPreset){
+  let cat=catPreset;
+  if(!cat){
+    const cats=[...new Set(S.sistemaFissi.map(v=>v.cat))];
+    const opts=cats.map((c,i)=>`${i+1}. ${c}`).join('\n');
+    const catIdx=parseInt(prompt('Categoria:\n'+opts+'\n'+(cats.length+1)+'. Nuova categoria'))-1;
+    if(catIdx>=0&&catIdx<cats.length) cat=cats[catIdx];
+    else if(catIdx===cats.length){cat=prompt('Nome nuova categoria:');if(!cat)return;}
+    else return;
+  }
   const nome=prompt('Nome voce (es. Nuovo fornitore):');if(!nome)return;
   const val=parseFloat(prompt('Importo mensile €:'))||0;
-  S.sistemaFissi.push({id:'sf_'+Date.now(),nome:nome.trim(),cat:cat.trim(),val});
-  renderSistemaPage();notify('Voce aggiunta: '+nome);
+  const nat=(prompt('Natura: f = fisso, v = variabile','f')||'f').trim().toLowerCase();
+  const natura=nat.startsWith('v')?'variabile':'fisso';
+  S.sistemaFissi.push({id:'sf_'+Date.now(),nome:nome.trim(),cat:(cat||'').trim(),val,natura});
+  renderAll();notify('Voce aggiunta: '+nome);
+}
+
+// Rinomina una categoria di costi fissi. Se il nuovo nome coincide con una
+// categoria già esistente a meno di maiuscole/minuscole, le due si UNISCONO
+// sulla categoria esistente: è il modo per ricucire i doppioni di case che
+// l'import PF si porta dietro (es. "Auto Aziendali (no soci)" e "Auto
+// aziendali (no soci)"). Si tocca solo il campo cat delle voci: nessun
+// importo, nessuna voce creata o eliminata.
+function rinominaSistemaCategoria(catVecchia){
+  const nuovo=(prompt('Nuovo nome per la categoria «'+catVecchia+'»:',catVecchia)||'').trim();
+  if(!nuovo||nuovo===catVecchia)return;
+  const esistente=[...new Set(S.sistemaFissi.map(v=>v.cat))]
+    .find(c=>c.toLowerCase()===nuovo.toLowerCase() && c!==catVecchia);
+  const target=esistente||nuovo;
+  let n=0;
+  S.sistemaFissi.forEach(v=>{ if(v.cat===catVecchia){v.cat=target;n++;} });
+  renderAll();
+  notify(esistente ? ('Categoria unita a «'+target+'» ('+n+' voci)') : ('Categoria rinominata in «'+target+'» ('+n+' voci)'));
 }
 
 function addSistemaCategoria(){
