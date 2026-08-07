@@ -6241,8 +6241,10 @@ function addSistemaCategoria(){
   const cat=prompt('Nome nuova categoria:');if(!cat)return;
   const nome=prompt('Prima voce della categoria:');if(!nome)return;
   const val=parseFloat(prompt('Importo mensile €:'))||0;
-  S.sistemaFissi.push({id:'sf_'+Date.now(),nome:nome.trim(),cat:cat.trim(),val});
-  renderSistemaPage();notify('Categoria creata: '+cat);
+  const nat=(prompt('Natura: f = fisso, v = variabile','f')||'f').trim().toLowerCase();
+  const natura=nat.startsWith('v')?'variabile':'fisso';
+  S.sistemaFissi.push({id:'sf_'+Date.now(),nome:nome.trim(),cat:cat.trim(),val,natura});
+  renderAll();notify('Categoria creata: '+cat);
 }
 
 
