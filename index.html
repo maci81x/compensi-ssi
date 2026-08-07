@@ -4590,7 +4590,7 @@ function renderOrg(){
   if(!S.personale||!S.personale.length){wrap.innerHTML='';return;}
   const f=flow(),inc=Math.max(f.inc,1);
 
-  const CW=148,CH=80,HGAP=20,VGAP=50,PAD=24;
+  const CW=148,CH=100,HGAP=20,VGAP=50,PAD=24;
   let nid=0;
   const allN=[],allE=[];
   function mkN(c){const n={id:nid++,w:CW,h:CH,children:[],...c};allN.push(n);return n;}
@@ -4636,8 +4636,12 @@ function renderOrg(){
     const resp=S.personale.find(p=>p.areaResp===areaId&&p.livello==='C')
             ||S.personale.find(p=>p.areaResp===areaId&&p.isResp&&!p.isCapoArea);
     const pi=resp?S.personale.indexOf(resp):-1;
+    const nPers=S.personale.filter(p=>p.area===areaId).length;
+    const incRoll=incPctRollup(a);
     const n=mkN({type:'area',areaId,label:a.nome,sub:fmt(bud),
-      pct:pctBud+(parentPct||'% inc. — ')+(resp?resp.nome.split(' ')[0]:'—'),
+      pct:'inc '+incRoll.toFixed(1)+'% · '+nPers+'p',
+      pctTip:'Incidenza dell\'area e delle sue sotto-aree sul cashflow totale ('+incRoll.toFixed(1)+'%) · '+nPers+' persone assegnate all\'area',
+      respFull:resp?resp.nome:'—',
       color:col,bg:'#fff',bd:over?'#F0B8B8':'#C8C6BE',
       over,pi,budPct:bud>0?(cost/bud)*100:0,incPct:pctBud});
     areaNodeById[areaId]=n;
@@ -4813,9 +4817,20 @@ function renderOrg(){
       pt.setAttribute('font-family','DM Sans,sans-serif');
       const pm=isL?20:18;
       pt.textContent=n.pct.length>pm?n.pct.slice(0,pm)+'…':n.pct;fg.appendChild(pt);
+      if(n.pctTip){const ptt=document.createElementNS(NS,'title');ptt.textContent=n.pctTip;pt.appendChild(ptt);}
     }
 
     if(n.type==='area'){
+      if(n.respFull){
+        const rp=document.createElementNS(NS,'text');
+        rp.setAttribute('x',tx);rp.setAttribute('y',72);rp.setAttribute('text-anchor',ta);
+        rp.setAttribute('font-size','9');rp.setAttribute('fill','#6A6860');
+        rp.setAttribute('font-family','DM Sans,sans-serif');
+        const rm=isL?22:18;
+        rp.textContent='\u{1F464} '+(n.respFull.length>rm?n.respFull.slice(0,rm-1)+'…':n.respFull);
+        const rt=document.createElementNS(NS,'title');rt.textContent='Responsabile dell\'area';rp.appendChild(rt);
+        fg.appendChild(rp);
+      }
       const bw=n.w-12,bx=6,by=n.h-12;
       const bbg=document.createElementNS(NS,'rect');
       bbg.setAttribute('x',bx);bbg.setAttribute('y',by);
