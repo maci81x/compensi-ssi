@@ -1836,9 +1836,20 @@ function renderImportPreview(){
     const willMerge=nonEsc.filter(v=>v.mergeInto).length;
     const willPrio=nonEsc.filter(v=>!v.mergeInto&&classifyPFRow(v).dest==='prioritari').length;
     const willSist=nonEsc.length-willMerge-willPrio;
+    const rep=pfReplaceAttivo(), esistenti=contaVociPFEsistenti();
+    html+=`<div style="background:var(--card);border:1px solid var(--lift);border-radius:var(--rl);padding:10px 14px;margin-bottom:10px;font-size:12px">
+      <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer">
+        <input type="checkbox" ${rep?'checked':''} onchange="togglePfReplace(this.checked)" style="margin-top:2px">
+        <span><strong>Sostituisci le voci PF esistenti</strong> <span style="color:var(--ink3)">(consigliato — evita doppioni)</span>
+        <div style="font-size:11px;color:var(--ink3);margin-top:3px">Il file diventa la fonte di verità: le voci del PF precedente vengono rimosse e riscritte dal file. Le voci inserite a mano restano intatte. Senza questa opzione le righe si sommano a quelle già presenti.</div></span>
+      </label>
+    </div>`;
     html+=`<div style="background:#eaf4ec;border:1px solid #B8DBBF;border-radius:var(--rl);padding:12px 14px;margin-bottom:14px;font-size:12px;color:#1A6B3C">
-      <strong>Alla conferma verranno scritte ${nonEsc.length} righe non escluse:</strong>
-      ${willSist} nuove in Sistema, ${willPrio} nuove in Prioritari, ${willMerge} unite a voci esistenti.
+      ${rep
+        ? `<strong>Sostituzione attiva:</strong> rimuoverà ${esistenti.tot} voci PF esistenti (${esistenti.sf} in Sistema, ${esistenti.prio} in Prioritari) e scriverà ${nonEsc.length-willMerge} righe dal file (${willSist} in Sistema, ${willPrio} in Prioritari). Le voci a mano restano.`
+        : `<strong>Alla conferma verranno scritte ${nonEsc.length} righe non escluse:</strong>
+           ${willSist} nuove in Sistema, ${willPrio} nuove in Prioritari, ${willMerge} unite a voci esistenti.
+           ${esistenti.tot?`<div style="margin-top:4px;color:#7A4A08">⚠️ Ci sono già ${esistenti.tot} voci da un import PF precedente: senza sostituzione le nuove si sommano a quelle.</div>`:''}`}
       ${pendingImport.dipendenti?` + ${pendingImport.dipendenti.length} dipendenti da agganciare per nome.`:''}
     </div>`;
     const summary=importPFSummaryByArea();
@@ -1846,10 +1857,11 @@ function renderImportPreview(){
     const totVar=summary.reduce((s,r)=>s+r.variabile,0);
     html+=`<div style="background:var(--card);border:1px solid var(--lift);border-radius:var(--rl);padding:14px;margin-bottom:14px">
       <div style="font-size:12px;font-weight:600;margin-bottom:4px">Riepilogo per area — foglio "2026 PF"</div>
+      <div style="font-size:11px;color:var(--ink3);margin-bottom:4px">Gli importi del file sono <strong>annui</strong>; l'incassato di ${fmt(inc)} è <strong>mensile</strong>. La % confronta mensile con mensile (costo annuo ÷ 12), altrimenti risulterebbe ~12 volte più alta.</div>
       <div style="font-size:11px;color:var(--ink3);margin-bottom:8px">Raggruppato per l'area macro di col.A del file (es. "Sistema", "Commerciale", "Produzione", "IVA"). È la vista per confrontare i numeri contro PF/Previsionale — la tassonomia finale ad aree (§3) arriva in Fase 2.</div>
       <table style="width:100%;border-collapse:collapse;font-size:12px">
         <thead><tr style="text-align:left;color:var(--ink3);font-size:10px;text-transform:uppercase">
-          <th style="padding:4px 6px">Area (col A)</th><th style="padding:4px 6px" class="mono">Fisso €</th><th style="padding:4px 6px" class="mono">Variabile €</th><th style="padding:4px 6px" class="mono">Totale €</th><th style="padding:4px 6px" class="mono">% su incassato</th>
+          <th style="padding:4px 6px">Area (col A)</th><th style="padding:4px 6px" class="mono">Fisso € annuo</th><th style="padding:4px 6px" class="mono">Variabile € annuo</th><th style="padding:4px 6px" class="mono">Totale € annuo</th><th style="padding:4px 6px" class="mono">% su incassato (mensile)</th>
         </tr></thead>
         <tbody>
         ${summary.map(r=>`<tr style="border-top:1px solid var(--lift)">
@@ -1857,13 +1869,13 @@ function renderImportPreview(){
           <td style="padding:4px 6px" class="mono">${fmt(r.fisso)}</td>
           <td style="padding:4px 6px" class="mono">${fmt(r.variabile)}</td>
           <td style="padding:4px 6px" class="mono">${fmt(r.fisso+r.variabile)}</td>
-          <td style="padding:4px 6px" class="mono">${((r.fisso+r.variabile)/inc*100).toFixed(1)}%</td>
+          <td style="padding:4px 6px" class="mono">${((r.fisso+r.variabile)/12/inc*100).toFixed(1)}%</td>
         </tr>`).join('')}
         <tr style="border-top:2px solid var(--ink)"><td style="padding:4px 6px;font-weight:600">Totale</td>
           <td style="padding:4px 6px" class="mono">${fmt(totFisso)}</td>
           <td style="padding:4px 6px" class="mono">${fmt(totVar)}</td>
           <td style="padding:4px 6px" class="mono">${fmt(totFisso+totVar)}</td>
-          <td style="padding:4px 6px" class="mono">${((totFisso+totVar)/inc*100).toFixed(1)}%</td>
+          <td style="padding:4px 6px" class="mono">${((totFisso+totVar)/12/inc*100).toFixed(1)}%</td>
         </tr>
         </tbody>
       </table>
@@ -2028,6 +2040,19 @@ function classifyPFRow(v){
 // ── RILEVAMENTO DOPPIONI (Fase 2, richiesta esplicita) ────────────────────
 // Confronta una riga PF non esclusa con le voci Sistema già presenti "a mano"
 // (non taggate areaPF da un import precedente) per nome simile + importo vicino.
+// ── §import-PF — modalità sostituzione ────────────────────────────────────
+// Default ON: il re-import del PF deve essere idempotente. Con OFF si torna al
+// comportamento storico (aggiunge + dedup manuale via findPossibileDoppione).
+function pfReplaceAttivo(){ return pendingImport.pfReplace!==false; }
+function togglePfReplace(on){ pendingImport.pfReplace=!!on; renderImportPreview(); }
+// Quante voci verrebbero rimosse dalla sostituzione: è ciò che proviene da un
+// import PF (seed storico con areaPF, import successivi con daPF).
+function contaVociPFEsistenti(){
+  const sf=(S.sistemaFissi||[]).filter(x=>x.areaPF||x.daPF).length;
+  const prio=(S.prioritari||[]).filter(x=>x.daPF).length;
+  return{sf,prio,tot:sf+prio};
+}
+
 function findPossibileDoppione(v){
   const nv=normalizeStr(v.voce);
   if(!nv)return null; // descrizione vuota: nessun confronto testuale affidabile
@@ -2044,22 +2069,43 @@ function findPossibileDoppione(v){
 
 function applyImport(){
   if(!pendingImport.pf&&!pendingImport.dipendenti&&!pendingImport.storico){notify('Nessun dato da importare');return;}
-  const sfCountBefore=(S.sistemaFissi||[]).length;
-  const prioCountBefore=(S.prioritari||[]).length;
-  let n=0,nPrio=0,nMerge=0;
+  let sfCountBefore=(S.sistemaFissi||[]).length;
+  let prioCountBefore=(S.prioritari||[]).length;
+  let n=0,nPrio=0,nMerge=0,nRimosse=0;
   if(pendingImport.pf){
     S.sistemaFissi=S.sistemaFissi||[];
     S.prioritari=S.prioritari||[];
+    // ── SOSTITUZIONE (default ON) ────────────────────────────────────────
+    // Il file PF è la fonte di verità: si tolgono le voci del PF precedente
+    // e si riscrivono dal file. Senza questo il re-import creava doppioni —
+    // findPossibileDoppione salta di proposito le voci con areaPF ("già da
+    // import"), quindi non proponeva mai "Unisci" e ogni riga rientrava come
+    // nuova sommandosi a quella esistente.
+    // Si rimuove SOLO ciò che viene da un import PF: `areaPF` copre il seed
+    // storico, `daPF` gli import da qui in avanti. Le voci inserite a mano non
+    // hanno né l'uno né l'altro e restano intatte, così come le prioritarie
+    // strutturali del seed (OSM, accantonamenti, anni precedenti).
+    if(pfReplaceAttivo()){
+      const sfPrima=S.sistemaFissi.length, prioPrima=S.prioritari.length;
+      S.sistemaFissi=S.sistemaFissi.filter(sf=>!(sf.areaPF||sf.daPF));
+      S.prioritari  =S.prioritari.filter(p=>!p.daPF);
+      nRimosse=(sfPrima-S.sistemaFissi.length)+(prioPrima-S.prioritari.length);
+      // I conteggi di riferimento si rilevano DOPO la rimozione: la verifica
+      // difensiva più sotto confronta scritture attese vs effettive, non
+      // l'effetto netto della sostituzione.
+      sfCountBefore=S.sistemaFissi.length;
+      prioCountBefore=S.prioritari.length;
+    }
     pendingImport.pf.filter(v=>!v.escludi).forEach(v=>{
       if(v.mergeInto){
         // "Unisci": aggiorna la voce Sistema esistente invece di crearne una nuova
         const sf=S.sistemaFissi.find(x=>x.id===v.mergeInto);
-        if(sf){sf.val=Math.round((v.annuo/12)*100)/100;sf.areaPF=v.areaPF;sf.natura=v.natura;nMerge++;return;}
+        if(sf){sf.val=Math.round((v.annuo/12)*100)/100;sf.areaPF=v.areaPF;sf.natura=v.natura;sf.daPF=true;nMerge++;return;}
       }
       const cls=classifyPFRow(v);
       if(cls.dest==='prioritari'){
         S.prioritari.push({id:'pr_'+Math.random().toString(36).slice(2,9),
-          nome:v.voce||v.cat||v.areaPF,val:Math.round((v.annuo/12)*100)/100,tipo:cls.tipo,priorita:1});
+          nome:v.voce||v.cat||v.areaPF,val:Math.round((v.annuo/12)*100)/100,tipo:cls.tipo,priorita:1,daPF:true});
         nPrio++;
       }else{
         S.sistemaFissi.push({
@@ -2069,6 +2115,7 @@ function applyImport(){
           areaPF:v.areaPF,
           natura:v.natura,
           areaId:cls.areaId,
+          daPF:true,
           val:Math.round((v.annuo/12)*100)/100
         });
         n++;
@@ -2099,7 +2146,8 @@ function applyImport(){
   // Verifica difensiva: i conteggi post-scrittura devono tornare con quelli attesi.
   const sfCountAfter=S.sistemaFissi.length, prioCountAfter=S.prioritari.length;
   const sfDelta=sfCountAfter-sfCountBefore, prioDelta=prioCountAfter-prioCountBefore;
-  console.log('[applyImport] Sistema:',sfCountBefore,'→',sfCountAfter,'(+'+sfDelta+', atteso +'+n+')',
+  console.log('[applyImport]',(nRimosse?'Sostituzione ON — rimosse '+nRimosse+' voci del PF precedente | ':'Sostituzione OFF | '),
+              'Sistema:',sfCountBefore,'→',sfCountAfter,'(+'+sfDelta+', atteso +'+n+')',
               '| Prioritari:',prioCountBefore,'→',prioCountAfter,'(+'+prioDelta+', atteso +'+nPrio+')',
               '| Unite:',nMerge, dipMatch?'| Dipendenti matchati: '+dipMatch.matched+'/'+(dipMatch.matched+dipMatch.unmatched.length):'');
   if(sfDelta!==n||prioDelta!==nPrio){
@@ -2107,7 +2155,9 @@ function applyImport(){
   }
   renderAll();
   scheduleSync();
-  let msg='✅ Import applicato: '+n+' voci in Sistema (ora '+sfCountAfter+' totali), '+nPrio+' in Prioritari (ora '+prioCountAfter+' totali)';
+  let msg='✅ Import applicato: ';
+  if(nRimosse)msg+='rimosse '+nRimosse+' voci del PF precedente, ';
+  msg+=n+' voci in Sistema (ora '+sfCountAfter+' totali), '+nPrio+' in Prioritari (ora '+prioCountAfter+' totali)';
   if(nMerge)msg+=', '+nMerge+' unite';
   if(dipMatch)msg+=' — dipendenti: '+dipMatch.matched+'/'+(dipMatch.matched+dipMatch.unmatched.length)+' agganciati'+(dipMatch.unmatched.length?' (non trovati: '+dipMatch.unmatched.join(', ')+')':'');
   if(pendingImport.storico)msg+=' — storico vendite: '+nStoNew+' create, '+nStoUpd+' aggiornate';
