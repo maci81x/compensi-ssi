@@ -5658,6 +5658,38 @@ function tipologieAttive(a){
   const keys=a&&Array.isArray(a.tipologieErogato)?a.tipologieErogato:[];
   return TIPOLOGIE_SERVIZIO.filter(t=>keys.indexOf(t.k)>=0);
 }
+// §I — CRUD tipologie per area. Toccano SOLO a.tipologieErogato: i valori in
+// S.erogato non si cancellano (togliere una tipologia la nasconde; riaggiungendola
+// i numeri ricompaiono). Persistono con renderAll(), come le altre CRUD.
+function aggiungiTipologiaArea(areaId,k){
+  const a=S.aree.find(x=>x.id===areaId); if(!a)return;
+  if(!Array.isArray(a.tipologieErogato))a.tipologieErogato=[];
+  if(a.tipologieErogato.indexOf(k)>=0)return;
+  a.tipologieErogato.push(k);
+  renderAll(); refreshErogatoBlock(areaId);
+}
+function togliTipologiaArea(areaId,k){
+  const a=S.aree.find(x=>x.id===areaId); if(!a||!Array.isArray(a.tipologieErogato))return;
+  const t=TIPOLOGIE_SERVIZIO.find(x=>x.k===k);
+  const r=(S.erogato&&S.erogato[areaId])?S.erogato[areaId][k]:null;
+  const haValori=r&&(+r.n||+r.ore||+r.valore||+r.costo);
+  if(haValori && !confirm('Togliere «'+(t?t.label:k)+'» da quest\'area?\n\nI dati restano salvati e ricompaiono se la riaggiungi.'))return;
+  a.tipologieErogato=a.tipologieErogato.filter(x=>x!==k);
+  renderAll(); refreshErogatoBlock(areaId);
+}
+function erogatoSelettore(areaId,tips){
+  const attive=tips.map(t=>t.k);
+  const disp=TIPOLOGIE_SERVIZIO.filter(t=>attive.indexOf(t.k)<0);
+  if(disp.length===0) return '<div style="font-size:10px;color:var(--ink3);margin-top:8px">Tutte le tipologie del catalogo sono già attive per quest\'area.</div>';
+  let s='<div style="display:flex;align-items:center;gap:6px;margin-top:8px">'
+    +'<span style="font-size:10px;color:var(--ink3)">Aggiungi tipologia:</span>'
+    +'<select id="erogSel-'+areaId+'" class="inp" style="font-size:11px;padding:2px 6px;max-width:190px">';
+  disp.forEach(t=>{ s+='<option value="'+t.k+'">'+t.label+'</option>'; });
+  s+='</select>'
+    +'<button class="btn xs" style="padding:2px 8px" onclick="aggiungiTipologiaArea(\''+areaId+'\',document.getElementById(\'erogSel-'+areaId+'\').value)">+ Aggiungi</button>'
+    +'</div>';
+  return s;
+}
 function erogatoTotali(areaId){
   const e=erogatoArea(areaId);
   const a=S.aree.find(x=>x.id===areaId);
@@ -5704,7 +5736,11 @@ function renderErogatoBlock(areaId){
   const e=erogatoArea(areaId);
   const a=S.aree.find(x=>x.id===areaId);
   const tips=tipologieAttive(a);
-  if(tips.length===0) return '';   // area senza servizi erogati: sezione assente
+  if(tips.length===0)
+    return '<div style="margin-top:14px;padding-top:8px;border-top:1px dashed var(--lift)">'
+      +'<div style="font-size:11px;font-weight:600;margin-bottom:6px">Erogato per tipologia di servizio</div>'
+      +'<div style="font-size:10px;color:var(--ink3);margin-bottom:4px">Nessun servizio erogato per quest\'area.</div>'
+      +erogatoSelettore(areaId,tips)+'</div>';
   const tot=erogatoTotali(areaId);
   const totMargine=tot.valore-tot.costo;
   const totPct=erogatoMarginePct(tot.valore,totMargine);
@@ -5737,8 +5773,8 @@ function renderErogatoBlock(areaId){
         +'<span style="color:'+(margine>=0?'var(--green)':'var(--red)')+'">'+fmt(margine)+'</span>'
         +'<span style="font-size:9px;color:var(--ink3);margin-left:4px">'+(pct!==null?pct.toFixed(1)+'%':'—')+'</span></td>'
       +'<td style="padding:3px 2px;text-align:right">'
-        +'<button class="btn xs danger" style="padding:1px 4px" title="Azzera la riga"'
-        +(vuota?' disabled':'')+' onclick="azzeraErogatoRiga(\''+areaId+'\',\''+t.k+'\')">🗑</button></td>'
+        +'<button class="btn xs danger" style="padding:1px 4px" title="Togli questa tipologia dall\'area"'
+        +' onclick="togliTipologiaArea(\''+areaId+'\',\''+t.k+'\')">✕</button></td>'
       +'</tr>';
   });
   h+='<tr style="border-top:2px solid var(--lift);font-weight:600">'
@@ -5751,7 +5787,8 @@ function renderErogatoBlock(areaId){
       +'<span style="color:'+(totMargine>=0?'var(--green)':'var(--red)')+'">'+fmt(totMargine)+'</span>'
       +'<span style="font-size:9px;color:var(--ink3);margin-left:4px">'+(totPct!==null?totPct.toFixed(1)+'%':'—')+'</span></td>'
     +'<td></td></tr>';
-  return h+'</tbody></table></div></div>';
+  h+='</tbody></table></div>';
+  return h+erogatoSelettore(areaId,tips)+'</div>';
 }
 
 function openAreaCard(areaId){
